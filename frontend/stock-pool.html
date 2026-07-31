@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>选股池 - A股量化分析助手</title>
+<link rel="stylesheet" href="/css/app.css?v=2" />
+<style>
+.toolbar { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-bottom:8px; }
+.btn-sm { padding:6px 14px; font-size:0.8rem; border-radius:6px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-primary); cursor:pointer; white-space:nowrap; }
+.btn-sm:hover { border-color:var(--accent); color:var(--accent); }
+.dropdown { position:relative; }
+.dropdown-menu { display:none; position:absolute; top:100%; right:0; margin-top:4px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:8px 0; min-width:200px; box-shadow:var(--shadow); z-index:10; }
+.dropdown-menu.show { display:block; }
+.dropdown-menu label { display:flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.8rem; cursor:pointer; color:var(--text-primary); white-space:nowrap; }
+.dropdown-menu label:hover { background:var(--bg-secondary); }
+.dropdown-menu input[type=checkbox] { accent-color:var(--accent); }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+  <nav id="topNav" class="header-nav"></nav>
+</header>
+<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
+<main class="main-content">
+  <h2 class="page-title">场景化选股池</h2>
+  <p class="page-desc">基于历史数据和技术指标自动筛选，不代表未来走势预测</p>
+  <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">⚠️ 选股结果基于历史数据自动筛选，不构成买入建议，请独立决策</div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="toolbar">
+    <div class="dropdown">
+      <button class="btn-sm" onclick="document.getElementById('filterMenu').classList.toggle('show')" id="btnFilter">
+        <span id="btnFilterLabel">🔽 板块筛选（全部）</span>
+      </button>
+      <div class="dropdown-menu" id="filterMenu">
+        <label><input type="checkbox" checked onchange="onFilterChange()" id="chkNormal"> 普通股票</label>
+        <label><input type="checkbox" checked onchange="onFilterChange()" id="chk300"> 创业板 (300/301)</label>
+        <label><input type="checkbox" checked onchange="onFilterChange()" id="chk688"> 科创板 (688)</label>
+        <label><input type="checkbox" checked onchange="onFilterChange()" id="chk920"> 北交所 (920)</label>
+      </div>
+    </div>
+    <button class="btn-sm" onclick="doRefresh()" id="btnRefresh">🔄 刷新</button>
+  </div>
+
+  <div class="card"><div class="card-body" id="content">
+    <p class="state-loading">加载中...</p>
+  </div></div>
+</main>
+<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。数据来源于Tushare等第三方，本站不对数据准确性做保证。</footer>
+<script src="/js/app.js?v=2"></script>
+<script>
+var pools = [
+  { type: 'hot_leader', name: '热点龙头池' },
+  { type: 'dip_ambush', name: '低吸埋伏池' },
+  { type: 'oversold_rebound', name: '超跌反弹池' },
+  { type: 'steady_swing', name: '稳健波段池' },
+];
+var activePool = 'hot_leader';
+var allItems = [];
+
+function checked(id) { return document.getElementById(id).checked; }
+
+function getExcludeParams() {
+  var p = [];
+  if (!checked('chk300')) { p.push('exclude_300=true'); p.push('exclude_301=true'); }
+  if (!checked('chk688')) p.push('exclude_688=true');
+  if (!checked('chk920')) p.push('exclude_920=true');
+  return p.length ? '?' + p.join('&') : '';
+}
+
+function isNormal(code) {
+  return !(code.startsWith('300') || code.startsWith('301') || code.startsWith('688') || code.startsWith('920'));
+}
+
+function filterItems(items) {
+  var showNormal = checked('chkNormal');
+  var show300   = checked('chk300');
+  var show688   = checked('chk688');
+  var show920   = checked('chk920');
+  return items.filter(function(i) {
+    var c = i.stock_code || '';
+    if (!showNormal && isNormal(c)) return false;
+    if (!show300 && (c.startsWith('300') || c.startsWith('301'))) return false;
+    if (!show688 && c.startsWith('688')) return false;
+    if (!show920 && c.startsWith('920')) return false;
+    return true;
+  });
+}
+
+function onFilterChange() {
+  var names = [];
+  if (checked('chkNormal')) names.push('普通');
+  if (checked('chk300')) names.push('创业板');
+  if (checked('chk688')) names.push('科创');
+  if (checked('chk920')) names.push('北交');
+  var all = checked('chkNormal') && checked('chk300') && checked('chk688') && checked('chk920');
+  var label = document.getElementById('btnFilterLabel');
+  if (all) label.textContent = '🔽 板块筛选（全部）';
+  else if (names.length === 0) label.textContent = '🔽 板块筛选（无）';
+  else label.textContent = '🔽 板块筛选（' + names.join('/') + '）';
+  // 重新拉取数据（后端按筛选条件返回）
+  loadPool(activePool);
+}
+
+function doRefresh() {
+  var btn = document.getElementById('btnRefresh');
+  btn.disabled = true; btn.textContent = '刷新中...';
+  // 先同步最新日线，再重新计算选股池
+  API.post('/admin/tasks/run-daily-batch').then(function() {
+    return API.post('/admin/cache/refresh/pool');
+  }).then(function() {
+    return loadPool(activePool);
+  }).catch(function(e) {
+    document.getElementById('content').innerHTML = '<p class="state-error">刷新失败: ' + (e.message || '') + '</p>';
+  }).finally(function() {
+    btn.disabled = false; btn.textContent = '🔄 刷新';
+  });
+}
+
+function renderTabs() {
+  var html = '';
+  pools.forEach(function(p) {
+    html += '<button class="tab' + (p.type === activePool ? ' active' : '') + '" onclick="loadPool(\'' + p.type + '\')">' + p.name + '</button>';
+  });
+  document.getElementById('tabs').innerHTML = html;
+}
+
+function loadPool(type) {
+  activePool = type;
+  renderTabs();
+  var content = document.getElementById('content');
+  content.innerHTML = '<p class="state-loading">加载中...</p>';
+  API.get('/stock-pool/' + type + getExcludeParams()).then(function(r) {
+    allItems = r.data.items || [];
+    if (!allItems.length) {
+      content.innerHTML = '<p class="state-empty">暂无数据 — 请先在<a href="admin-trigger.html">管理后台</a>执行数据同步和选股池计算。</p>';
+      return;
+    }
+    var filtered = filterItems(allItems);
+    renderTable(filtered.length ? filtered : allItems);
+  }).catch(function(e) {
+    content.innerHTML = '<p class="state-error">加载失败: ' + (e.message || '未知错误') + '</p>';
+  });
+}
+
+function renderTable(items) {
+  var content = document.getElementById('content');
+  if (!items.length) {
+    content.innerHTML = '<p class="state-empty">当前筛选条件下无结果，请调整板块筛选或<a href="#" onclick="doRefresh()">刷新数据</a></p>';
+    return;
+  }
+  var html = '<table class="data-table"><thead><tr><th>排名</th><th>代码</th><th>名称</th><th>收盘价</th><th>涨跌幅</th><th>入选理由</th></tr></thead><tbody>';
+  items.forEach(function(s, i) {
+    var color = s.change_pct > 0 ? 'color:var(--danger)' : 'color:var(--success)';
+    html += '<tr style="cursor:pointer" onclick="location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'"><td>' + (i+1) + '</td><td>' + s.stock_code + '</td><td>' + s.stock_name + '</td><td>' + (s.close || '--') + '</td><td style="' + color + '">' + (s.change_pct || '--') + '%</td><td style="font-size:0.75rem;color:var(--text-secondary)">' + (s.inclusion_reason || '') + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  content.innerHTML = html;
+}
+
+document.addEventListener('click', function(e) {
+  var menu = document.getElementById('filterMenu');
+  var btn = document.getElementById('btnFilter');
+  if (menu && btn && !btn.contains(e.target) && !menu.contains(e.target)) {
+    menu.classList.remove('show');
+  }
+});
+
+renderTabs();
+loadPool('hot_leader');
+</script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>A股量化分析助手</title>
+<link rel="stylesheet" href="/css/app.css?v=2" />
+</head>
+<body>
+<header class="app-header">
+  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+  <nav id="topNav" class="header-nav"></nav>
+</header>
+
+<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
+
+<main class="main-content">
+  <h2 class="page-title">市场概览</h2>
+  <p class="page-desc">A股量化分析助手 — 数据驱动决策</p>
+
+  <div class="stat-grid" style="margin-bottom:24px">
+    <div class="stat-card"><div class="stat-label">系统状态</div><div class="stat-value" style="font-size:1rem;" id="healthStatus">检查中...</div></div>
+    <div class="stat-card"><div class="stat-label">股票数量</div><div class="stat-value" style="font-size:1rem;" id="stockCount">--</div></div>
+    <div class="stat-card"><div class="stat-label">最新日线</div><div class="stat-value" style="font-size:1rem;" id="latestDate">--</div></div>
+    <div class="stat-card"><div class="stat-label">选股池</div><div class="stat-value" style="font-size:1rem;" id="poolCount">--</div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px" id="modules"></div>
+</main>
+
+<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。数据来源于Tushare等第三方，本站不对数据准确性做保证。</footer>
+
+<script src="/js/app.js?v=4"></script>
+<script>
+(function() {
+  var modules = [
+    { href: 'stock-pool.html', icon: '📊', name: '场景化选股池', desc: '热点龙头、低吸埋伏、超跌反弹、稳健波段四大策略' },
+    { href: 'diagnosis.html', icon: '🔍', name: '个股深度诊股', desc: '技术面+基本面双维度评分，支撑位/压力位/止损止盈' },
+    { href: 'review.html', icon: '📝', name: '每日复盘简报', desc: '大盘解读、热点板块、涨停梯队分析' },
+    { href: 'sector.html', icon: '🔥', name: '板块轮动热力分析', desc: '板块涨幅排行、持续性分析、联动分析' },
+    { href: 'risk-list.html', icon: '🛡️', name: '风险避雷清单', desc: '连续亏损、资不抵债、财务异常筛查' },
+    { href: 'alerts.html', icon: '🔔', name: '自选股预警', desc: '放量突破、技术指标信号推送' },
+    { href: 'backtest.html', icon: '⚡', name: '策略回测', desc: '历史回测、收益曲线、胜率/回撤/盈亏比' },
+  ];
+  var html = '';
+  modules.forEach(function(m) {
+    html += '<div class="card" style="cursor:pointer" onclick="location.href=\'' + m.href + '\'"><div class="card-header">' + m.icon + ' ' + m.name + '</div><div class="card-body"><p style="font-size:0.85rem;color:var(--text-secondary)">' + m.desc + '</p></div></div>';
+  });
+  document.getElementById('modules').innerHTML = html;
+
+  API.get('/health').then(function(r) {
+    document.getElementById('healthStatus').textContent = r.data.app || '正常';
+  }).catch(function() { document.getElementById('healthStatus').textContent = '离线'; });
+
+  API.get('/admin/cache/stats').then(function(r) {
+    document.getElementById('poolCount').textContent = (r.data.total_keys || 0) + ' 项缓存';
+  }).catch(function() {});
+
+  // Check stock data availability via diagnosis endpoint
+  API.get('/stock-pool/hot_leader').then(function(r) {
+    document.getElementById('latestDate').textContent = r.data.date || '--';
+    document.getElementById('stockCount').textContent = r.data.total + ' 只';
+  }).catch(function() {
+    document.getElementById('latestDate').textContent = '需同步';
+    document.getElementById('stockCount').textContent = '需同步';
+  });
+})();
+</script>
+</body>
+</html>

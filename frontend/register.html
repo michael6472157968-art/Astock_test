@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>注册 - A股量化分析助手</title>
+<link rel="stylesheet" href="/css/app.css?v=2" />
+</head>
+<body>
+<header class="app-header">
+  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+</header>
+<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
+<main class="main-content">
+  <div style="max-width:400px;margin:60px auto">
+    <a href="/" style="display:inline-block;margin-bottom:16px;color:var(--text-secondary);font-size:0.85rem;text-decoration:none">← 返回首页</a>
+    <div class="card"><div class="card-header">注册</div><div class="card-body">
+      <div class="form-group"><label class="form-label">手机号</label><input class="form-input" id="phone" placeholder="请输入手机号" maxlength="11" /></div>
+      <div class="form-group"><label class="form-label">密码</label><input class="form-input" id="password" type="password" placeholder="至少6位" /></div>
+      <div id="error" class="form-error" style="display:none"></div>
+      <button class="btn btn-primary btn-block" onclick="doRegister()" style="margin-top:12px">注册</button>
+      <p style="text-align:center;margin-top:16px;font-size:0.85rem;color:var(--text-secondary)">已有账号？<a href="login.html" style="color:var(--accent)">去登录</a></p>
+    </div></div>
+  </div>
+</main>
+<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
+<script src="/js/app.js?v=2"></script>
+<script>
+function doRegister() {
+  var phone = document.getElementById('phone').value;
+  var pwd = document.getElementById('password').value;
+  var errEl = document.getElementById('error');
+  if (!phone || pwd.length < 6) { errEl.textContent = '请填写手机号和密码（至少6位）'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+  var btn = document.querySelector('.btn-primary');
+  btn.disabled = true; btn.textContent = '注册中...';
+  API.post('/auth/register', { phone: phone, password: pwd, verify_code: '000000' }).then(function(r) {
+    Session.save(r.data);
+    window.location.href = '/';
+  }).catch(function(e) {
+    errEl.textContent = e.message || '注册失败';
+    errEl.style.display = 'block';
+  }).finally(function() { btn.disabled = false; btn.textContent = '注册'; });
+}
+</script>
+</body>
+</html>

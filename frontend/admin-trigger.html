@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>数据同步 - A股量化分析助手</title>
+<link rel="stylesheet" href="/css/app.css?v=2" />
+</head>
+<body>
+<header class="app-header">
+  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+  <nav id="topNav" class="header-nav"></nav>
+</header>
+<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
+<main class="main-content">
+  <h2 class="page-title">数据同步管理</h2>
+  <p class="page-desc">手动触发 Tushare 数据同步与离线计算</p>
+
+  <div class="stat-grid" style="margin-bottom:20px" id="stats"></div>
+
+  <div class="card" style="margin-bottom:16px"><div class="card-header">数据同步</div><div class="card-body">
+    <p style="margin-bottom:12px;font-size:0.85rem;color:var(--text-secondary)">从 Tushare 拉取最新股票基础信息与日线数据。收盘后执行，选股池数据才会更新。</p>
+    <button class="btn btn-primary" onclick="syncData()">同步股票+日线数据</button>
+    <p id="syncMsg" style="margin-top:8px;font-size:0.8rem"></p>
+  </div></div>
+
+  <div class="card" style="margin-bottom:16px"><div class="card-header">选股池计算（收盘后手动执行）</div><div class="card-body">
+    <button class="btn btn-primary" onclick="refreshPool()">更新选股池（收盘后手动执行）</button>
+    <p id="poolMsg" style="margin-top:8px;font-size:0.8rem"></p>
+  </div></div>
+
+  <div class="card" style="margin-bottom:16px"><div class="card-header">板块分析</div><div class="card-body">
+    <button class="btn btn-primary" onclick="refreshSector()">重新计算板块轮动</button>
+    <p id="sectorMsg" style="margin-top:8px;font-size:0.8rem"></p>
+  </div></div>
+
+  <div class="card" style="margin-bottom:16px"><div class="card-header">每日复盘</div><div class="card-body">
+    <button class="btn btn-primary" onclick="refreshReview()">重新生成复盘</button>
+    <p id="reviewMsg" style="margin-top:8px;font-size:0.8rem"></p>
+  </div></div>
+
+  <div class="card"><div class="card-header">风险扫描</div><div class="card-body">
+    <button class="btn btn-primary" onclick="refreshRisk()">重新扫描风险</button>
+    <p id="riskMsg" style="margin-top:8px;font-size:0.8rem"></p>
+  </div></div>
+</main>
+<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
+<script src="/js/app.js?v=2"></script>
+<script>
+function loadStats() {
+  API.get('/admin/cache/stats').then(function(r) {
+    document.getElementById('stats').innerHTML = '<div class="stat-card"><div class="stat-label">缓存键数</div><div class="stat-value" style="font-size:1rem;">' + r.data.total_keys + '</div></div><div class="stat-card"><div class="stat-label">永久缓存</div><div class="stat-value" style="font-size:1rem;">' + r.data.permanent + '</div></div><div class="stat-card"><div class="stat-label">定时缓存</div><div class="stat-value" style="font-size:1rem;">' + r.data.with_ttl + '</div></div>';
+  });
+}
+loadStats();
+
+function syncData() {
+  var btn = document.querySelector('button[onclick="syncData()"]');
+  btn.disabled = true; btn.textContent = '同步中...';
+  document.getElementById('syncMsg').textContent = '同步中（可能需要30秒）...';
+  API.post('/admin/tasks/run-daily-batch').then(function(r) {
+    document.getElementById('syncMsg').textContent = '完成：' + r.data.stock_synced + ' 只股票, ' + r.data.daily_synced + ' 条日线';
+    loadStats();
+  }).catch(function(e) {
+    document.getElementById('syncMsg').textContent = '失败: ' + (e.message || '');
+  }).finally(function() { btn.disabled = false; btn.textContent = '同步股票+日线数据'; });
+}
+
+function refreshPool() {
+  var btn = document.querySelector('button[onclick="refreshPool()"]');
+  btn.disabled = true; btn.textContent = '计算中...';
+  document.getElementById('poolMsg').textContent = '计算中...';
+  API.post('/admin/cache/refresh/pool').then(function(r) {
+    document.getElementById('poolMsg').textContent = '完成';
+    loadStats();
+  }).catch(function(e) {
+    document.getElementById('poolMsg').textContent = '失败: ' + (e.message || '');
+  }).finally(function() { btn.disabled = false; btn.textContent = '更新选股池'; });
+}
+
+function refreshSector() {
+  document.getElementById('sectorMsg').textContent = '计算中...';
+  API.post('/admin/cache/refresh/sector').then(function(r) {
+    document.getElementById('sectorMsg').textContent = '完成';
+    loadStats();
+  }).catch(function(e) { document.getElementById('sectorMsg').textContent = '失败: ' + (e.message || ''); });
+}
+
+function refreshReview() {
+  document.getElementById('reviewMsg').textContent = '生成中...';
+  API.post('/admin/cache/refresh/review').then(function(r) {
+    document.getElementById('reviewMsg').textContent = '完成';
+    loadStats();
+  }).catch(function(e) { document.getElementById('reviewMsg').textContent = '失败: ' + (e.message || ''); });
+}
+
+function refreshRisk() {
+  document.getElementById('riskMsg').textContent = '扫描中...';
+  API.post('/admin/cache/refresh/risk').then(function(r) {
+    document.getElementById('riskMsg').textContent = '完成';
+    loadStats();
+  }).catch(function(e) { document.getElementById('riskMsg').textContent = '失败: ' + (e.message || ''); });
+}
+</script>
+</body>
+</html>

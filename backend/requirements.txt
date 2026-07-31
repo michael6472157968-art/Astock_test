@@ -1,0 +1,15 @@
+fastapi==0.141.0
+uvicorn[standard]==0.52.0
+sqlalchemy==2.0.51
+aiosqlite==0.22.1
+pydantic==2.13.4
+pydantic-settings==2.14.2
+python-jose[cryptography]==3.5.0
+bcrypt==5.0.0
+apscheduler==3.11.3
+tushare==1.4.29
+httpx==0.28.1
+python-multipart==0.0.32
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==4.1.0

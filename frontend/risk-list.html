@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>风险避雷 - A股量化分析助手</title>
+<link rel="stylesheet" href="/css/app.css?v=2" />
+</head>
+<body>
+<header class="app-header">
+  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+  <nav id="topNav" class="header-nav"></nav>
+</header>
+<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
+<main class="main-content">
+  <h2 class="page-title">短线风险避雷清单</h2>
+  <p class="page-desc">基于公开财务数据的异常筛查，可能未涵盖全部风险因素</p>
+  <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">⚠️ 风险清单基于公开信息自动筛选，未被列入清单不代表无风险</div>
+  <div id="content"><p class="state-loading">加载中...</p></div>
+</main>
+<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
+<script src="/js/app.js?v=2"></script>
+<script>
+API.get('/risk-list').then(function(r) {
+  var items = r.data.items || [];
+  if (!items.length) {
+    document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无风险数据。请先<a href="admin-trigger.html">运行数据同步</a>。</p></div></div>';
+    return;
+  }
+  var cats = { continuous_loss: '连续亏损', high_debt: '资不抵债', financial_anomaly: '财务异常' };
+  var html = '<div class="card"><div class="card-body"><table class="data-table"><thead><tr><th>代码</th><th>名称</th><th>风险类别</th><th>详情</th></tr></thead><tbody>';
+  items.forEach(function(r) {
+    html += '<tr><td>' + r.ts_code + '</td><td>' + r.stock_name + '</td><td>' + (cats[r.risk_category] || r.risk_category) + '</td><td>' + (r.risk_detail || '') + '</td></tr>';
+  });
+  html += '</tbody></table></div></div>';
+  document.getElementById('content').innerHTML = html;
+}).catch(function(e) {
+  document.getElementById('content').innerHTML = '<p class="state-error">加载失败: ' + (e.message || '') + '</p>';
+});
+</script>
+</body>
+</html>

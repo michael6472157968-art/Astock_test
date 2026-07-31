@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>每日复盘 - A股量化分析助手</title>
+<link rel="stylesheet" href="/css/app.css?v=2" />
+<script src="/lib/echarts.js"></script>
+<style>
+.review-chart { width:100%; height:400px; }
+.date-picker { padding:6px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-primary); font-size:0.9rem; }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+  <nav id="topNav" class="header-nav"></nav>
+</header>
+<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
+<main class="main-content">
+  <h2 class="page-title">每日市场复盘简报</h2>
+  <p class="page-desc">大盘解读、热点板块、涨跌统计分析</p>
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+    <span style="font-size:0.85rem;color:var(--text-secondary)">选择日期：</span>
+    <select id="dateSelect" class="date-picker" onchange="loadReview(this.value)"></select>
+  </div>
+
+  <div id="reviewDetail"></div>
+  <div id="reviewChart" class="review-chart" style="display:none;"></div>
+</main>
+<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
+<script src="/js/app.js?v=2"></script>
+<script>
+var allDates = [];
+var allReviews = {};
+
+// 生成最近30天日期列表加载选择器
+(function() {
+  var dd = new Date();
+  for (var i = 0; i < 30; i++) {
+    var y = dd.getFullYear();
+    var m = String(dd.getMonth() + 1).padStart(2, '0');
+    var d = String(dd.getDate()).padStart(2, '0');
+    allDates.push(y + m + d);
+    dd.setDate(dd.getDate() - 1);
+  }
+  var sel = document.getElementById('dateSelect');
+  allDates.forEach(function(td, idx) {
+    var opt = document.createElement('option');
+    opt.value = td;
+    opt.textContent = td.substring(0,4) + '-' + td.substring(4,6) + '-' + td.substring(6,8);
+    if (idx === 0) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  loadReview(allDates[0]);
+})();
+
+function loadReview(td) {
+  document.getElementById('reviewDetail').innerHTML = '<p class="state-loading">加载中...</p>';
+  document.getElementById('reviewChart').style.display = 'none';
+  if (allReviews[td]) {
+    renderReview(td, allReviews[td]);
+  } else {
+    API.get('/review/daily?date=' + td).then(function(r) {
+      allReviews[td] = r.data;
+      renderReview(td, r.data);
+    }).catch(function() {
+      document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">该日期暂无复盘数据</p>';
+    });
+  }
+}
+
+function renderReview(td, data) {
+  var c = data.content || {};
+  if (!c || !c.total) {
+    document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">该日期暂无复盘数据，请先<a href="admin-trigger.html">运行数据同步</a>后生成。</p>';
+    return;
+  }
+  var dtLabel = td.substring(0,4) + '-' + td.substring(4,6) + '-' + td.substring(6,8);
+  var html = '<div class="stat-grid" style="margin-bottom:20px">';
+  html += '<div class="stat-card"><div class="stat-label">全市场</div><div class="stat-value" style="font-size:1.2rem;">' + c.total + ' 只</div></div>';
+  html += '<div class="stat-card"><div class="stat-label">上涨 / 平 / 下跌</div><div class="stat-value" style="font-size:1rem;">' + c.up_count + ' / ' + (c.flat_count || 0) + ' / ' + c.down_count + '</div></div>';
+  html += '<div class="stat-card"><div class="stat-label">涨停 / 跌停</div><div class="stat-value" style="font-size:1rem;"><span style="color:var(--danger)">' + c.limit_up + '</span> / <span style="color:var(--success)">' + c.limit_down + '</span></div></div>';
+  html += '<div class="stat-card"><div class="stat-label">平均涨跌幅</div><div class="stat-value ' + (c.avg_pct > 0 ? 'risk-low' : 'risk-high') + '">' + (c.avg_pct > 0 ? '+' : '') + c.avg_pct + '%</div></div>';
+  html += '</div>';
+
+  // 涨跌分布图
+  document.getElementById('reviewChart').style.display = 'block';
+  drawPieChart(td, c);
+
+  // 涨幅TOP5
+  if (c.top_gainers && c.top_gainers.length) {
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">涨幅TOP5</div><div class="card-body"><table class="data-table"><thead><tr><th>名称</th><th>涨幅</th><th>行业</th></tr></thead><tbody>';
+    c.top_gainers.forEach(function(s) {
+      html += '<tr><td>' + s.name + '</td><td style="color:var(--danger)">' + (s.pct > 0 ? '+' : '') + s.pct + '%</td><td style="color:var(--text-secondary)">' + (s.industry || '') + '</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+  }
+
+  // 跌幅TOP5
+  if (c.top_losers && c.top_losers.length) {
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">跌幅TOP5</div><div class="card-body"><table class="data-table"><thead><tr><th>名称</th><th>涨幅</th><th>行业</th></tr></thead><tbody>';
+    c.top_losers.forEach(function(s) {
+      html += '<tr><td>' + s.name + '</td><td style="color:var(--success)">' + (s.pct > 0 ? '+' : '') + s.pct + '%</td><td style="color:var(--text-secondary)">' + (s.industry || '') + '</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+  }
+
+  // 行业TOP5
+  if (c.top_sectors && c.top_sectors.length) {
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">行业涨幅TOP5</div><div class="card-body"><table class="data-table"><thead><tr><th>行业</th><th>平均涨幅</th></tr></thead><tbody>';
+    c.top_sectors.forEach(function(s) {
+      html += '<tr><td>' + s.name + '</td><td style="color:var(--danger)">' + (s.avg_pct > 0 ? '+' : '') + s.avg_pct + '%</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+  }
+
+  document.getElementById('reviewDetail').innerHTML = html;
+}
+
+function drawPieChart(td, c) {
+  var el = document.getElementById('reviewChart');
+  var chart = echarts.init(el);
+  chart.setOption({
+    title: { text: '涨跌分布', left: 'center', textStyle: { fontSize: 14, color: 'var(--text-primary)' } },
+    tooltip: { trigger: 'item' },
+    series: [{
+      type: 'pie', radius: ['40%', '70%'], center: ['50%', '55%'],
+      data: [
+        { value: c.up_count, name: '上涨(' + c.up_count + '只)', itemStyle: { color: '#ef232a' } },
+        { value: c.flat_count || 0, name: '平盘(' + (c.flat_count || 0) + '只)', itemStyle: { color: '#8392A5' } },
+        { value: c.down_count, name: '下跌(' + c.down_count + '只)', itemStyle: { color: '#14b143' } },
+      ],
+      label: { color: 'var(--text-primary)', fontSize: 11 },
+    }]
+  });
+  window.addEventListener('resize', function() { chart.resize(); });
+}
+</script>
+</body>
+</html>

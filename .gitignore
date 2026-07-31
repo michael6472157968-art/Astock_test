@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment (contains secrets — do NOT commit)
+.env
+backend/.env
+
+# Database files (generated at runtime)
+*.db
+*.db-journal
+*.db-wal
+
+# User data (generated at runtime)
+backend/data/user_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.log
+*.tmp
+
+# Nested repos / worktrees
+Astock-test/

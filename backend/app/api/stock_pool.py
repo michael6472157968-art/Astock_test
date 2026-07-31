@@ -1,0 +1,89 @@
+"""选股池 API——4大选股池列表与详情。"""
+
+from __future__ import annotations
+
+import time
+from datetime import date, timedelta
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
+
+from app.core.settings import get_settings
+from app.models.schemas.common import APIResponse
+
+router = APIRouter(prefix="/api/v1/stock-pool", tags=["选股池"])
+_settings = get_settings()
+
+POOL_TYPES = {
+    "hot_leader": {"name": "热点龙头池", "desc": "当日热点板块内放量突破的强势股"},
+    "dip_ambush": {"name": "低吸埋伏池", "desc": "回调到关键支撑位、缩量企稳的优质股"},
+    "oversold_rebound": {"name": "超跌反弹池", "desc": "短期超跌、出现反转信号的博弈股"},
+    "steady_swing": {"name": "稳健波段池", "desc": "趋势向上、量价健康的中短线标的"},
+}
+
+
+@router.get("/categories")
+async def list_categories():
+    return APIResponse(
+        data={"categories": [{"type": k, **v} for k, v in POOL_TYPES.items()]},
+        timestamp=int(time.time()),
+    )
+
+
+@router.get("/{pool_type}")
+async def list_pool(pool_type: str, page: int = 1, page_size: int = 20, request: Request = None,
+                    exclude_300: bool = False, exclude_301: bool = False,
+                    exclude_688: bool = False, exclude_920: bool = False):
+    if pool_type not in POOL_TYPES:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"无效的选股池类型: {pool_type}")
+
+    from datetime import date, timedelta
+    from sqlalchemy import text as _text
+    from app.core.database import async_session as _sess
+
+    trade_date = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+    async with _sess() as _session:
+        _r = await _session.execute(_text('SELECT MAX(trade_date) FROM stock_daily'))
+        _max = _r.scalar()
+        if _max:
+            trade_date = _max
+
+    from app.core.cache import cache_get
+    cached = await cache_get(f"pool:{pool_type}:{trade_date}")
+    items = cached if cached else []
+
+    # 按用户偏好过滤交易权限板块
+    exclude_prefixes = set()
+    if exclude_300: exclude_prefixes.add("300")
+    if exclude_301: exclude_prefixes.add("301")
+    if exclude_688: exclude_prefixes.add("688")
+    if exclude_920: exclude_prefixes.add("920")
+
+    if exclude_prefixes:
+        items = [i for i in items if not any(
+            (i.get("stock_code","") or "").startswith(p) for p in exclude_prefixes
+        )]
+
+    seen = set()
+    deduped = []
+    for item in items:
+        code = item.get("stock_code", "")
+        if code and code not in seen:
+            seen.add(code)
+            deduped.append(item)
+    items = deduped
+
+    total = len(items)
+
+    return APIResponse(
+        data={"pool_type": pool_type, "date": trade_date, "total": total, "items": items},
+        timestamp=int(time.time()),
+        ext_info={"cache_hit": cached is not None},
+    )
+
+
+def _get_tier(request: Request | None) -> int:
+    if request is None:
+        return 0
+    return getattr(request.state, "tier", 0) if hasattr(request.state, "tier") else 0

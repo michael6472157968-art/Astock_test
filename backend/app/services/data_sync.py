@@ -1,0 +1,127 @@
+"""数据同步服务——从Tushare拉取数据写入SQLite。
+
+定时任务触发：收盘后同步日线、板块、财报。
+"""
+
+from __future__ import annotations
+
+import logging
+
+from app.core.database import async_session
+from app.models.orm.models import Sector, SectorDaily, Stock, StockDaily, StockFinancial
+from app.services.tushare_client import (call_tushare, get_all_daily,
+                                          get_sector_list, get_stock_basic)
+
+logger = logging.getLogger("sync")
+
+
+async def sync_stock_basic() -> int:
+    """同步股票基础信息。返回新增/更新数量。"""
+    stocks = await get_stock_basic()
+    if not stocks:
+        return 0
+
+    async with async_session() as session:
+        for row in stocks:
+            try:
+                await session.merge(Stock(
+                    ts_code=row.get("ts_code", ""),
+                    symbol=row.get("symbol", ""),
+                    name=row.get("name", ""),
+                    industry=row.get("industry", "") or "",
+                    area=row.get("area", "") or "",
+                    market=row.get("market", "") or "",
+                    list_date=row.get("list_date", "") or "",
+                ))
+            except Exception:
+                continue
+        await session.commit()
+
+    logger.info(f"Stock basic: {len(stocks)} records synced")
+    return len(stocks)
+
+
+async def sync_daily_data(trade_date: str = "") -> int:
+    """同步指定交易日全市场日线。默认最近交易日。"""
+    if not trade_date:
+        from datetime import date, timedelta
+        trade_date = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+    rows = await get_all_daily(trade_date)
+    if not rows:
+        logger.info(f"No daily data for {trade_date}")
+        return 0
+
+    async with async_session() as session:
+        for row in rows:
+            try:
+                await session.merge(StockDaily(
+                    ts_code=row.get("ts_code", ""),
+                    trade_date=str(row.get("trade_date", trade_date)),
+                    open=float(row.get("open", 0) or 0),
+                    high=float(row.get("high", 0) or 0),
+                    low=float(row.get("low", 0) or 0),
+                    close=float(row.get("close", 0) or 0),
+                    pre_close=float(row.get("pre_close", 0) or 0),
+                    change=float(row.get("change", 0) or 0),
+                    pct_chg=float(row.get("pct_chg", 0) or 0),
+                    volume=float(row.get("vol", 0) or 0),
+                    amount=float(row.get("amount", 0) or 0),
+                ))
+            except Exception:
+                continue
+        await session.commit()
+
+    logger.info(f"Daily data: {len(rows)} stocks for {trade_date}")
+    return len(rows)
+
+
+async def sync_sector_data() -> int:
+    """同步板块分类列表。"""
+    sectors = await get_sector_list()
+    if not sectors:
+        return 0
+
+    async with async_session() as session:
+        for row in sectors:
+            try:
+                await session.merge(Sector(
+                    code=row.get("index_code", ""),
+                    name=row.get("industry_name", ""),
+                    type=row.get("src", "SW2021"),
+                ))
+            except Exception:
+                continue
+        await session.commit()
+
+    return len(sectors)
+
+
+async def sync_financials() -> int:
+    """同步全市场最新财报——月度任务，需控制频率。"""
+    stocks = await get_stock_basic()
+    if not stocks:
+        logger.warning("No stock list available for financial sync")
+        return 0
+
+    count = 0
+    for stock in stocks[:50]:  # 月度仅同步前50只关键股票，避免超额
+        ts_code = stock.get("ts_code", "")
+        try:
+            income = await call_tushare("income", call_type="financial", ts_code=ts_code)
+            if income is not None and not (hasattr(income, 'empty') and income.empty):
+                async with async_session() as session:
+                    session.add(StockFinancial(
+                        ts_code=ts_code,
+                        report_date=str(income.iloc[0].get("end_date", "")),
+                        report_type="income",
+                        data_json=str(income.iloc[0].to_dict()),
+                    ))
+                    await session.commit()
+            count += 1
+        except Exception as e:
+            logger.warning(f"Financial sync failed for {ts_code}: {e}")
+            continue
+
+    logger.info(f"Financials synced: {count} stocks")
+    return count

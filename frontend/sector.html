@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>板块分析 - A股量化分析助手</title>
+<link rel="stylesheet" href="/css/app.css?v=2" />
+<style>
+.heat-bar { display:inline-block; height:16px; border-radius:3px; background:var(--accent); vertical-align:middle; margin-right:6px; }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+  <nav id="topNav" class="header-nav"></nav>
+</header>
+<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
+<main class="main-content">
+  <h2 class="page-title">板块轮动热力分析</h2>
+  <p class="page-desc">基于行业分类的实时热度排行与阶段判定</p>
+  <div id="content"><p class="state-loading">加载中...</p></div>
+</main>
+<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
+<script src="/js/app.js?v=2"></script>
+<script>
+API.get('/sector-rotation/ranking').then(function(r) {
+  var sectors = r.data.sectors || [];
+  if (!sectors.length) {
+    document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无板块数据，请先在<a href="admin-trigger.html">管理后台</a>执行数据同步和板块分析。</p></div></div>';
+    return;
+  }
+  var maxHeat = 0;
+  sectors.forEach(function(s) { maxHeat = Math.max(maxHeat, Math.abs(s.heat_score || 0)); });
+
+  var html = '<div class="card"><div class="card-body"><table class="data-table"><thead><tr><th>排名</th><th>板块</th><th>热度</th><th>动量</th><th>阶段</th><th>股票数</th></tr></thead><tbody>';
+  sectors.forEach(function(s, i) {
+    var heat = s.heat_score || 0;
+    var barW = Math.max(4, Math.abs(heat) / Math.max(maxHeat, 1) * 120);
+    var heatColor = heat > 0 ? 'var(--danger)' : 'var(--success)';
+    html += '<tr>';
+    html += '<td>' + (i + 1) + '</td>';
+    html += '<td><strong>' + s.name + '</strong></td>';
+    html += '<td><span class="heat-bar" style="width:' + barW + 'px;background:' + heatColor + '"></span>' + (heat > 0 ? '+' : '') + heat.toFixed(1) + '</td>';
+    html += '<td style="color:' + ((s.momentum || 0) > 0 ? 'var(--danger)' : 'var(--success)') + '">' + ((s.momentum || 0) > 0 ? '+' : '') + (s.momentum || 0).toFixed(1) + '</td>';
+    html += '<td>' + (s.phase || '--') + '</td>';
+    html += '<td style="color:var(--text-secondary)">' + s.count + '只</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div></div>';
+  document.getElementById('content').innerHTML = html;
+}).catch(function(e) {
+  document.getElementById('content').innerHTML = '<p class="state-error">加载失败: ' + (e.message || '') + '</p>';
+});
+</script>
+</body>
+</html>

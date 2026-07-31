@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>自选预警 - A股量化分析助手</title>
+<link rel="stylesheet" href="/css/app.css?v=2" />
+</head>
+<body>
+<header class="app-header">
+  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+  <nav id="topNav" class="header-nav"></nav>
+</header>
+<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
+<main class="main-content">
+  <h2 class="page-title">自选股异动预警</h2>
+  <p class="page-desc">技术面信号：放量突破压力位、跌破支撑位、MACD金叉死叉、RSI超买超卖</p>
+  <div id="content"><p class="state-loading">加载中...</p></div>
+</main>
+<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
+<script src="/js/app.js?v=2"></script>
+<script>
+if (!Session.loggedIn()) {
+  document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用预警功能</p>';
+} else {
+  loadFavorites();
+}
+
+function loadFavorites() {
+  API.get('/alerts/favorites').then(function(r) {
+    var items = r.data.items || [];
+    if (!items.length) {
+      document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无自选，请在<a href="diagnosis.html">诊股页面</a>搜索股票并点击「+ 自选」按钮添加。</p></div></div>';
+      return;
+    }
+    var codes = items.map(function(f){return f.stock_code;}).join(',');
+    API.get('/alerts/favorites-quotes?codes=' + encodeURIComponent(codes)).then(function(qr) {
+      var quotes = qr.data.quotes || {};
+      var html = '<div class="card"><div class="card-header">我的自选股（' + items.length + '只）</div><div class="card-body"><table class="data-table"><thead><tr><th>代码</th><th>名称</th><th>现价</th><th>涨跌幅</th><th>操作</th></tr></thead><tbody>';
+      items.forEach(function(f) {
+        var qd = quotes[f.stock_code] || {};
+        var pct = qd.pct_chg || 0;
+        var color = pct > 0 ? 'color:var(--danger)' : (pct < 0 ? 'color:var(--success)' : '');
+        html += '<tr>';
+        html += '<td><a href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '">' + f.stock_code + '</a></td>';
+        html += '<td>' + (qd.name || '--') + '</td>';
+        html += '<td>' + (qd.close || '--') + '</td>';
+        html += '<td style="' + color + '">' + (pct > 0 ? '+' : '') + pct + '%</td>';
+        html += '<td><button class="btn btn-sm btn-outline" onclick="removeFav(\'' + f.stock_code + '\')">删除</button></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div></div>';
+      document.getElementById('content').innerHTML = html;
+    }).catch(function() {
+      document.getElementById('content').innerHTML = '<p class="state-error">加载行情失败</p>';
+    });
+  }).catch(function() {
+    document.getElementById('content').innerHTML = '<p class="state-error">加载失败</p>';
+  });
+}
+
+function removeFav(code) {
+  API.del('/alerts/favorites/' + encodeURIComponent(code)).then(function() { loadFavorites(); });
+}
+</script>
+</body>
+</html>
