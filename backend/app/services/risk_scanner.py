@@ -1,15 +1,26 @@
-"""异动预警扫描引擎——遍历用户自选股，生成技术面异动通知。"""
+"""短线风险避雷扫描引擎——技术面 + 基本面双维度。
+
+扫描维度：
+  1. ST 退市风险 — stocks 表名称含 ST/*ST
+  2. 连板过热 — 近5日涨幅 > 30%（追高风险）
+  3. 断崖下跌 — 连续下跌5日以上且累计跌幅 > 15%
+  4. 高换手异动 — 单日成交额占流通市值比例异常
+  5. 缩量阴跌 — 成交量持续萎缩伴随价格下跌
+
+结果写入 risk_list_results 表，缓存到内存。
+"""
 
 from __future__ import annotations
 
 import logging
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
+from app.core.cache import cache_set
 from app.core.database import async_session
 from app.core.settings import get_settings
-from app.models.orm.models import AlertNotification
-from app.services import user_data
+from app.models.orm.models import RiskListResult
+from sqlalchemy import text as _text
 
 logger = logging.getLogger("risk")
 _settings = get_settings()
@@ -17,183 +28,244 @@ _settings = get_settings()
 
 class RiskScanner:
 
-    def _list_favorite_stocks(self) -> dict[int, list[dict]]:
-        """遍历所有用户的自选股，返回 {user_id: [{stock_code, stock_name}, ...]}"""
-        user_data_dir = _settings.user_data_dir
-        if not os.path.isdir(user_data_dir):
-            return {}
-
-        result: dict[int, list[dict]] = {}
-        for entry in os.scandir(user_data_dir):
-            if not entry.is_dir():
-                continue
-            try:
-                uid = int(entry.name)
-            except ValueError:
-                continue
-            stocks = user_data.get_favorites(uid)
-            if stocks:
-                result[uid] = stocks
-        return result
-
-    async def scan_all(self, trade_date: str = "") -> list[dict]:
-        """扫描所有用户自选股，检测技术面异动并写入通知表。"""
+    async def scan_risk_list(self, trade_date: str = "") -> list[dict]:
+        """短线风险扫描，返回风险条目列表并持久化。"""
         if not trade_date:
             trade_date = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
 
-        user_stocks = self._list_favorite_stocks()
-        if not user_stocks:
-            logger.info("No user favorite stocks to scan")
-            return []
-
-        all_codes = set()
-        for stocks in user_stocks.values():
-            for s in stocks:
-                all_codes.add(s["stock_code"])
-
-        if not all_codes:
-            return []
+        risks: list[dict] = []
 
         async with async_session() as session:
-            from sqlalchemy import text as _text
-            alerts = await self._detect_alerts(session, list(all_codes), _text, trade_date)
-            await self._save_notifications(session, alerts, user_stocks)
+            risks.extend(await self._scan_st_stocks(session))
+            risks.extend(await self._scan_surge_overheat(session, trade_date))
+            risks.extend(await self._scan_cliff_drop(session, trade_date))
+            risks.extend(await self._scan_high_turnover(session, trade_date))
+            risks.extend(await self._scan_volume_drain(session, trade_date))
+
+            # 写入 DB
+            await self._persist(session, risks, trade_date)
             await session.commit()
 
-        logger.info(f"Alert scan complete: {len(alerts)} alerts for {len(user_stocks)} users")
-        return alerts
+        # 缓存
+        await cache_set(f"risk:list:{trade_date}", risks, ttl=_settings.cache_offline_ttl)
+        logger.info(f"Risk scan complete: {len(risks)} risks for {trade_date}")
+        return risks
 
-    async def _detect_alerts(self, session, codes: list[str], _text, trade_date: str) -> list[dict]:
-        """对给定股票代码列表检测技术面异动信号。"""
-        alerts: list[dict] = []
+    # ── 扫描子维度 ──
 
-        # 最新两日日线数据（用于计算变化）
-        placeholders = ",".join([f":c{i}" for i in range(len(codes))])
-        params = {f"c{i}": c for i, c in enumerate(codes)}
-
-        # RSI 超买超卖检测
-        rsi_sql = f"""
-            SELECT d.ts_code, s.name, d.rsi_14, d.pct_chg, d.close
-            FROM stock_daily d
-            JOIN stocks s ON s.ts_code = d.ts_code
-            WHERE d.ts_code IN ({placeholders})
-            AND d.trade_date <= :trade_date
-            ORDER BY d.trade_date DESC
-        """
-        query_params = {**params, "trade_date": trade_date}
-
-        # 按股票收集最新一条日线记录
-        from collections import defaultdict
-        latest = {}
-        r = await session.execute(_text(rsi_sql), query_params)
+    async def _scan_st_stocks(self, session) -> list[dict]:
+        """ST / *ST 退市风险。"""
+        r = await session.execute(
+            _text("SELECT ts_code, name FROM stocks WHERE name LIKE '%ST%' OR name LIKE '%退%'")
+        )
+        results = []
         for row in r.fetchall():
-            code = row[0]
-            if code not in latest:
-                latest[code] = {
-                    "ts_code": code,
-                    "name": row[1],
-                    "rsi_14": row[2],
-                    "pct_chg": row[3],
-                    "close": float(row[4]) if row[4] else None,
-                }
+            results.append({
+                "risk_category": "st_risk",
+                "ts_code": row[0],
+                "stock_name": row[1],
+                "risk_detail": f"{row[1]} 为ST/*ST股票，存在退市风险，短线交易流动性差、涨跌幅受限",
+            })
+        return results
 
-        for code, d in latest.items():
-            rsi = d["rsi_14"]
-            if rsi is not None:
-                rsi = float(rsi)
-                if rsi >= 80:
-                    alerts.append({"ts_code": code, "stock_name": d["name"], "alert_type": "RSI超买",
-                                   "content": f"{d['name']}({code}) RSI={rsi:.1f}，进入超买区间，注意回调风险"})
-                elif rsi <= 20:
-                    alerts.append({"ts_code": code, "stock_name": d["name"], "alert_type": "RSI超卖",
-                                   "content": f"{d['name']}({code}) RSI={rsi:.1f}，进入超卖区间，可能存在反弹机会"})
-
-            pct = d["pct_chg"]
-            if pct is not None:
-                pct = float(pct)
-                if pct >= 9.5:
-                    alerts.append({"ts_code": code, "stock_name": d["name"], "alert_type": "涨幅异常",
-                                   "content": f"{d['name']}({code}) 单日涨幅 {pct:+.2f}%，注意追高风险"})
-                elif pct <= -9.5:
-                    alerts.append({"ts_code": code, "stock_name": d["name"], "alert_type": "跌幅异常",
-                                   "content": f"{d['name']}({code}) 单日跌幅 {pct:+.2f}%，注意止损或抄底机会"})
-
-        # MACD 金叉/死叉检测（比较最近两日）
-        macd_sql = f"""
-            SELECT d.ts_code, s.name, d.macd_dif, d.macd_dea, d.macd_bar
-            FROM stock_daily d
-            JOIN stocks s ON s.ts_code = d.ts_code
-            WHERE d.ts_code IN ({placeholders})
-            ORDER BY d.ts_code, d.trade_date DESC
+    async def _scan_surge_overheat(self, session, trade_date: str) -> list[dict]:
+        """连板过热：近5日累计涨幅 > 30% 且最新日涨幅 > 5%"""
+        import sqlite3
+        date_5d = _find_closest_trade_date(session, _date_offset(trade_date, -5))
+        sql = """
+            SELECT sub.ts_code, s.name,
+                   sub.close_now, sub.close_base, sub.cum_pct, sub.latest_pct
+            FROM (
+                SELECT ts_code, MAX(close_now) AS close_now, MAX(close_base) AS close_base,
+                       MAX(cum_pct) AS cum_pct, MAX(latest_pct) AS latest_pct
+                FROM (
+                    SELECT d0.ts_code,
+                           d0.close AS close_now,
+                           d5.close AS close_base,
+                           ROUND((d0.close - d5.close) / d5.close * 100, 2) AS cum_pct,
+                           ROUND(d0.pct_chg, 2) AS latest_pct
+                    FROM (SELECT ts_code, MAX(close) AS close, MAX(pct_chg) AS pct_chg
+                          FROM stock_daily WHERE trade_date = :trade_date GROUP BY ts_code) d0
+                    JOIN (SELECT ts_code, MAX(close) AS close
+                          FROM stock_daily WHERE trade_date = :date_5d GROUP BY ts_code) d5
+                      ON d5.ts_code = d0.ts_code
+                    WHERE d5.close > 0
+                ) inner_sub
+                GROUP BY ts_code
+            ) sub
+            JOIN stocks s ON s.ts_code = sub.ts_code
+            WHERE sub.cum_pct > 30 AND sub.latest_pct > 5
+            ORDER BY sub.cum_pct DESC
+            LIMIT 80
         """
-        r = await session.execute(_text(macd_sql), query_params)
-        rows_by_code: dict[str, list] = {}
+        r = await session.execute(_text(sql), {"trade_date": trade_date, "date_5d": date_5d})
+        results = []
         for row in r.fetchall():
-            rows_by_code.setdefault(row[0], []).append(row)
+            code, name, close_now, close_base, cum_pct, latest_pct = row
+            results.append({
+                "risk_category": "surge_overheat",
+                "ts_code": code,
+                "stock_name": name,
+                "risk_detail": f"近5日累计涨幅 {cum_pct}%（{close_base}→{close_now}），"
+                               f"今日涨幅 {latest_pct}%，追高风险极大",
+            })
+        return results
 
-        for code, rows in rows_by_code.items():
-            if len(rows) < 2:
-                continue
-            today_row, yesterday_row = rows[0], rows[1]
-            name = today_row[1]
-            today_dif, today_dea = (float(v) if v is not None else None for v in (today_row[2], today_row[3]))
-            yesterday_dif, yesterday_dea = (float(v) if v is not None else None for v in (yesterday_row[2], yesterday_row[3]))
-            if None in (today_dif, today_dea, yesterday_dif, yesterday_dea):
-                continue
-
-            # 金叉：DIF 上穿 DEA
-            if yesterday_dif <= yesterday_dea and today_dif > today_dea:
-                alerts.append({"ts_code": code, "stock_name": name, "alert_type": "MACD金叉",
-                               "content": f"{name}({code}) MACD金叉：DIF({today_dif:.3f})上穿DEA({today_dea:.3f})，短期看多信号"})
-            # 死叉：DIF 下穿 DEA
-            elif yesterday_dif >= yesterday_dea and today_dif < today_dea:
-                alerts.append({"ts_code": code, "stock_name": name, "alert_type": "MACD死叉",
-                               "content": f"{name}({code}) MACD死叉：DIF({today_dif:.3f})下穿DEA({today_dea:.3f})，短期看空信号"})
-
-        # 放量检测（成交量 > MA20 均量的 2 倍）
-        vol_sql = f"""
-            WITH ranked AS (
-                SELECT d.ts_code, s.name, d.vol, d.close, d.trade_date,
-                       AVG(d.vol) OVER (PARTITION BY d.ts_code ORDER BY d.trade_date ROWS BETWEEN 19 PRECEDING AND 1 PRECEDING) AS vol_ma20
-                FROM stock_daily d
-                JOIN stocks s ON s.ts_code = d.ts_code
-                WHERE d.ts_code IN ({placeholders})
-                AND d.trade_date <= :trade_date
+    async def _scan_cliff_drop(self, session, trade_date: str) -> list[dict]:
+        """断崖下跌：近期（最多4个交易日）中 ≥3 天收阴，累计跌幅 > 5%。"""
+        sql = """
+            WITH dedup AS (
+                SELECT ts_code, trade_date, MAX(close) AS close, MAX(pct_chg) AS pct_chg
+                FROM stock_daily
+                WHERE trade_date <= :trade_date
+                GROUP BY ts_code, trade_date
+            ),
+            recent AS (
+                SELECT ts_code, trade_date, close, pct_chg,
+                       ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn
+                FROM dedup
+            ),
+            agg AS (
+                SELECT ts_code,
+                       SUM(CASE WHEN pct_chg < 0 THEN 1 ELSE 0 END) AS down_days,
+                       COUNT(*) AS total_days,
+                       ROUND((MIN(CASE WHEN rn = 1 THEN close END) - MAX(CASE WHEN rn = 4 THEN close END))
+                             * 100.0 / NULLIF(MAX(CASE WHEN rn = 4 THEN close END), 0), 2) AS cum_pct
+                FROM recent
+                WHERE rn <= 4
+                GROUP BY ts_code
+                HAVING COUNT(*) >= 3
             )
-            SELECT ts_code, name, vol, vol_ma20, close, trade_date FROM ranked
-            WHERE trade_date = (SELECT MAX(trade_date) FROM ranked r2 WHERE r2.ts_code = ranked.ts_code)
+            SELECT a.ts_code, s.name, a.down_days, a.cum_pct
+            FROM agg a
+            JOIN stocks s ON s.ts_code = a.ts_code
+            WHERE a.down_days >= 3 AND a.cum_pct < -5
+            ORDER BY a.cum_pct ASC
+            LIMIT 50
         """
-        r = await session.execute(_text(vol_sql), query_params)
+        r = await session.execute(_text(sql), {"trade_date": trade_date})
+        results = []
         for row in r.fetchall():
-            code, name, vol, vol_ma20, close, td = row
-            if vol is not None and vol_ma20 is not None and float(vol_ma20) > 0:
-                ratio = float(vol) / float(vol_ma20)
-                if ratio >= 2.0:
-                    direction = "放量上涨" if float(close or 0) > 0 else "放量异动"
-                    alerts.append({"ts_code": code, "stock_name": name, "alert_type": "放量异动",
-                                   "content": f"{name}({code}) 成交量突增 {ratio:.1f}倍（量比{ratio:.1f}），{direction}，关注后续走势"})
+            code, name, down_days, cum_pct = row
+            results.append({
+                "risk_category": "cliff_drop",
+                "ts_code": code,
+                "stock_name": name,
+                "risk_detail": f"近7日 {down_days} 天收阴，累计跌幅 {cum_pct}%，"
+                               f"短线趋势恶化，注意止损",
+            })
+        return results
 
-        return alerts
+    async def _scan_high_turnover(self, session, trade_date: str) -> list[dict]:
+        """高换手异动：单日成交额异常放大(Top100 中 >10亿 且涨跌幅异常)。"""
+        sql = """
+            SELECT d.ts_code, s.name,
+                   ROUND(MAX(d.volume), 0) AS vol,
+                   ROUND(MAX(d.amount) / 10000.0, 2) AS amount_wan,
+                   ROUND(MAX(d.pct_chg), 2) AS pct_chg
+            FROM stock_daily d
+            JOIN stocks s ON s.ts_code = d.ts_code
+            WHERE d.trade_date = :trade_date
+              AND d.amount > 0
+            GROUP BY d.ts_code
+            ORDER BY amount_wan DESC
+            LIMIT 100
+        """
+        r = await session.execute(_text(sql), {"trade_date": trade_date})
+        results = []
+        for row in r.fetchall():
+            code, name, vol, amount_wan, pct_chg = row
+            if amount_wan and float(amount_wan) > 100000:  # 10亿+
+                results.append({
+                    "risk_category": "high_turnover",
+                    "ts_code": code,
+                    "stock_name": name,
+                    "risk_detail": f"单日成交额 {float(amount_wan):.0f} 万元，"
+                                   f"涨跌幅 {float(pct_chg):+.2f}%，注意主力出货风险",
+                })
+        return results[:50]
 
-    async def _save_notifications(self, session, alerts: list[dict], user_stocks: dict[int, list[dict]]):
-        """将异动通知按用户自选股归属写入 alert_notifications 表。"""
-        # 构建 code -> alert 映射，去重
-        code_alerts: dict[str, list[dict]] = {}
-        for a in alerts:
-            code_alerts.setdefault(a["ts_code"], []).append(a)
+    async def _scan_volume_drain(self, session, trade_date: str) -> list[dict]:
+        """缩量阴跌：近期成交量递减伴随价格持续下跌（至少3个交易日）。"""
+        sql = """
+            WITH dedup AS (
+                SELECT ts_code, trade_date, MAX(volume) AS vol, MAX(close) AS close,
+                       MAX(pct_chg) AS pct_chg
+                FROM stock_daily
+                WHERE trade_date <= :trade_date
+                GROUP BY ts_code, trade_date
+            ),
+            ranked AS (
+                SELECT ts_code, trade_date, vol, close, pct_chg,
+                       ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn
+                FROM dedup
+            ),
+            latest_vol AS (
+                SELECT ts_code,
+                       AVG(CASE WHEN rn <= 2 THEN vol END) AS vol_recent,
+                       AVG(CASE WHEN rn > 2 THEN vol END) AS vol_earlier,
+                       SUM(CASE WHEN rn <= 4 AND pct_chg < 0 THEN 1 ELSE 0 END) AS down_days,
+                       ROUND((MIN(CASE WHEN rn = 1 THEN close END) - MIN(CASE WHEN rn = 4 THEN close END))
+                             * 100.0 / NULLIF(MIN(CASE WHEN rn = 4 THEN close END), 0), 2) AS cum_pct
+                FROM ranked
+                WHERE rn <= 4
+                GROUP BY ts_code
+                HAVING COUNT(*) >= 3
+            )
+            SELECT l.ts_code, s.name, l.down_days, l.cum_pct,
+                   ROUND((l.vol_recent - l.vol_earlier) * 100.0 / NULLIF(l.vol_earlier, 0), 1) AS vol_chg_pct
+            FROM latest_vol l
+            JOIN stocks s ON s.ts_code = l.ts_code
+            WHERE l.down_days >= 2
+              AND l.cum_pct < -5
+              AND l.vol_recent < l.vol_earlier * 0.8
+            ORDER BY l.cum_pct ASC
+            LIMIT 50
+        """
+        r = await session.execute(_text(sql), {"trade_date": trade_date})
+        results = []
+        for row in r.fetchall():
+            code, name, down_days, cum_pct, vol_chg_pct = row
+            results.append({
+                "risk_category": "volume_drain",
+                "ts_code": code,
+                "stock_name": name,
+                "risk_detail": f"近5日 {down_days} 天收阴，累计跌幅 {cum_pct}%，"
+                               f"成交量萎缩 {vol_chg_pct}%，资金持续离场",
+            })
+        return results
 
-        now = datetime.now()
-        for uid, stocks in user_stocks.items():
-            user_codes = {s["stock_code"] for s in stocks}
-            for code in user_codes:
-                for alert in code_alerts.get(code, []):
-                    notif = AlertNotification(
-                        user_id=uid,
-                        ts_code=alert["ts_code"],
-                        stock_name=alert["stock_name"],
-                        alert_type=alert["alert_type"],
-                        content=alert["content"],
-                        is_read=0,
-                        created_at=now,
-                    )
-                    session.add(notif)
+    # ── 持久化 ──
+
+    async def _persist(self, session, risks: list[dict], trade_date: str):
+        await session.execute(_text("DELETE FROM risk_list_results WHERE calc_date = :d"), {"d": trade_date})
+        for r in risks:
+            session.add(RiskListResult(
+                calc_date=trade_date,
+                risk_category=r["risk_category"],
+                ts_code=r["ts_code"],
+                stock_name=r["stock_name"],
+                risk_detail=r["risk_detail"],
+            ))
+
+
+def _date_offset(date_str: str, days: int) -> str:
+    d = date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
+    return (d + timedelta(days=days)).strftime("%Y%m%d")
+
+
+def _find_closest_trade_date(session, target: str) -> str:
+    """在 stock_daily 中查找与目标日期最近的实际交易日（不超过 ±3 天）。"""
+    import sqlite3
+    # Use sync sqlite3 for simplicity in this helper
+    db_path = os.path.join(_settings.data_dir, "stock_analyzer.db")
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    for offset in range(-3, 4):
+        d = _date_offset(target, offset)
+        cur.execute("SELECT COUNT(*) FROM stock_daily WHERE trade_date = ? LIMIT 1", (d,))
+        if cur.fetchone()[0] > 0:
+            conn.close()
+            return d
+    conn.close()
+    return target

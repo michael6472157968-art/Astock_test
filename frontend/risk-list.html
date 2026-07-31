@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>风险避雷 - A股量化分析助手</title>
 <link rel="stylesheet" href="/css/app.css?v=2" />
+<style>
+.risk-cat-tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600; }
+.risk-st { background:#dc262620; color:var(--danger); }
+.risk-surge { background:#f9731620; color:#ea580c; }
+.risk-cliff { background:#e11d4820; color:var(--danger); }
+.risk-turnover { background:#f59e0b20; color:#b45309; }
+.risk-drain { background:#6b728020; color:var(--text-secondary); }
+.stat-warn { color:var(--danger); }
+.stat-num { font-size:2rem; font-weight:700; }
+</style>
 </head>
 <body>
 <header class="app-header">
@@ -14,29 +24,73 @@
 <div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
 <main class="main-content">
   <h2 class="page-title">短线风险避雷清单</h2>
-  <p class="page-desc">基于公开财务数据的异常筛查，可能未涵盖全部风险因素</p>
-  <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">⚠️ 风险清单基于公开信息自动筛选，未被列入清单不代表无风险</div>
+  <p class="page-desc">技术面 + 基本面双维度自动扫描，关注短线交易风险信号</p>
+  <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">⚠️ 风险清单基于公开数据自动筛选，未被列入清单不代表无风险。数据每日收盘后自动更新。</div>
+
+  <div class="stat-grid" style="margin-bottom:20px" id="statsRow"></div>
   <div id="content"><p class="state-loading">加载中...</p></div>
 </main>
-<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
+<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。数据来源于Tushare等第三方，本站不对数据准确性做保证。</footer>
 <script src="/js/app.js?v=2"></script>
 <script>
-API.get('/risk-list').then(function(r) {
-  var items = r.data.items || [];
-  if (!items.length) {
-    document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无风险数据。请先<a href="admin-trigger.html">运行数据同步</a>。</p></div></div>';
-    return;
-  }
-  var cats = { continuous_loss: '连续亏损', high_debt: '资不抵债', financial_anomaly: '财务异常' };
-  var html = '<div class="card"><div class="card-body"><table class="data-table"><thead><tr><th>代码</th><th>名称</th><th>风险类别</th><th>详情</th></tr></thead><tbody>';
-  items.forEach(function(r) {
-    html += '<tr><td>' + r.ts_code + '</td><td>' + r.stock_name + '</td><td>' + (cats[r.risk_category] || r.risk_category) + '</td><td>' + (r.risk_detail || '') + '</td></tr>';
-  });
-  html += '</tbody></table></div></div>';
-  document.getElementById('content').innerHTML = html;
+var _allItems = [];
+
+var CAT_CFG = {
+  st_risk:        { label: 'ST退市风险', cls: 'risk-st', icon: '🚫' },
+  surge_overheat: { label: '连板过热',   cls: 'risk-surge', icon: '🔥' },
+  cliff_drop:     { label: '断崖下跌',   cls: 'risk-cliff', icon: '📉' },
+  high_turnover:  { label: '高换手异动', cls: 'risk-turnover', icon: '⚡' },
+  volume_drain:   { label: '缩量阴跌',   cls: 'risk-drain', icon: '💧' },
+};
+
+API.get('/risk-list?page_size=500').then(function(r) {
+  _allItems = r.data.items || [];
+  render();
 }).catch(function(e) {
   document.getElementById('content').innerHTML = '<p class="state-error">加载失败: ' + (e.message || '') + '</p>';
 });
+
+function render() {
+  var content = document.getElementById('content');
+  if (!_allItems.length) {
+    content.innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无风险数据。请先在<a href="admin-trigger.html">管理后台</a>运行数据同步和风险扫描。</p></div></div>';
+    document.getElementById('statsRow').innerHTML = '';
+    return;
+  }
+
+  // 统计卡片
+  var cats = {};
+  _allItems.forEach(function(r) {
+    cats[r.risk_category] = (cats[r.risk_category] || 0) + 1;
+  });
+  var statsHtml = '';
+  Object.keys(CAT_CFG).forEach(function(k) {
+    var cnt = cats[k] || 0;
+    var cfg = CAT_CFG[k];
+    statsHtml += '<div class="stat-card"><div class="stat-label">' + cfg.icon + ' ' + cfg.label + '</div><div class="stat-num' + (cnt > 0 && k !== 'st_risk' ? ' stat-warn' : '') + '">' + cnt + '</div><div style="font-size:0.7rem;color:var(--text-secondary)">只股票</div></div>';
+  });
+  document.getElementById('statsRow').innerHTML = statsHtml;
+
+  // 按类别分组渲染
+  var html = '';
+  Object.keys(CAT_CFG).forEach(function(k) {
+    var items = _allItems.filter(function(r) { return r.risk_category === k; });
+    if (!items.length) return;
+    var cfg = CAT_CFG[k];
+    html += '<div class="card" style="margin-bottom:16px">';
+    html += '<div class="card-header">' + cfg.icon + ' ' + cfg.label + ' <span class="risk-cat-tag ' + cfg.cls + '">' + items.length + ' 只</span></div>';
+    html += '<div class="card-body"><table class="data-table"><thead><tr><th>代码</th><th>名称</th><th>风险详情</th></tr></thead><tbody>';
+    items.forEach(function(r) {
+      html += '<tr>';
+      html += '<td><a href="diagnosis.html?code=' + encodeURIComponent(r.ts_code) + '">' + r.ts_code + '</a></td>';
+      html += '<td>' + r.stock_name + '</td>';
+      html += '<td style="font-size:0.85rem">' + (r.risk_detail || '') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+  });
+  content.innerHTML = html;
+}
 </script>
 </body>
 </html>

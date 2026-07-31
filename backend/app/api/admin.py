@@ -45,7 +45,9 @@ async def admin_refresh_pool():
         result = await StockPoolEngine().compute_all()
         await SectorAnalysisEngine().compute_all()
         await MarketReviewEngine().compute()
-        await RiskScanner().scan_all()
+        scanner = RiskScanner()
+        await scanner.scan_all()
+        await scanner.scan_risk_list()
         return APIResponse(data={"message": "选股池+板块+复盘+风险已全部刷新"}, timestamp=int(time.time()))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -65,8 +67,10 @@ async def admin_refresh_review():
 async def admin_refresh_risk():
     try:
         from app.services.risk_scanner import RiskScanner
-        result = await RiskScanner().scan_all()
-        return APIResponse(data={"message": "风险清单已刷新", "result": str(result)}, timestamp=int(time.time()))
+        scanner = RiskScanner()
+        r1 = await scanner.scan_all()
+        r2 = await scanner.scan_risk_list()
+        return APIResponse(data={"message": "风险扫描已刷新", "alerts": str(r1), "risks": str(len(r2))}, timestamp=int(time.time()))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -107,7 +111,9 @@ async def admin_run_daily_batch():
         await StockPoolEngine().compute_all()
         await SectorAnalysisEngine().compute_all()
         await MarketReviewEngine().compute()
-        await RiskScanner().scan_all()
+        scanner2 = RiskScanner()
+        await scanner2.scan_all()
+        await scanner2.scan_risk_list()
 
         return APIResponse(
             data={"stock_synced": stock_count, "daily_synced": daily_count},

@@ -112,4 +112,6 @@ async def _run_all_engines():
     await StockPoolEngine().compute_all()
     await SectorAnalysisEngine().compute_all()
     await MarketReviewEngine().compute()
-    await RiskScanner().scan_all()
+    scanner = RiskScanner()
+    await scanner.scan_all()
+    await scanner.scan_risk_list()

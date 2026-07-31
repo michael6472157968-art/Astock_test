@@ -70,8 +70,52 @@ async def review_daily(date: str = ""):
 
 @risk_router.get("")
 async def risk_list(page: int = 1, page_size: int = 20):
+    """短线风险避雷清单——缓存优先，回退查DB。"""
+    from app.core.cache import cache_get
+    from app.core.database import async_session
+    from app.models.orm.models import RiskListResult
+    from sqlalchemy import select, func
+    from datetime import date, timedelta
+
+    today = date.today()
+    items = []
+    for offset in [0, 1, 2, 3]:
+        td = (today - timedelta(days=offset)).strftime("%Y%m%d")
+        cached = await cache_get(f"risk:list:{td}")
+        if cached:
+            items = cached
+            break
+
+    if not items:
+        # 缓存未命中，回退查 DB（最新 calc_date）
+        async with async_session() as session:
+            r = await session.execute(
+                select(func.max(RiskListResult.calc_date))
+            )
+            latest_date = r.scalar_one_or_none()
+            if latest_date:
+                r = await session.execute(
+                    select(RiskListResult).where(RiskListResult.calc_date == latest_date)
+                )
+                rows = r.scalars().all()
+                items = [
+                    {"risk_category": row.risk_category, "ts_code": row.ts_code,
+                     "stock_name": row.stock_name, "risk_detail": row.risk_detail}
+                    for row in rows
+                ]
+
+    if not items:
+        return APIResponse(
+            data={"total": 0, "page": page, "page_size": page_size, "items": []},
+            timestamp=int(time.time()),
+            ext_info={"note": "暂无风险扫描数据，请在管理后台执行数据同步后运行风险扫描"},
+        )
+
+    total = len(items)
+    start = (page - 1) * page_size
+    paged = items[start:start + page_size]
+
     return APIResponse(
-        data={"total": 0, "page": page, "page_size": page_size, "items": []},
+        data={"total": total, "page": page, "page_size": page_size, "items": paged},
         timestamp=int(time.time()),
-        ext_info={"note": "需要先运行数据同步"},
     )
