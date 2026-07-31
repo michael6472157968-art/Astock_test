@@ -29,33 +29,60 @@ if (!Session.loggedIn()) {
 function loadFavorites() {
   API.get('/alerts/favorites').then(function(r) {
     var items = r.data.items || [];
+    var html = '';
     if (!items.length) {
-      document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无自选，请在<a href="diagnosis.html">诊股页面</a>搜索股票并点击「+ 自选」按钮添加。</p></div></div>';
-      return;
-    }
-    var codes = items.map(function(f){return f.stock_code;}).join(',');
-    API.get('/alerts/favorites-quotes?codes=' + encodeURIComponent(codes)).then(function(qr) {
-      var quotes = qr.data.quotes || {};
-      var html = '<div class="card"><div class="card-header">我的自选股（' + items.length + '只）</div><div class="card-body"><table class="data-table"><thead><tr><th>代码</th><th>名称</th><th>现价</th><th>涨跌幅</th><th>操作</th></tr></thead><tbody>';
-      items.forEach(function(f) {
-        var qd = quotes[f.stock_code] || {};
-        var pct = qd.pct_chg || 0;
-        var color = pct > 0 ? 'color:var(--danger)' : (pct < 0 ? 'color:var(--success)' : '');
-        html += '<tr>';
-        html += '<td><a href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '">' + f.stock_code + '</a></td>';
-        html += '<td>' + (qd.name || '--') + '</td>';
-        html += '<td>' + (qd.close || '--') + '</td>';
-        html += '<td style="' + color + '">' + (pct > 0 ? '+' : '') + pct + '%</td>';
-        html += '<td><button class="btn btn-sm btn-outline" onclick="removeFav(\'' + f.stock_code + '\')">删除</button></td>';
-        html += '</tr>';
+      html += '<div class="card"><div class="card-body"><p class="state-empty">暂无自选，请在<a href="diagnosis.html">诊股页面</a>搜索股票并点击「+ 自选」按钮添加。</p></div></div>';
+    } else {
+      var codes = items.map(function(f){return f.stock_code;}).join(',');
+      API.get('/alerts/favorites-quotes?codes=' + encodeURIComponent(codes)).then(function(qr) {
+        var quotes = qr.data.quotes || {};
+        var tableHtml = '<div class="card"><div class="card-header">我的自选股（' + items.length + '只）</div><div class="card-body"><table class="data-table"><thead><tr><th>代码</th><th>名称</th><th>现价</th><th>涨跌幅</th><th>操作</th></tr></thead><tbody>';
+        items.forEach(function(f) {
+          var qd = quotes[f.stock_code] || {};
+          var pct = qd.pct_chg || 0;
+          var color = pct > 0 ? 'color:var(--danger)' : (pct < 0 ? 'color:var(--success)' : '');
+          tableHtml += '<tr>';
+          tableHtml += '<td><a href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '">' + f.stock_code + '</a></td>';
+          tableHtml += '<td>' + (qd.name || '--') + '</td>';
+          tableHtml += '<td>' + (qd.close || '--') + '</td>';
+          tableHtml += '<td style="' + color + '">' + (pct > 0 ? '+' : '') + pct + '%</td>';
+          tableHtml += '<td><button class="btn btn-sm btn-outline" onclick="removeFav(\'' + f.stock_code + '\')">删除</button></td>';
+          tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div></div>';
+        document.getElementById('content').innerHTML = tableHtml;
+      }).catch(function() {
+        document.getElementById('content').innerHTML = '<p class="state-error">加载行情失败</p>';
       });
-      html += '</tbody></table></div></div>';
-      document.getElementById('content').innerHTML = html;
-    }).catch(function() {
-      document.getElementById('content').innerHTML = '<p class="state-error">加载行情失败</p>';
-    });
+    }
+    loadNotifications();
   }).catch(function() {
     document.getElementById('content').innerHTML = '<p class="state-error">加载失败</p>';
+  });
+}
+
+function loadNotifications() {
+  API.get('/alerts/notifications').then(function(r) {
+    var notifs = r.data.items || [];
+    var container = document.getElementById('content');
+    if (!notifs.length) {
+      container.insertAdjacentHTML('beforeend', '<div class="card" style="margin-top:16px"><div class="card-header">异动预警通知</div><div class="card-body"><p class="state-empty">暂无预警通知。收盘后15:40系统将自动扫描生成异动预警。</p></div></div>');
+      return;
+    }
+    var html = '<div class="card" style="margin-top:16px"><div class="card-header">异动预警通知（' + notifs.length + '条）</div><div class="card-body"><table class="data-table"><thead><tr><th>股票</th><th>类型</th><th>内容</th><th>时间</th></tr></thead><tbody>';
+    notifs.forEach(function(n) {
+      var typeClass = '';
+      if (n.alert_type && n.alert_type.indexOf('金叉') >= 0 || n.alert_type && n.alert_type.indexOf('超卖') >= 0) typeClass = 'signal-bullish';
+      else if (n.alert_type && (n.alert_type.indexOf('死叉') >= 0 || n.alert_type.indexOf('超买') >= 0)) typeClass = 'signal-bearish';
+      html += '<tr>';
+      html += '<td><a href="diagnosis.html?code=' + encodeURIComponent(n.ts_code) + '">' + (n.stock_name || n.ts_code) + '</a></td>';
+      html += '<td><span class="signal-tag ' + typeClass + '">' + n.alert_type + '</span></td>';
+      html += '<td>' + n.content + '</td>';
+      html += '<td style="font-size:0.8rem;color:var(--text-secondary)">' + (n.created_at ? n.created_at.slice(0,16).replace('T',' ') : '') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+    container.insertAdjacentHTML('beforeend', html);
   });
 }
 

@@ -37,6 +37,7 @@ var urlParams = new URLSearchParams(window.location.search);
 var initCode = urlParams.get('code');
 if (initCode) { document.getElementById('codeInput').value = initCode; search(); }
 
+function escAttr(v) { return v.replace(/'/g, "\\'").replace(/"/g, "\\x22"); }
 function search() {
   var code = document.getElementById('codeInput').value.trim();
   if (!code) return;
@@ -45,7 +46,7 @@ function search() {
   API.get('/diagnosis/' + encodeURIComponent(code)).then(function(r) {
     var q = (r.data && r.data.quant) || {};
     var stockName = r.data.stock_name || code;
-    var html = '<h2 class="page-title" id="diagStockName">' + stockName + ' 量化诊股报告 <button class="btn btn-sm btn-primary" onclick="addFavorite(\'' + code + '\',\'' + stockName + '\')" id="favBtn">+ 自选</button></h2>';
+    var html = '<h2 class="page-title" id="diagStockName">' + stockName + ' 量化诊股报告 <button class="btn btn-sm btn-primary" onclick="addFavorite(\'' + escAttr(code) + '\',\'' + escAttr(stockName) + '\')" id="favBtn">+ 自选</button></h2>';
     html += '<div class="stat-grid" style="margin-bottom:20px">';
     html += '<div class="stat-card"><div class="stat-label">量化评分</div><div class="stat-value">' + (q.score || '--') + '</div></div>';
     html += '<div class="stat-card"><div class="stat-label">风险等级</div><div class="stat-value ' + riskClass(q.risk) + '">' + (q.risk || '--') + '</div></div>';
@@ -144,8 +145,12 @@ function renderKlineChart(data) {
     ma20.push(calcMA(ohlc, i, 20));
   }
   if (window._chartInstance) { window._chartInstance.dispose(); }
+  if (window._chartResizeHandler) { window.removeEventListener('resize', window._chartResizeHandler); }
   var chart = echarts.init(el);
   window._chartInstance = chart;
+  var _resizeHandler = function() { chart.resize(); };
+  window._chartResizeHandler = _resizeHandler;
+  window.addEventListener('resize', _resizeHandler);
   var upColor = '#ef232a', downColor = '#14b143';
   chart.setOption({
     toolbox: { feature: { dataZoom: { yAxisIndex: false }, restore: {} }, right: 10 },
@@ -186,9 +191,10 @@ function calcMA(data, i, n) {
 
 function addFavorite(code, name) {
   var btn = document.getElementById('favBtn');
+  if (!btn) return;
   btn.disabled = true; btn.textContent = '添加中...';
   API.post('/alerts/favorites', { stock_code: code }).then(function() {
-    btn.textContent = '✓ 已自选'; btn.className = 'btn btn-sm btn-outline';
+    btn.textContent = '✓ 已自选'; btn.className = 'btn btn-sm btn-outline'; btn.disabled = false;
   }).catch(function(e) {
     if (e.code === 401) { location.href = 'login.html'; return; }
     btn.textContent = e.message === '已在自选列表中' ? '✓ 已自选' : '+ 自选';
