@@ -26,26 +26,4 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(_run_alembic_migrations)
-
-    logger.info("SQLite tables created and migrations complete")
-
-
-def _run_alembic_migrations(connection=None) -> None:
-    """Run all pending Alembic migrations."""
-    from alembic import command
-    from alembic.config import Config as AlembicConfig
-    from alembic.runtime.migration import MigrationContext
-    from sqlalchemy import Connection as SyncConnection
-
-    import os as _os
-    alembic_ini = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "..", "alembic.ini")
-    alembic_ini = _os.path.normpath(alembic_ini)
-    if not _os.path.exists(alembic_ini):
-        logger.warning("alembic.ini not found, skipping migrations")
-        return
-    _cfg = AlembicConfig(alembic_ini)
-    _cfg.set_main_option("sqlalchemy.url", _settings.database_url)
-    command.upgrade(_cfg, "head")
-    logger.info("Alembic migrations complete")
+    logger.info("SQLite tables created (migrations run via entrypoint)")

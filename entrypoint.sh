@@ -19,4 +19,10 @@ EOF
     echo ".env generated from environment variables"
 fi
 
+# Run alembic migrations before starting the app
+if [ -f alembic.ini ]; then
+    echo "Running database migrations..."
+    alembic upgrade head || echo "Migration warning (non-fatal)"
+fi
+
 exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
