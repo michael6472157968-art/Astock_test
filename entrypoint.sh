@@ -1,9 +1,12 @@
 #!/bin/bash
 set -e
 
-# Generate .env from environment variables if not present.
-# pydantic-settings reads .env as a source; env vars alone work too,
-# but this ensures compatibility regardless of pydantic-settings version.
+# Auto-generate JWT secret if not provided
+if [ -z "$JWT_SECRET_KEY" ]; then
+    JWT_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+fi
+
+# Generate .env from environment variables if not present
 if [ ! -f .env ]; then
     cat > .env <<EOF
 TUSHARE_TOKEN=${TUSHARE_TOKEN}
