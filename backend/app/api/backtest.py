@@ -101,19 +101,25 @@ async def _load_daily_data(ts_code: str) -> list[dict]:
     if new_rows:
         async with async_session() as sess:
             for rd in new_rows:
-                sess.add(StockDaily(
-                    ts_code=rd.get("ts_code", ts_code),
-                    trade_date=str(rd.get("trade_date", "")),
-                    open=float(rd.get("open", 0) or 0),
-                    high=float(rd.get("high", 0) or 0),
-                    low=float(rd.get("low", 0) or 0),
-                    close=float(rd.get("close", 0) or 0),
-                    pre_close=float(rd.get("pre_close", 0) or 0),
-                    change=float(rd.get("change", 0) or 0),
-                    pct_chg=float(rd.get("pct_chg", 0) or 0),
-                    volume=float(rd.get("vol", 0) or 0),
-                    amount=float(rd.get("amount", 0) or 0),
-                ))
+                await sess.execute(text("""
+                    INSERT OR IGNORE INTO stock_daily
+                        (ts_code, trade_date, open, high, low, close, pre_close,
+                         change, pct_chg, volume, amount)
+                    VALUES (:ts_code, :trade_date, :open, :high, :low, :close,
+                            :pre_close, :change, :pct_chg, :volume, :amount)
+                """), {
+                    "ts_code": rd.get("ts_code", ts_code),
+                    "trade_date": str(rd.get("trade_date", "")),
+                    "open": float(rd.get("open", 0) or 0),
+                    "high": float(rd.get("high", 0) or 0),
+                    "low": float(rd.get("low", 0) or 0),
+                    "close": float(rd.get("close", 0) or 0),
+                    "pre_close": float(rd.get("pre_close", 0) or 0),
+                    "change": float(rd.get("change", 0) or 0),
+                    "pct_chg": float(rd.get("pct_chg", 0) or 0),
+                    "volume": float(rd.get("vol", 0) or 0),
+                    "amount": float(rd.get("amount", 0) or 0),
+                })
             await sess.commit()
 
     # 重新排序

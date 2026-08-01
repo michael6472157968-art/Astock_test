@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy import text
+
 from app.core.database import async_session
 from app.models.orm.models import Sector, SectorDaily, Stock, StockDaily, StockFinancial
 from app.services.tushare_client import (call_tushare, get_all_daily,
@@ -58,19 +60,25 @@ async def sync_daily_data(trade_date: str = "") -> int:
     async with async_session() as session:
         for row in rows:
             try:
-                await session.merge(StockDaily(
-                    ts_code=row.get("ts_code", ""),
-                    trade_date=str(row.get("trade_date", trade_date)),
-                    open=float(row.get("open", 0) or 0),
-                    high=float(row.get("high", 0) or 0),
-                    low=float(row.get("low", 0) or 0),
-                    close=float(row.get("close", 0) or 0),
-                    pre_close=float(row.get("pre_close", 0) or 0),
-                    change=float(row.get("change", 0) or 0),
-                    pct_chg=float(row.get("pct_chg", 0) or 0),
-                    volume=float(row.get("vol", 0) or 0),
-                    amount=float(row.get("amount", 0) or 0),
-                ))
+                await session.execute(text("""
+                    INSERT OR IGNORE INTO stock_daily
+                        (ts_code, trade_date, open, high, low, close, pre_close,
+                         change, pct_chg, volume, amount)
+                    VALUES (:ts_code, :trade_date, :open, :high, :low, :close,
+                            :pre_close, :change, :pct_chg, :volume, :amount)
+                """), {
+                    "ts_code": row.get("ts_code", ""),
+                    "trade_date": str(row.get("trade_date", trade_date)),
+                    "open": float(row.get("open", 0) or 0),
+                    "high": float(row.get("high", 0) or 0),
+                    "low": float(row.get("low", 0) or 0),
+                    "close": float(row.get("close", 0) or 0),
+                    "pre_close": float(row.get("pre_close", 0) or 0),
+                    "change": float(row.get("change", 0) or 0),
+                    "pct_chg": float(row.get("pct_chg", 0) or 0),
+                    "volume": float(row.get("vol", 0) or 0),
+                    "amount": float(row.get("amount", 0) or 0),
+                })
             except Exception:
                 continue
         await session.commit()
@@ -101,7 +109,12 @@ async def sync_sector_data() -> int:
 
 
 async def sync_financials() -> int:
-    """同步全市场最新财报——月度任务，需控制频率。"""
+    """同步全市场最新财报——月度任务，需控制频率。
+
+    注意：此函数暂未启用。stock_financials 表存在但无任何代码查询。
+    未来实现基本面分析（PE/PB/ROE）时，在 scheduler.py 中重新启用
+    _sync_financials_wrapper 任务并扩展此函数覆盖全市场 + 三张表。
+    """
     stocks = await get_stock_basic()
     if not stocks:
         logger.warning("No stock list available for financial sync")
@@ -128,3 +141,43 @@ async def sync_financials() -> int:
 
     logger.info(f"Financials synced: {count} stocks")
     return count
+
+
+async def sync_historical_daily(days: int = 60) -> dict:
+    """启动时按日期补拉历史全市场日线——填补 stock_daily 历史缺口。
+
+    每日期仅 1 次 Tushare API 调用（get_all_daily 覆盖全市场），
+    60 天 <= 60 次调用，远低于 180/min 限制，不会触发 asyncio.sleep 限频冻结。
+    已有数据的日期自动跳过。
+    """
+    from datetime import date, timedelta
+
+    end = date.today()
+    synced_dates = []
+    skipped = 0
+
+    for offset in range(days):
+        d = (end - timedelta(days=offset)).strftime("%Y%m%d")
+        async with async_session() as sess:
+            r = await sess.execute(
+                text("SELECT COUNT(*) FROM stock_daily WHERE trade_date = :d"),
+                {"d": d},
+            )
+            cnt = r.scalar()
+            if cnt and cnt > 0:
+                skipped += 1
+                continue
+
+        try:
+            count = await sync_daily_data(d)
+            if count > 0:
+                synced_dates.append(d)
+                logger.info(f"Historical sync: {d} ({count} stocks)")
+            else:
+                skipped += 1
+        except Exception as e:
+            logger.warning(f"Historical sync: {d} failed ({e})")
+            skipped += 1
+
+    logger.info(f"Historical sync complete: {len(synced_dates)} dates synced, {skipped} skipped")
+    return {"synced": synced_dates, "skipped": skipped, "total_dates": days}

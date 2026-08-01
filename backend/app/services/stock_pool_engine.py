@@ -29,16 +29,26 @@ class StockPoolEngine:
                 r = await sess.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
                 trade_date = r.scalar() or (date.today() - timedelta(days=1)).strftime("%Y%m%d")
 
-        async with async_session() as sess:
-            # 查找最近可用历史日期（全天 >= 100 只）
-            best_dates = await sess.execute(text(
-                "SELECT trade_date FROM stock_daily WHERE trade_date < :td "
-                "GROUP BY trade_date HAVING COUNT(*) >= 100 ORDER BY trade_date DESC"
-            ), {"td": trade_date})
-            date_list = [row[0] for row in best_dates.fetchall()]
+        base_dt = datetime.strptime(trade_date, "%Y%m%d")
+        target_td5 = (base_dt - timedelta(days=7)).strftime("%Y%m%d")
+        target_start20 = (base_dt - timedelta(days=30)).strftime("%Y%m%d")
 
-        td5 = date_list[0] if len(date_list) >= 1 else trade_date
-        start20 = date_list[min(len(date_list) - 1, 3)] if len(date_list) >= 4 else trade_date
+        async with async_session() as sess:
+            # 找 td5：target_td5 之前最近的交易日（>=50只股票）
+            r = await sess.execute(text(
+                "SELECT trade_date FROM stock_daily WHERE trade_date <= :t "
+                "GROUP BY trade_date HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 1"
+            ), {"t": target_td5})
+            td5_row = r.fetchone()
+            td5 = td5_row[0] if td5_row else trade_date
+
+            # 找 start20：target_start20 附近最近交易日
+            r = await sess.execute(text(
+                "SELECT trade_date FROM stock_daily WHERE trade_date <= :t AND trade_date >= :floor "
+                "GROUP BY trade_date HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 1"
+            ), {"t": target_start20, "floor": target_td5})
+            s20_row = r.fetchone()
+            start20 = s20_row[0] if s20_row else td5
 
         async with async_session() as session:
             hot = await self._hot_leader(session, trade_date)
@@ -66,7 +76,7 @@ class StockPoolEngine:
 
     async def _hot_leader(self, session, trade_date: str) -> list:
         sql = text("""
-            SELECT DISTINCT d.ts_code, s.name, d.close, d.pct_chg, d.volume
+            SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
             WHERE d.trade_date = :td
@@ -76,8 +86,6 @@ class StockPoolEngine:
               AND s.name NOT LIKE '%ST%'
               AND d.ts_code NOT LIKE '688%'
               AND d.ts_code NOT LIKE '920%'
-              AND d.ts_code NOT LIKE '300%'
-              AND d.ts_code NOT LIKE '301%'
             ORDER BY d.pct_chg DESC
             LIMIT :lim
         """)
@@ -86,7 +94,7 @@ class StockPoolEngine:
 
     async def _dip_ambush(self, session, trade_date: str, start20: str, exclude: set) -> list:
         sql = text("""
-            SELECT DISTINCT d.ts_code, s.name, d.close, d.pct_chg, d.volume, low20.min_low
+            SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume, low20.min_low
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (
@@ -102,8 +110,6 @@ class StockPoolEngine:
               AND s.name NOT LIKE '%ST%'
               AND d.ts_code NOT LIKE '688%'
               AND d.ts_code NOT LIKE '920%'
-              AND d.ts_code NOT LIKE '300%'
-              AND d.ts_code NOT LIKE '301%'
             ORDER BY d.volume ASC
             LIMIT :lim
         """)
@@ -111,8 +117,23 @@ class StockPoolEngine:
         return self._dedup_rows(r, "回调企稳", exclude)
 
     async def _oversold_rebound(self, session, trade_date: str, td5: str, exclude: set) -> list:
+        result = await self._try_oversold_rebound(session, trade_date, td5, exclude)
+        if len(result) < 10:
+            fallback_date = (datetime.strptime(trade_date, "%Y%m%d") - timedelta(days=5)).strftime("%Y%m%d")
+            r = await session.execute(text(
+                "SELECT trade_date FROM stock_daily WHERE trade_date <= :fb "
+                "GROUP BY trade_date HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 1"
+            ), {"fb": fallback_date})
+            fb_row = r.fetchone()
+            if fb_row and str(fb_row[0]) != str(td5):
+                fallback_result = await self._try_oversold_rebound(session, trade_date, str(fb_row[0]), exclude)
+                if len(fallback_result) > len(result):
+                    result = fallback_result
+        return result
+
+    async def _try_oversold_rebound(self, session, trade_date: str, td5: str, exclude: set) -> list:
         sql = text("""
-            SELECT DISTINCT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
+            SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d5.close) / NULLIF(d5.close, 0) * 100 AS chg5
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
@@ -124,8 +145,6 @@ class StockPoolEngine:
               AND s.name NOT LIKE '%ST%'
               AND d.ts_code NOT LIKE '688%'
               AND d.ts_code NOT LIKE '920%'
-              AND d.ts_code NOT LIKE '300%'
-              AND d.ts_code NOT LIKE '301%'
               AND (d.close - d5.close) / NULLIF(d5.close, 0) * 100 < -5
               AND d.pct_chg > -4
             ORDER BY (d.close - d5.close) / NULLIF(d5.close, 0) * 100 ASC
@@ -136,7 +155,7 @@ class StockPoolEngine:
 
     async def _steady_swing(self, session, trade_date: str, exclude: set) -> list:
         sql = text("""
-            SELECT DISTINCT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
+            SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    CAST(d.volume AS REAL) / NULLIF(avg.avg_vol, 0) AS vol_ratio
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
@@ -149,8 +168,6 @@ class StockPoolEngine:
               AND s.name NOT LIKE '%ST%'
               AND d.ts_code NOT LIKE '688%'
               AND d.ts_code NOT LIKE '920%'
-              AND d.ts_code NOT LIKE '300%'
-              AND d.ts_code NOT LIKE '301%'
               AND d.pct_chg BETWEEN 0.5 AND 6
               AND d.volume > 0
               AND d.close > d.open

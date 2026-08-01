@@ -45,13 +45,14 @@ def start_scheduler() -> None:
         name="盘中板块更新",
         replace_existing=True,
     )
-    _scheduler.add_job(
-        _sync_financials_wrapper,
-        CronTrigger(day=1, hour=5, minute=0, timezone=TZ),
-        id="sync_financials",
-        name="月度财报同步",
-        replace_existing=True,
-    )
+    # ── 月度财报同步已禁用（stock_financials 表暂无代码查询，未来基本面分析启用时取消注释）──
+    # _scheduler.add_job(
+    #     _sync_financials_wrapper,
+    #     CronTrigger(day=1, hour=5, minute=0, timezone=TZ),
+    #     id="sync_financials",
+    #     name="月度财报同步",
+    #     replace_existing=True,
+    # )
 
     _scheduler.start()
     logger.info(f"Scheduler started ({len(_scheduler.get_jobs())} jobs)")

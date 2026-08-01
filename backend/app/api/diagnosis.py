@@ -321,6 +321,39 @@ def _build_kline_data(df) -> dict:
 
 # ── API ──
 
+@router.get("/quota")
+async def get_quota(request: Request):
+    """返回当前用户每日诊股配额信息。GUEST 必须在 /{stock_code} 之前注册。"""
+    from app.core.security import get_current_user
+    from app.core.exceptions import AuthError
+
+    try:
+        user = get_current_user(request)
+        tier = user["tier"]
+        user_id = user["user_id"]
+    except AuthError:
+        tier = 0
+        user_id = 0
+
+    today = date.today().isoformat()
+
+    if tier >= 2:
+        return APIResponse(
+            data={"daily_limit": -1, "used": 0, "remaining": -1, "tier": tier},
+            timestamp=int(time.time()),
+        )
+
+    limit = 2 if tier == 0 else 3
+    count_key = f"diag_count:{user_id}:{today}"
+    count = (await cache_get(count_key)) or 0
+    remaining = max(0, limit - count)
+
+    return APIResponse(
+        data={"daily_limit": limit, "used": count, "remaining": remaining, "tier": tier},
+        timestamp=int(time.time()),
+    )
+
+
 @router.get("/{stock_code}")
 async def get_diagnosis(stock_code: str, request: Request):
     from app.core.security import get_current_user
@@ -335,17 +368,17 @@ async def get_diagnosis(stock_code: str, request: Request):
         tier = 0
         user_id = 0
 
-    # 免费用户每日诊股次数限制
-    if tier == 1:
+    # 免费用户每日诊股次数限制（游客2次，注册用户3次）
+    if tier <= 1:
         today = date.today().isoformat()
         count_key = f"diag_count:{user_id}:{today}"
         count = (await cache_get(count_key)) or 0
-        limit = 3
+        limit = 2 if tier == 0 else 3
         if count >= limit:
             return APIResponse(
                 code=403,
-                message=f"免费用户每日诊股 {limit} 次已达上限，请升级会员解锁无限次",
-                data={"daily_limit": limit, "used": count},
+                message=f"每日免费诊股 {limit} 次已达上限，请升级会员解锁无限次",
+                data={"daily_limit": limit, "used": count, "tier": tier},
                 timestamp=int(time.time()),
             ).model_dump()
         await cache_set(count_key, count + 1, ttl=86400)
