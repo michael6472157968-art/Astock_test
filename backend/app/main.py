@@ -36,6 +36,29 @@ async def lifespan(app: FastAPI):
     await init_db()
     start_scheduler()
 
+    # 启动时自动同步数据并运行离线计算
+    try:
+        from app.services.data_sync import sync_daily_data, sync_stock_basic
+        from app.services.stock_pool_engine import StockPoolEngine
+        from app.services.sector_analysis import SectorAnalysisEngine
+        from app.services.market_review import MarketReviewEngine
+        from app.services.risk_scanner import RiskScanner
+
+        logger.info("Auto-sync: stock basic...")
+        await sync_stock_basic()
+        logger.info("Auto-sync: daily data...")
+        await sync_daily_data()
+        logger.info("Auto-sync: computing engines...")
+        await StockPoolEngine().compute_all()
+        await SectorAnalysisEngine().compute_all()
+        await MarketReviewEngine().compute()
+        scanner = RiskScanner()
+        await scanner.scan_all()
+        await scanner.scan_risk_list()
+        logger.info("Auto-sync: all engines complete")
+    except Exception as e:
+        logger.warning(f"Auto-sync skipped (Tushare may be unavailable): {e}")
+
     yield
 
     shutdown_scheduler()

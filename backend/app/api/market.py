@@ -88,6 +88,7 @@ async def risk_list(page: int = 1, page_size: int = 20):
 
     if not items:
         # 缓存未命中，回退查 DB（最新 calc_date）
+        from app.core.cache import cache_set
         async with async_session() as session:
             r = await session.execute(
                 select(func.max(RiskListResult.calc_date))
@@ -103,6 +104,9 @@ async def risk_list(page: int = 1, page_size: int = 20):
                      "stock_name": row.stock_name, "risk_detail": row.risk_detail}
                     for row in rows
                 ]
+                # 回写缓存
+                if items:
+                    await cache_set(f"risk:list:{latest_date}", items, ttl=86400)
 
     if not items:
         return APIResponse(
