@@ -10,3 +10,4 @@ apscheduler==3.11.3
 tushare==1.4.29
 httpx==0.28.1
 python-multipart==0.0.32
+alembic==1.17.2
