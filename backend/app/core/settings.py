@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # ── CORS ──
     cors_origins: str = "*"
 
+    # ── 管理员种子账户（仅首次启动时创建，上线后建议删除此配置）──
+    admin_seed_phone: str = ""
+    admin_seed_password: str = ""
+
     # ── Tushare 频率限制（安全阈值 < 官方限额）──
     tushare_general_rate: int = 180   # 通用接口 200次/min → 安全180
     tushare_financial_rate: int = 70  # 财务接口 80次/min → 安全70

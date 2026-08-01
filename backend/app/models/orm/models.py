@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, Index
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -81,7 +81,10 @@ class StockDaily(Base):
     amount = Column(Float, default=0)
     created_at = Column(DateTime, default=_now)
 
-    __table_args__ = ()
+    __table_args__ = (
+        Index("ix_stock_daily_ts_code_trade_date_unique", "ts_code", "trade_date", unique=True),
+        Index("ix_stock_daily_trade_date", "trade_date"),
+    )
     __mapper_args__ = {"confirm_deleted_rows": False}
 
 

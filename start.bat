@@ -10,7 +10,7 @@ echo.
 cd /d "%~dp0backend"
 
 echo [1/2] 安装依赖...
-pip install -r requirements.txt -q
+pip install -r requirements-prod.txt -q
 
 echo [2/2] 启动服务...
 echo.

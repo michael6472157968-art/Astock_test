@@ -17,12 +17,7 @@
 </style>
 </head>
 <body>
-<header class="app-header">
-  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
-  <nav id="topNav" class="header-nav"></nav>
-</header>
-<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
-<main class="main-content">
+<main class="main-content" data-chrome>
   <h2 class="page-title">短线风险避雷清单</h2>
   <p class="page-desc">技术面 + 基本面双维度自动扫描，关注短线交易风险信号</p>
   <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">⚠️ 风险清单基于公开数据自动筛选，未被列入清单不代表无风险。数据每日收盘后自动更新。</div>
@@ -30,7 +25,6 @@
   <div class="stat-grid" style="margin-bottom:20px" id="statsRow"></div>
   <div id="content"><p class="state-loading">加载中...</p></div>
 </main>
-<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。数据来源于Tushare等第三方，本站不对数据准确性做保证。</footer>
 <script src="/js/app.js?v=5"></script>
 <script>
 var _allItems = [];

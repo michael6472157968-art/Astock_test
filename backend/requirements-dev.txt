@@ -1,0 +1,9 @@
+# 生产依赖 — 部署时安装
+# pip install -r requirements-prod.txt
+
+# 开发/测试依赖 — 仅在本地安装
+# pip install -r requirements-dev.txt
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==4.1.0
+alembic==1.17.2

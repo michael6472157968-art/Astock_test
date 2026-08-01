@@ -7,12 +7,7 @@
 <link rel="stylesheet" href="/css/app.css?v=3" />
 </head>
 <body>
-<header class="app-header">
-  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
-  <nav id="topNav" class="header-nav"></nav>
-</header>
-<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
-<main class="main-content">
+<main class="main-content" data-chrome>
   <h2 class="page-title">数据同步管理</h2>
   <p class="page-desc">手动触发 Tushare 数据同步与离线计算</p>
 
@@ -44,7 +39,6 @@
     <p id="riskMsg" style="margin-top:8px;font-size:0.8rem"></p>
   </div></div>
 </main>
-<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
 <script src="/js/app.js?v=5"></script>
 <script>
 function loadStats() {

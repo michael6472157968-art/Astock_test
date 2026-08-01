@@ -121,6 +121,33 @@ var Gate = {
   }
 };
 
+// 页面骨架渲染 — 注入 header / 免责横幅 / footer（所有带 data-chrome 的页面共用）
+function renderChrome() {
+  var main = document.querySelector('.main-content[data-chrome]');
+  if (!main) return;
+  var body = document.body;
+
+  var header = document.createElement('header');
+  header.className = 'app-header';
+  header.innerHTML = '<div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div><nav id="topNav" class="header-nav"></nav>';
+
+  var banner = document.createElement('div');
+  banner.className = 'risk-banner';
+  banner.textContent = '⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。';
+
+  var footer = document.createElement('footer');
+  footer.className = 'app-footer';
+  footer.textContent = '【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。数据来源于Tushare等第三方，本站不对数据准确性做保证。';
+
+  // 页面额外的专属 banner（在 <main> 内部，由各页面自行保留）
+  // header 插入到 body 最前，banner 紧随其后，footer 追加到最后
+  body.insertBefore(banner, body.firstChild);
+  body.insertBefore(header, body.firstChild);
+  body.appendChild(footer);
+
+  renderNav();
+}
+
 // 导航栏渲染（所有页面共用）
 function renderNav() {
   var nav = document.getElementById('topNav');
@@ -195,15 +222,22 @@ function doLogout() {
 
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
-  renderNav();
+  var page = window.location.pathname.split('/').pop() || 'index.html';
+
   // 需要登录的页面
   var needAuth = ['alerts.html', 'admin-trigger.html'];
-  var page = window.location.pathname.split('/').pop();
   if (needAuth.indexOf(page) >= 0 && !Session.loggedIn()) {
     window.location.href = 'login.html?redirect=' + encodeURIComponent(page);
   }
   // 管理员页面
   if (page === 'admin-trigger.html' && !Session.isAdmin()) {
     window.location.href = '/';
+  }
+
+  var main = document.querySelector('.main-content[data-chrome]');
+  if (main) {
+    renderChrome();
+  } else {
+    renderNav();
   }
 });

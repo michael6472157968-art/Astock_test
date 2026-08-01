@@ -15,12 +15,7 @@
 </style>
 </head>
 <body>
-<header class="app-header">
-  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
-  <nav id="topNav" class="header-nav"></nav>
-</header>
-<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
-<main class="main-content">
+<main class="main-content" data-chrome>
   <h2 class="page-title">个股深度诊股</h2>
   <p class="page-desc">短线 T+3 至 T+7 量化分析：技术指标 + 买卖信号 + 风险等级</p>
   <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">⚠️ 诊股报告基于量化模型自动生成，所有结论依托指标数值，不构成投资建议</div>
@@ -31,7 +26,6 @@
   </div>
   <div id="result"></div>
 </main>
-<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。数据来源于Tushare等第三方，本站不对数据准确性做保证。</footer>
 <script src="/js/app.js?v=5"></script>
 <script>
 var urlParams = new URLSearchParams(window.location.search);

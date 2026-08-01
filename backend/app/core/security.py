@@ -80,13 +80,17 @@ def require_tier(min_tier: int):
 
 
 async def seed_admin() -> None:
-    """确保管理员账户存在：15381971542 / tier=99。"""
+    """确保管理员账户存在——从环境变量读取凭证，未配置时跳过。"""
     from app.core.database import async_session
     from app.models.orm.models import User
     from sqlalchemy import select
 
-    admin_phone = "15381971542"
-    admin_password = "cbw523718"
+    admin_phone = _settings.admin_seed_phone
+    admin_password = _settings.admin_seed_password
+
+    if not admin_phone or not admin_password:
+        logger.debug("Admin seed skipped (ADMIN_SEED_PHONE/ADMIN_SEED_PASSWORD not set)")
+        return
 
     async with async_session() as session:
         result = await session.execute(select(User).where(User.phone == admin_phone))
