@@ -26,14 +26,18 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    _run_alembic_migrations()
+    async with engine.begin() as conn:
+        await conn.run_sync(_run_alembic_migrations)
+
     logger.info("SQLite tables created and migrations complete")
 
 
-def _run_alembic_migrations() -> None:
+def _run_alembic_migrations(connection=None) -> None:
     """Run all pending Alembic migrations."""
     from alembic import command
     from alembic.config import Config as AlembicConfig
+    from alembic.runtime.migration import MigrationContext
+    from sqlalchemy import Connection as SyncConnection
 
     import os as _os
     alembic_ini = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "..", "alembic.ini")
