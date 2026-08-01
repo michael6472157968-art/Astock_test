@@ -19,7 +19,7 @@ from app.services.backtest_engine import run as run_engine
 router = APIRouter(prefix="/api/v1/backtest", tags=["策略回测"])
 
 _MIN_DAYS = 20
-_MAX_DB_BACKFILL = 60  # Tushare 余额有限，最多补拉 60 天
+_MAX_DB_BACKFILL = 120  # 补拉半年日线，确保均线/RSI有足够历史
 
 
 class RunRequest(BaseModel):

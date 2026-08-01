@@ -138,10 +138,10 @@ async def admin_run_daily_batch():
 
 @router.post("/tasks/sync-historical")
 async def admin_sync_historical():
-    """手动触发 60 天历史日线数据同步（首次安装后可用）。"""
+    """手动触发 120 天历史日线数据同步（首次安装后可用）。"""
     try:
         from app.services.data_sync import sync_historical_daily
-        result = await sync_historical_daily(days=60)
+        result = await sync_historical_daily(days=120)
         return APIResponse(data=result, timestamp=int(time.time()))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

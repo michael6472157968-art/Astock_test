@@ -164,7 +164,7 @@ async def sync_historical_daily(days: int = 60) -> dict:
                 {"d": d},
             )
             cnt = r.scalar()
-            if cnt and cnt > 0:
+            if cnt and cnt >= 5000:  # 该日期已有全市场数据，跳过
                 skipped += 1
                 continue
 

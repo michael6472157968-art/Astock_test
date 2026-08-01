@@ -57,7 +57,7 @@ def _signals_volume_break(closes: list[float], volumes: list[float]) -> list[tup
     for i in range(20, len(closes)):
         if None in (ma20_vol[i], ma10[i]):
             continue
-        high20 = max(closes[i - 19 : i + 1])
+        high20 = max(closes[i - 20 : i])  # 前20日最高价（不含当日）
         if not in_pos and volumes[i] > 1.5 * ma20_vol[i] and closes[i] > high20:
             sigs.append((i, "buy"))
             in_pos = True
@@ -112,7 +112,7 @@ def run(daily_data: list[dict], strategy: str = "ma_cross", initial_cash: float 
         if action == "buy" and cash >= 100:
             buy_shares = int(cash * 0.98 / px / 100) * 100
             if buy_shares <= 0:
-                return
+                buy_shares = 10  # 高价股买不起1手时至少买10股模拟
             cost = round(buy_shares * px, 2)
             cash -= cost
             shares += buy_shares
@@ -172,12 +172,22 @@ def _metrics(equity: list[list], trades: list[dict], initial: float) -> dict:
     years = trading_days / 252
     ann_ret = round((final_eq / initial) ** (1 / years) * 100 - 100, 2) if years > 0 else 0
 
-    # 配对交易统计
+    # 配对交易统计（按截面配对：每笔buy匹配下一笔sell）
     winds, losses = [], []
-    for i in range(0, len(trades) - 1, 2):
-        if trades[i]["action"] == "buy" and trades[i + 1]["action"] == "sell":
-            pnl = trades[i + 1]["amount"] - trades[i]["amount"]
-            (winds if pnl > 0 else losses).append(abs(pnl))
+    used: set[int] = set()
+    for i, t in enumerate(trades):
+        if t["action"] != "buy":
+            continue
+        sell_idx = -1
+        for j in range(i + 1, len(trades)):
+            if trades[j]["action"] == "sell" and j not in used:
+                sell_idx = j
+                break
+        if sell_idx == -1:
+            continue
+        used.add(sell_idx)
+        pnl = trades[sell_idx]["amount"] - t["amount"]
+        (winds if pnl > 0 else losses).append(abs(pnl))
     n = len(winds) + len(losses)
     win_rate = round(len(winds) / n * 100, 1) if n else 0
     avg_win = round(sum(winds) / len(winds), 2) if winds else 0
