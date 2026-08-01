@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>策略回测 - A股量化分析助手</title>
 <link rel="stylesheet" href="/css/app.css?v=2" />
+<style>
+.metrics-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.metric-card { flex: 1 1 calc(25% - 9px); min-width: 130px; text-align: center; padding: 14px 8px; background: var(--bg-secondary); border-radius: 8px; }
+.metric-card .val { font-size: 1.3rem; font-weight: 700; }
+.metric-card .label { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; }
+.val.pos { color: var(--danger); }  .val.neg { color: var(--success); }
+#chartContainer { width: 100%; height: 440px; margin-bottom: 12px; }
+</style>
 </head>
 <body>
 <header class="app-header">
@@ -14,8 +22,7 @@
 <div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
 <main class="main-content">
   <h2 class="page-title">可视化策略回测</h2>
-  <p class="page-desc">历史数据模拟回测，不代表未来实际收益</p>
-  <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">⚠️ 回测结果基于历史数据模拟，过往往胜率不构成对未来业绩的保证</div>
+  <p class="page-desc">历史数据模拟回测，过往胜率不代表未来收益</p>
 
   <div class="card"><div class="card-header">回测参数</div><div class="card-body">
     <div class="form-group"><label class="form-label">股票代码</label><input class="form-input" id="codeInput" value="000001.SZ" style="max-width:240px" /></div>
@@ -27,30 +34,95 @@
   <div id="result" style="margin-top:16px"></div>
 </main>
 <footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
+<script src="/lib/echarts.js"></script>
 <script src="/js/app.js?v=5"></script>
 <script>
 (function() {
   if (!Gate.checkPage(2)) return;
-  // 非会员显示升级提示但不禁用页面
-  if (!Session.isVip()) {
-    Gate.showUpgradeBanner();
-  }
+  if (!Session.isVip()) Gate.showUpgradeBanner();
 })();
 
 function run() {
-  var code = document.getElementById('codeInput').value;
+  var code = document.getElementById('codeInput').value.trim();
   var strategy = document.getElementById('strategy').value;
   var btn = document.querySelector('.btn-primary');
   var msg = document.getElementById('msg');
+  if (!code) { msg.textContent = '请输入股票代码'; return; }
   btn.disabled = true; btn.textContent = '回测中...'; msg.textContent = '';
 
-  API.post('/backtest/run', { stock_code: code, strategy: strategy }).then(function(r) {
-    msg.textContent = '任务已提交';
-    document.getElementById('result').innerHTML = '<div class="card"><div class="card-header">回测结果</div><div class="card-body"><pre style="font-size:0.8rem">' + JSON.stringify(r.data, null, 2) + '</pre></div></div>';
+  API.post('/backtest/run', {stock_code: code, strategy: strategy}).then(function(r) {
+    if (r.code === 400) { msg.textContent = r.message; msg.style.color = 'var(--danger)'; return; }
+    msg.textContent = '回测完成';
+    msg.style.color = 'var(--text-secondary)';
+    render(r.data);
   }).catch(function(e) {
-    msg.textContent = '提交失败: ' + (e.message || '');
+    msg.textContent = '回测失败: ' + (e.message || '');
     msg.style.color = 'var(--danger)';
   }).finally(function() { btn.disabled = false; btn.textContent = '开始回测'; });
+}
+
+function render(d) {
+  var m = d.metrics;
+  var t = d.trades;
+
+  function card(label, val, css) {
+    return '<div class="metric-card"><div class="val ' + css + '">' + val + '</div><div class="label">' + label + '</div></div>';
+  }
+
+  var html = '<div class="metrics-grid">';
+  html += card('累计收益', (m.total_return>=0?'+':'')+m.total_return+'%', m.total_return>=0?'pos':'neg');
+  html += card('年化收益', (m.annual_return>=0?'+':'')+m.annual_return+'%', m.annual_return>=0?'pos':'neg');
+  html += card('胜率', m.win_rate+'%', m.win_rate>=50?'pos':'');
+  html += card('盈亏比', m.profit_loss_ratio, m.profit_loss_ratio>=1?'pos':'');
+  html += card('最大回撤', m.max_drawdown+'%', 'neg');
+  html += card('夏普比率', m.sharpe_ratio, m.sharpe_ratio>=1?'pos':'');
+  html += card('交易次数', m.total_trades, '');
+  html += card('盈利/亏损', m.winning_trades+'/'+m.losing_trades, 'pos');
+  html += '</div>';
+
+  html += '<div class="card"><div class="card-header">权益曲线 & 买卖信号</div><div class="card-body"><div id="chartContainer"></div></div></div>';
+
+  html += '<div class="card" style="margin-top:16px"><div class="card-header">交易明细 (' + t.length + '笔)</div><div class="card-body"><table class="data-table"><thead><tr><th>日期</th><th>方向</th><th>价格</th><th>股数</th><th>金额</th><th>原因</th></tr></thead><tbody>';
+  for (var i = 0; i < t.length; i++) {
+    var act = t[i].action === 'buy' ? '买入' : '卖出';
+    var cls = t[i].action === 'buy' ? 'pos' : 'neg';
+    html += '<tr><td>'+t[i].date+'</td><td class="val '+cls+'">'+act+'</td><td>'+t[i].price+'</td><td>'+t[i].shares.toLocaleString()+'</td><td>'+t[i].amount.toLocaleString()+'</td><td>'+t[i].reason+'</td></tr>';
+  }
+  html += '</tbody></table></div></div>';
+
+  document.getElementById('result').innerHTML = html;
+  initChart(d);
+}
+
+function initChart(d) {
+  var el = document.getElementById('chartContainer');
+  if (!el) return;
+  if (window._bc) { window._bc.dispose(); }
+
+  var chart = echarts.init(el);
+  window._bc = chart;
+
+  var dates = d.equity_curve.map(function(e){return e[0];});
+  var eq = d.equity_curve.map(function(e){return e[1];});
+
+  var buys = (d.buy_signals||[]).map(function(s){return {coord:s, value:'B', itemStyle:{color:'#ef232a'}, symbol:'arrow', symbolSize:12, symbolRotate:0};});
+  var sells = (d.sell_signals||[]).map(function(s){return {coord:s, value:'S', itemStyle:{color:'#14b143'}, symbol:'arrow', symbolSize:12, symbolRotate:180};});
+
+  chart.setOption({
+    tooltip: {trigger:'axis'},
+    grid: {left:'10%', right:'4%', top:12, bottom:24},
+    xAxis: {type:'category', data:dates, axisLabel:{fontSize:8, color:'#8392A5', interval:'auto'}},
+    yAxis: {type:'value', axisLabel:{color:'#8392A5', formatter:function(v){return (v/10000).toFixed(1)+'万';}}, splitLine:{lineStyle:{color:'#8392A520'}}},
+    series: [{
+      name:'权益', type:'line', data:eq, smooth:true,
+      lineStyle:{color:'#4878ff', width:2},
+      areaStyle:{color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(72,120,255,0.15)'},{offset:1,color:'rgba(72,120,255,0.02)'}])},
+      symbol:'none',
+      markPoint:{data:buys.concat(sells), label:{fontSize:10,fontWeight:700}}
+    }]
+  });
+
+  window.addEventListener('resize', function(){ chart.resize(); });
 }
 </script>
 </body>

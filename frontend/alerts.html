@@ -29,9 +29,9 @@ if (!Session.loggedIn()) {
 function loadFavorites() {
   API.get('/alerts/favorites').then(function(r) {
     var items = r.data.items || [];
-    var html = '';
     if (!items.length) {
-      html += '<div class="card"><div class="card-body"><p class="state-empty">暂无自选，请在<a href="diagnosis.html">诊股页面</a>搜索股票并点击「+ 自选」按钮添加。</p></div></div>';
+      document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无自选，请在<a href="diagnosis.html">诊股页面</a>搜索股票并点击「+ 自选」按钮添加。</p></div></div>';
+      loadNotifications();
     } else {
       var codes = items.map(function(f){return f.stock_code;}).join(',');
       API.get('/alerts/favorites-quotes?codes=' + encodeURIComponent(codes)).then(function(qr) {
@@ -51,11 +51,11 @@ function loadFavorites() {
         });
         tableHtml += '</tbody></table></div></div>';
         document.getElementById('content').innerHTML = tableHtml;
+        loadNotifications();
       }).catch(function() {
         document.getElementById('content').innerHTML = '<p class="state-error">加载行情失败</p>';
       });
     }
-    loadNotifications();
   }).catch(function() {
     document.getElementById('content').innerHTML = '<p class="state-error">加载失败</p>';
   });
