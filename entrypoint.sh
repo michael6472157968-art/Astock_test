@@ -1,13 +1,18 @@
 #!/bin/bash
 set -e
 
-# Auto-generate JWT secret if not provided
-if [ -z "$JWT_SECRET_KEY" ]; then
-    JWT_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-fi
+PERSIST_ENV="/app/data/.env"
 
-# Generate .env from environment variables if not present
-if [ ! -f .env ]; then
+# Restore persisted .env from volume, or generate a new one
+if [ -f "$PERSIST_ENV" ]; then
+    cp "$PERSIST_ENV" .env
+    echo ".env restored from persistent volume"
+else
+    # Auto-generate JWT secret if not provided via env
+    if [ -z "$JWT_SECRET_KEY" ]; then
+        JWT_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+    fi
+
     cat > .env <<EOF
 TUSHARE_TOKEN=${TUSHARE_TOKEN}
 JWT_SECRET_KEY=${JWT_SECRET_KEY}
@@ -16,7 +21,8 @@ CORS_ORIGINS=${CORS_ORIGINS:-*}
 ADMIN_SEED_PHONE=${ADMIN_SEED_PHONE:-}
 ADMIN_SEED_PASSWORD=${ADMIN_SEED_PASSWORD:-}
 EOF
-    echo ".env generated from environment variables"
+    cp .env "$PERSIST_ENV"
+    echo ".env generated and persisted to volume"
 fi
 
 # Run alembic migrations before starting the app
