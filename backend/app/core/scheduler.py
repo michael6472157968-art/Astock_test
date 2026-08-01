@@ -113,5 +113,4 @@ async def _run_all_engines():
     await SectorAnalysisEngine().compute_all()
     await MarketReviewEngine().compute()
     scanner = RiskScanner()
-    await scanner.scan_all()
     await scanner.scan_risk_list()

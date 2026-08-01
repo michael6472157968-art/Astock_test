@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>板块分析 - A股量化分析助手</title>
-<link rel="stylesheet" href="/css/app.css?v=2" />
+<link rel="stylesheet" href="/css/app.css?v=3" />
 <style>
 .heat-bar { display:inline-block; height:16px; border-radius:3px; background:var(--accent); vertical-align:middle; margin-right:6px; }
 </style>
@@ -21,7 +21,7 @@
   <div id="content"><p class="state-loading">加载中...</p></div>
 </main>
 <footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
-<script src="/js/app.js?v=2"></script>
+<script src="/js/app.js?v=5"></script>
 <script>
 API.get('/sector-rotation/ranking').then(function(r) {
   var sectors = r.data.sectors || [];

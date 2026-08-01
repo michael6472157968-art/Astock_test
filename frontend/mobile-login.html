@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>移动端登录 - A股量化分析助手</title>
+<link rel="stylesheet" href="/css/app.css?v=3" />
+<style>
+  .code-input { width: 100%; padding: 16px 20px; font-size: 1.8rem; text-align: center; letter-spacing: 12px; font-family: "Courier New", monospace; font-weight: 700; border: 2px solid var(--border); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); }
+  .code-input:focus { outline: none; border-color: var(--accent); }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+</header>
+<div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
+<main class="main-content">
+  <div style="max-width:380px;margin:60px auto">
+    <div class="card"><div class="card-header">移动端连接登录</div><div class="card-body">
+      <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;text-align:center">请在电脑端个人中心生成连接码，然后在此输入</p>
+      <div class="form-group">
+        <input class="code-input" id="token" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="off" />
+      </div>
+      <div id="error" class="form-error" style="display:none;text-align:center"></div>
+      <button class="btn btn-primary btn-block" onclick="doMobileLogin()" style="margin-top:8px;height:48px;font-size:1rem">登录</button>
+    </div></div>
+  </div>
+</main>
+<footer class="app-footer">【风险提示】本平台所提供市场数据、技术分析、选股结果、诊股报告等内容仅供学习研究参考，不构成投资建议。投资者据此操作，风险自担。</footer>
+<script src="/js/app.js?v=5"></script>
+<script>
+function doMobileLogin() {
+  var token = document.getElementById('token').value.trim();
+  var errEl = document.getElementById('error');
+  if (token.length !== 6) { errEl.textContent = '请输入6位连接码'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+  var btn = document.querySelector('.btn-primary');
+  btn.disabled = true; btn.textContent = '验证中...';
+  API.post('/user/mobile-login', { token: token }).then(function(r) {
+    Session.save(r.data);
+    window.location.href = '/';
+  }).catch(function(e) {
+    errEl.textContent = e.message || '连接码无效或已过期';
+    errEl.style.display = 'block';
+  }).finally(function() { btn.disabled = false; btn.textContent = '登录'; });
+}
+
+// 自动粘贴 token
+var params = new URLSearchParams(window.location.search);
+var tokenParam = params.get('token');
+if (tokenParam) {
+  document.getElementById('token').value = tokenParam;
+}
+</script>
+</body>
+</html>

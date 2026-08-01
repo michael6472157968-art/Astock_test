@@ -17,6 +17,9 @@ logger = logging.getLogger("sync")
 
 async def sync_stock_basic() -> int:
     """同步股票基础信息。返回新增/更新数量。"""
+    from app.core.cache import cache_delete
+    await cache_delete("stock:basic:all")  # 清除永久缓存，强制从Tushare拉取最新
+
     stocks = await get_stock_basic()
     if not stocks:
         return 0

@@ -34,6 +34,11 @@ async def lifespan(app: FastAPI):
         logger.info(f"Tushare token: ...{_settings.tushare_token[-8:]}")
 
     await init_db()
+
+    # 种子管理员账户
+    from app.core.security import seed_admin
+    await seed_admin()
+
     start_scheduler()
 
     # 启动时自动同步数据并运行离线计算
@@ -53,7 +58,6 @@ async def lifespan(app: FastAPI):
         await SectorAnalysisEngine().compute_all()
         await MarketReviewEngine().compute()
         scanner = RiskScanner()
-        await scanner.scan_all()
         await scanner.scan_risk_list()
         logger.info("Auto-sync: all engines complete")
     except Exception as e:
@@ -92,6 +96,8 @@ def create_app() -> FastAPI:
     from app.api.market import review_router, risk_router, sector_router
     from app.api.backtest import router as backtest_router
     from app.api.admin import router as admin_router
+    from app.api.membership import router as membership_router
+    from app.api.user import router as user_router
 
     app.include_router(auth_router)
     app.include_router(stock_pool_router)
@@ -101,8 +107,9 @@ def create_app() -> FastAPI:
     app.include_router(review_router)
     app.include_router(risk_router)
     app.include_router(backtest_router)
-    if _settings.debug:
-        app.include_router(admin_router)
+    app.include_router(admin_router)
+    app.include_router(membership_router)
+    app.include_router(user_router)
 
     @app.get("/api/v1/health")
     async def health():

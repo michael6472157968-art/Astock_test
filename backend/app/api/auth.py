@@ -80,14 +80,22 @@ async def login(req: LoginRequest):
         access = create_access_token(user.id, user.tier)
         refresh = create_refresh_token(user.id, user.tier)
 
+        from datetime import datetime
+        remain = None
+        if user.member_expire:
+            remain = max(0, (user.member_expire - datetime.now()).days)
+
         return APIResponse(
             data={
                 "user_id": user.id,
                 "phone": _mask_phone(user.phone),
                 "tier": user.tier,
+                "member_type": _tier_to_label(user.tier),
+                "member_name": _label_name(user.tier),
+                "remain_days": remain,
+                "member_expire": user.member_expire.isoformat() if user.member_expire else None,
                 "access_token": access,
                 "refresh_token": refresh,
-                "member_expire": user.member_expire.isoformat() if user.member_expire else None,
             },
             timestamp=int(time.time()),
         )
@@ -125,11 +133,19 @@ async def profile(request: Request):
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
 
+        from datetime import datetime
+        remain = None
+        if user.member_expire:
+            remain = max(0, (user.member_expire - datetime.now()).days)
+
         return APIResponse(
             data={
                 "user_id": user.id,
                 "phone": _mask_phone(user.phone),
                 "tier": user.tier,
+                "member_type": _tier_to_label(user.tier),
+                "member_name": _label_name(user.tier),
+                "remain_days": remain,
                 "member_expire": user.member_expire.isoformat() if user.member_expire else None,
                 "created_at": user.created_at.isoformat() if user.created_at else None,
             },
@@ -141,6 +157,14 @@ def _mask_phone(phone: str) -> str:
     if len(phone) == 11:
         return f"{phone[:3]}****{phone[7:]}"
     return phone
+
+
+def _tier_to_label(tier: int) -> str:
+    return {0: "free", 1: "free", 2: "monthly", 3: "annual", 99: "admin"}.get(tier, "free")
+
+
+def _label_name(tier: int) -> str:
+    return {0: "游客", 1: "注册用户", 2: "月度VIP", 3: "年度VIP", 99: "管理员"}.get(tier, "免费用户")
 
 
 def _get_user_from_request(request: Request) -> tuple[int | None, int]:

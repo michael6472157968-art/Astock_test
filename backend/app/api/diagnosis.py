@@ -323,7 +323,33 @@ def _build_kline_data(df) -> dict:
 
 @router.get("/{stock_code}")
 async def get_diagnosis(stock_code: str, request: Request):
-    tier = _get_tier(request)
+    from app.core.security import get_current_user
+    from app.core.exceptions import AuthError, TierDeniedError
+
+    # 尝试获取用户（不强制登录）
+    try:
+        user = get_current_user(request)
+        tier = user["tier"]
+        user_id = user["user_id"]
+    except AuthError:
+        tier = 0
+        user_id = 0
+
+    # 免费用户每日诊股次数限制
+    if tier == 1:
+        today = date.today().isoformat()
+        count_key = f"diag_count:{user_id}:{today}"
+        count = (await cache_get(count_key)) or 0
+        limit = 3
+        if count >= limit:
+            return APIResponse(
+                code=403,
+                message=f"免费用户每日诊股 {limit} 次已达上限，请升级会员解锁无限次",
+                data={"daily_limit": limit, "used": count},
+                timestamp=int(time.time()),
+            ).model_dump()
+        await cache_set(count_key, count + 1, ttl=86400)
+
     cache_key = f"diag_v2:{stock_code}"
     cached = await cache_get(cache_key)
     if cached:

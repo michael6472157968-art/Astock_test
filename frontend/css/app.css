@@ -248,9 +248,94 @@ body {
 /* ── Charts ── */
 .chart-container { width: 100%; height: 360px; }
 
+/* ── VIP Badge ── */
+.vip-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 7px; border-radius: 4px;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.3px;
+  vertical-align: middle;
+}
+.vip-badge.monthly { background: linear-gradient(135deg, #f59e0b, #fbbf24); color: #78350f; }
+.vip-badge.annual { background: linear-gradient(135deg, #7c3aed, #a78bfa); color: #fff; }
+.vip-badge.admin { background: linear-gradient(135deg, #dc2626, #ef4444); color: #fff; }
+
+/* ── 导航用户区 ── */
+.nav-user-area { position: relative; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.nav-user-area:hover { background: var(--bg-secondary); }
+.user-name { font-size: 0.82rem; color: var(--text-primary); }
+.nav-dropdown-arrow { font-size: 0.6rem; color: var(--text-secondary); margin-left: -2px; }
+.nav-dropdown {
+  position: absolute; top: 100%; right: 0; min-width: 160px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  display: none; z-index: 200; padding: 4px 0; margin-top: 4px;
+}
+.nav-dropdown.show { display: block; }
+.nav-dropdown a, .nav-dropdown button {
+  display: block; width: 100%; padding: 10px 16px; text-align: left;
+  border: none; background: none; color: var(--text-primary);
+  font-size: 0.85rem; cursor: pointer; text-decoration: none;
+}
+.nav-dropdown a:hover, .nav-dropdown button:hover { background: var(--bg-secondary); }
+
+/* ── 会员卡 ── */
+.membership-card {
+  border-radius: 12px; padding: 24px; color: #fff; margin-bottom: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.membership-card.free { background: linear-gradient(135deg, #64748b, #94a3b8); }
+.membership-card.monthly { background: linear-gradient(135deg, #d97706, #f59e0b); }
+.membership-card.annual { background: linear-gradient(135deg, #5b21b6, #7c3aed); }
+.membership-card.admin { background: linear-gradient(135deg, #b91c1c, #dc2626); }
+.membership-card .mc-title { font-size: 0.8rem; opacity: 0.85; }
+.membership-card .mc-grade { font-size: 1.4rem; font-weight: 700; }
+.membership-card .mc-remain { font-size: 0.9rem; }
+.membership-card .mc-expire { font-size: 0.78rem; opacity: 0.8; }
+
+/* ── 升级提示 ── */
+.upgrade-banner {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff; text-align: center; padding: 10px 16px;
+  font-size: 0.85rem; font-weight: 500; cursor: pointer;
+  border-radius: 8px; margin-bottom: 16px;
+}
+
+/* ── 门禁区 ── */
+.gate-lock {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 40px 20px; color: var(--text-secondary); gap: 12px;
+  text-align: center;
+}
+.gate-lock .lock-icon { font-size: 2.5rem; }
+
+/* ── 二维码展示 ── */
+.qr-box {
+  background: #fff; padding: 20px; border-radius: 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.qr-box .token-code {
+  font-size: 2.2rem; font-weight: 700; letter-spacing: 10px;
+  color: #1e293b; font-family: "Courier New", monospace;
+}
+
+/* ── Toast 提示 ── */
+.toast {
+  position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+  padding: 12px 24px; border-radius: 8px; color: #fff;
+  font-size: 0.9rem; z-index: 1000; opacity: 0;
+  transition: opacity 0.3s; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+.toast.success { background: #16a34a; }
+.toast.error { background: #dc2626; }
+
+/* ── Profile Layout ── */
+.profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .header-nav { display: none; }
   .main-content { padding: 12px; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .profile-grid { grid-template-columns: 1fr; }
 }

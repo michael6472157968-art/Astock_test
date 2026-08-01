@@ -30,6 +30,9 @@ var API = {
             });
         }
       }
+      if (json.code === 403) {
+        showToast(json.message || '当前用户等级无权限访问此功能');
+      }
       throw { code: json.code, message: json.message, data: json.data };
     });
   },
@@ -40,19 +43,82 @@ var API = {
   del: function(path) { return this._fetch('DELETE', path); }
 };
 
+// Toast 提示
+function showToast(msg, type) {
+  type = type || 'error';
+  var t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function() { t.classList.add('show'); }, 10);
+  setTimeout(function() { t.classList.remove('show'); setTimeout(function() { t.remove(); }, 300); }, 2500);
+}
+
 // 会话管理
 var Session = {
   get: function() { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch(e) { return null; } },
   save: function(data) {
     localStorage.setItem('access_token', data.access_token);
     localStorage.setItem('refresh_token', data.refresh_token);
-    localStorage.setItem('user', JSON.stringify({ id: data.user_id, phone: data.phone, tier: data.tier }));
+    localStorage.setItem('user', JSON.stringify({
+      id: data.user_id,
+      phone: data.phone,
+      tier: data.tier,
+      member_type: data.member_type || 'free',
+      member_expire: data.member_expire || null
+    }));
   },
   clear: function() {
     localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); localStorage.removeItem('user');
   },
   loggedIn: function() { return !!this.get(); },
-  tier: function() { var u = this.get(); return u ? u.tier : 0; }
+  tier: function() { var u = this.get(); return u ? u.tier : 0; },
+  isVip: function() { var t = this.tier(); return t >= 2 || t === 99; },
+  isAdmin: function() { return this.tier() === 99; },
+  memberLabel: function() {
+    var t = this.tier();
+    if (t === 99) return '<span class="vip-badge admin">管理员</span>';
+    if (t === 3) return '<span class="vip-badge annual">年VIP</span>';
+    if (t === 2) return '<span class="vip-badge monthly">月VIP</span>';
+    return '';
+  },
+  memberName: function() {
+    var t = this.tier();
+    if (t === 99) return '管理员';
+    if (t === 3) return '年度VIP';
+    if (t === 2) return '月度VIP';
+    return '免费用户';
+  },
+  remainDays: function() {
+    var u = this.get();
+    if (!u || !u.member_expire) return null;
+    return Math.max(0, Math.ceil((new Date(u.member_expire) - new Date()) / (1000 * 60 * 60 * 24)));
+  }
+};
+
+// 门禁函数
+var Gate = {
+  checkPage: function(minTier) {
+    if (!Session.loggedIn()) {
+      window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.pathname.split('/').pop());
+      return false;
+    }
+    if (Session.tier() < minTier && !Session.isAdmin()) {
+      var page = window.location.pathname.split('/').pop() || '';
+      window.location.href = 'profile.html?redirect=' + encodeURIComponent(page);
+      return false;
+    }
+    return true;
+  },
+  showUpgradeBanner: function() {
+    if (Session.isVip()) return;
+    var banner = document.createElement('div');
+    banner.className = 'upgrade-banner';
+    banner.innerHTML = '<span>🔒 此功能为会员专享</span> <a href="profile.html" style="color:#fff;text-decoration:underline;margin-left:8px">去升级</a>';
+    banner.onclick = function() { banner.remove(); };
+    var main = document.querySelector('.main-content');
+    if (main) main.insertBefore(banner, main.firstChild);
+  }
 };
 
 // 导航栏渲染（所有页面共用）
@@ -69,8 +135,10 @@ function renderNav() {
     { href: 'risk-list.html', label: '风险' },
     { href: 'alerts.html', label: '预警' },
     { href: 'backtest.html', label: '回测' },
-    { href: 'admin-trigger.html', label: '⚙' },
   ];
+  if (Session.isAdmin()) {
+    links.push({ href: 'admin-trigger.html', label: '管理' });
+  }
   var html = '<div class="nav-links">';
   var path = window.location.pathname.split('/').pop() || 'index.html';
   links.forEach(function(l) {
@@ -79,16 +147,37 @@ function renderNav() {
   });
   html += '</div><div class="nav-right">';
   if (user) {
-    html += '<span class="user-info">' + user.phone + ' · T' + user.tier + '</span>';
-    html += '<button class="btn btn-sm btn-outline" onclick="doLogout()">退出</button>';
+    html += '<div class="nav-user-area" onclick="toggleUserMenu(event)">';
+    html += Session.memberLabel();
+    html += '<span class="user-name">' + user.phone + '</span>';
+    html += '<span class="nav-dropdown-arrow">▼</span>';
+    html += '<div class="nav-dropdown">';
+    html += '<a href="profile.html">👤 个人中心</a>';
+    if (Session.isAdmin()) {
+      html += '<a href="admin-trigger.html">⚙ 管理后台</a>';
+    }
+    html += '<button onclick="doLogout()">退出登录</button>';
+    html += '</div></div>';
   } else {
-    html += '<a href="login.html" class="btn btn-sm btn-primary">登录</a>';
+    html += '<a href="login.html" class="btn btn-sm btn-outline">登录</a>';
+    html += '<a href="register.html" class="btn btn-sm btn-primary">注册</a>';
   }
   html += '<select onchange="setTheme(this.value)" class="theme-select"><option value="light">亮色</option><option value="dark">暗色终端</option><option value="warm">暖色护眼</option></select>';
   html += '</div>';
   nav.innerHTML = html;
   setTheme(localStorage.getItem('theme') || 'light');
 }
+
+// 用户菜单下拉切换
+function toggleUserMenu(e) {
+  e.stopPropagation();
+  var dd = document.querySelector('.nav-dropdown');
+  if (dd) dd.classList.toggle('show');
+}
+document.addEventListener('click', function() {
+  var dd = document.querySelector('.nav-dropdown');
+  if (dd) dd.classList.remove('show');
+});
 
 // 主题切换
 function setTheme(t) {
@@ -107,10 +196,14 @@ function doLogout() {
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
   renderNav();
-  // 如果当前在需要登录的页面且未登录，跳转登录页
-  var needAuth = ['alerts.html'];
+  // 需要登录的页面
+  var needAuth = ['alerts.html', 'admin-trigger.html'];
   var page = window.location.pathname.split('/').pop();
   if (needAuth.indexOf(page) >= 0 && !Session.loggedIn()) {
     window.location.href = 'login.html?redirect=' + encodeURIComponent(page);
+  }
+  // 管理员页面
+  if (page === 'admin-trigger.html' && !Session.isAdmin()) {
+    window.location.href = '/';
   }
 });

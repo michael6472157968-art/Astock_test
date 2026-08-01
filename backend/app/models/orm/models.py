@@ -188,6 +188,20 @@ class BacktestResult(Base):
     created_at = Column(DateTime, default=_now)
 
 
+class MembershipCode(Base):
+    """会员激活码——管理员批量生成，用户兑换激活。"""
+    __tablename__ = "membership_codes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(20), unique=True, nullable=False, index=True)
+    code_type = Column(String(10), default="monthly")  # monthly / annual
+    is_used = Column(Integer, default=0)
+    used_by = Column(Integer, nullable=True)
+    created_by = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=_now)
+    used_at = Column(DateTime, nullable=True)
+
+
 class UserFavorite(Base):
     __tablename__ = "user_favorites"
 
