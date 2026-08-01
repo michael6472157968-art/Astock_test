@@ -51,7 +51,7 @@ function run() {
   btn.disabled = true; btn.textContent = '回测中...'; msg.textContent = '';
 
   API.post('/backtest/run', {stock_code: code, strategy: strategy}).then(function(r) {
-    if (r.code === 400) { msg.textContent = r.message; msg.style.color = 'var(--danger)'; return; }
+    if (!r.data || !r.data.metrics) { msg.textContent = r.message || '回测数据异常，请先同步日线数据'; msg.style.color = 'var(--danger)'; return; }
     msg.textContent = '回测完成';
     msg.style.color = 'var(--text-secondary)';
     render(r.data);

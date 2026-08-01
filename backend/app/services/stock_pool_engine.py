@@ -1,12 +1,13 @@
 """选股池计算引擎——4大策略离线批量计算，基于SQLite真实数据。
 
-收盘后运行一次，结果写入内存缓存。每池10只，互不重复。
+收盘后运行一次，结果写入内存缓存。每池15只，互不重复。
+所有跨日查询均使用实际可用的交易日期，不硬编码天数偏移。
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import text
 
@@ -24,15 +25,20 @@ class StockPoolEngine:
 
     async def compute_all(self, trade_date: str = "") -> dict:
         if not trade_date:
-            # 使用最新可用的交易日数据，而不是 hardcode date.today()-1
-            from app.core.database import async_session as _sess
-            from sqlalchemy import text as _text
-            async with _sess() as _session:
-                _r = await _session.execute(_text('SELECT MAX(trade_date) FROM stock_daily'))
-                trade_date = _r.scalar() or (date.today() - timedelta(days=1)).strftime('%Y%m%d')
+            async with async_session() as sess:
+                r = await sess.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
+                trade_date = r.scalar() or (date.today() - timedelta(days=1)).strftime("%Y%m%d")
 
-        td5 = (date.today() - timedelta(days=8)).strftime("%Y%m%d")
-        start20 = (date.today() - timedelta(days=25)).strftime("%Y%m%d")
+        async with async_session() as sess:
+            # 查找最近可用历史日期（全天 >= 100 只）
+            best_dates = await sess.execute(text(
+                "SELECT trade_date FROM stock_daily WHERE trade_date < :td "
+                "GROUP BY trade_date HAVING COUNT(*) >= 100 ORDER BY trade_date DESC"
+            ), {"td": trade_date})
+            date_list = [row[0] for row in best_dates.fetchall()]
+
+        td5 = date_list[0] if len(date_list) >= 1 else trade_date
+        start20 = date_list[min(len(date_list) - 1, 3)] if len(date_list) >= 4 else trade_date
 
         async with async_session() as session:
             hot = await self._hot_leader(session, trade_date)
@@ -59,7 +65,6 @@ class StockPoolEngine:
         return pools
 
     async def _hot_leader(self, session, trade_date: str) -> list:
-        """热点龙头池：放量突破 + 涨幅>3%，按涨幅降序取PoolSize只，同股去重"""
         sql = text("""
             SELECT DISTINCT d.ts_code, s.name, d.close, d.pct_chg, d.volume
             FROM stock_daily d
@@ -77,10 +82,9 @@ class StockPoolEngine:
             LIMIT :lim
         """)
         r = await session.execute(sql, {"td": trade_date, "lim": POOL_SIZE * 3})
-        return self._dedup_rows(r, f"放量突破，涨幅")
+        return self._dedup_rows(r, "放量突破，涨幅")
 
     async def _dip_ambush(self, session, trade_date: str, start20: str, exclude: set) -> list:
-        """低吸埋伏池：靠近20日低点+止跌缩量，与非ST，取10只"""
         sql = text("""
             SELECT DISTINCT d.ts_code, s.name, d.close, d.pct_chg, d.volume, low20.min_low
             FROM stock_daily d
@@ -107,7 +111,6 @@ class StockPoolEngine:
         return self._dedup_rows(r, "回调企稳", exclude)
 
     async def _oversold_rebound(self, session, trade_date: str, td5: str, exclude: set) -> list:
-        """超跌反弹池：5日跌幅>5%，今日止跌，取15只"""
         sql = text("""
             SELECT DISTINCT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d5.close) / NULLIF(d5.close, 0) * 100 AS chg5
@@ -132,7 +135,6 @@ class StockPoolEngine:
         return self._dedup_rows(r, "超跌反弹", exclude)
 
     async def _steady_swing(self, session, trade_date: str, exclude: set) -> list:
-        """稳健波段池：量价健康+涨幅适中+上涨，取10只"""
         sql = text("""
             SELECT DISTINCT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    CAST(d.volume AS REAL) / NULLIF(avg.avg_vol, 0) AS vol_ratio
