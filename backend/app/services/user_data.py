@@ -1,6 +1,7 @@
-"""用户本地数据存储——每个用户一个JSON文件，存放自选股等个人数据。
+"""用户本地数据存储——JSON+SQLite双写持久化。
 
-部署上线后，每个注册用户在其专属文件夹中拥有独立的 favorites.json。
+每个用户一个JSON文件存放自选股，同时写入SQLite user_favorites表。
+读取优先SQLite，SQLite为空时降级到JSON并自动回填。
 """
 
 from __future__ import annotations
@@ -10,7 +11,11 @@ import logging
 import os
 from datetime import datetime
 
+from sqlalchemy import select, text
+
+from app.core.database import async_session
 from app.core.settings import get_settings
+from app.models.orm.models import UserFavorite
 
 logger = logging.getLogger("user_data")
 _settings = get_settings()
@@ -42,43 +47,136 @@ def _write_json(user_id: int, filename: str, data: dict) -> None:
 
 # ── 自选股操作 ──
 
-def get_favorites(user_id: int) -> list[dict]:
-    """读取用户自选股列表，返回 [{stock_code, added_at}, ...]"""
-    data = _read_json(user_id, "favorites.json")
-    return data.get("stocks", [])
+async def get_favorites(user_id: int) -> list[dict]:
+    """读取用户自选股列表，优先SQLite，降级JSON并自动回填。"""
+    async with async_session() as session:
+        r = await session.execute(
+            select(UserFavorite).where(UserFavorite.user_id == user_id).order_by(UserFavorite.created_at)
+        )
+        rows = r.scalars().all()
+        if rows:
+            return [
+                {
+                    "stock_code": row.ts_code,
+                    "stock_name": row.stock_name or "",
+                    "added_at": row.created_at.isoformat() if row.created_at else "",
+                }
+                for row in rows
+            ]
 
-
-def add_favorite(user_id: int, stock_code: str, stock_name: str = "") -> bool:
-    """添加自选股。已存在返回False"""
+    # SQLite为空，从JSON降级读取
     data = _read_json(user_id, "favorites.json")
     stocks = data.get("stocks", [])
+    if stocks:
+        # 自动回填到SQLite
+        await _backfill_sqlite(user_id, stocks)
+
+    return stocks
+
+
+async def add_favorite(user_id: int, stock_code: str, stock_name: str = "") -> bool:
+    """添加自选股，JSON+SQLite双写，任一边失败则回滚。"""
+    now = datetime.now()
+    stocks_data = _read_json(user_id, "favorites.json")
+    stocks = stocks_data.get("stocks", [])
+
     existing = [s for s in stocks if s.get("stock_code") == stock_code]
     if existing:
         return False
 
-    stocks.append({
-        "stock_code": stock_code,
-        "stock_name": stock_name,
-        "added_at": datetime.now().isoformat(),
-    })
-    data["stocks"] = stocks
-    _write_json(user_id, "favorites.json", data)
-    return True
+    async with async_session() as session:
+        r = await session.execute(
+            select(UserFavorite).where(
+                UserFavorite.user_id == user_id, UserFavorite.ts_code == stock_code
+            )
+        )
+        if r.scalar_one_or_none():
+            return False
+
+        fav = UserFavorite(user_id=user_id, ts_code=stock_code, stock_name=stock_name, created_at=now)
+        session.add(fav)
+
+        try:
+            stocks.append({
+                "stock_code": stock_code,
+                "stock_name": stock_name,
+                "added_at": now.isoformat(),
+            })
+            stocks_data["stocks"] = stocks
+            _write_json(user_id, "favorites.json", stocks_data)
+        except Exception:
+            # JSON写入失败，回滚SQLite
+            await session.rollback()
+            return False
+
+        await session.commit()
+        return True
 
 
-def remove_favorite(user_id: int, stock_code: str) -> bool:
-    """删除自选股。不存在返回False"""
+async def remove_favorite(user_id: int, stock_code: str) -> bool:
+    """删除自选股，JSON+SQLite同步删除。"""
     data = _read_json(user_id, "favorites.json")
     stocks = data.get("stocks", [])
     new_stocks = [s for s in stocks if s.get("stock_code") != stock_code]
-    if len(new_stocks) == len(stocks):
-        return False
 
-    data["stocks"] = new_stocks
-    _write_json(user_id, "favorites.json", data)
-    return True
+    async with async_session() as session:
+        r = await session.execute(
+            select(UserFavorite).where(
+                UserFavorite.user_id == user_id, UserFavorite.ts_code == stock_code
+            )
+        )
+        fav = r.scalar_one_or_none()
+
+        if len(new_stocks) == len(stocks) and not fav:
+            return False
+
+        if fav:
+            await session.delete(fav)
+
+        data["stocks"] = new_stocks
+        try:
+            _write_json(user_id, "favorites.json", data)
+        except Exception:
+            await session.rollback()
+            return False
+
+        await session.commit()
+        return True
 
 
-def get_favorite_codes(user_id: int) -> list[str]:
+async def get_favorite_codes(user_id: int) -> list[str]:
     """获取自选股代码列表"""
-    return [s["stock_code"] for s in get_favorites(user_id)]
+    stocks = await get_favorites(user_id)
+    return [s["stock_code"] for s in stocks]
+
+
+async def _backfill_sqlite(user_id: int, stocks: list[dict]) -> None:
+    """将JSON数据回填到SQLite。"""
+    async with async_session() as session:
+        count = 0
+        for s in stocks:
+            code = s.get("stock_code", "")
+            if not code:
+                continue
+            r = await session.execute(
+                select(UserFavorite).where(
+                    UserFavorite.user_id == user_id, UserFavorite.ts_code == code
+                )
+            )
+            if r.scalar_one_or_none():
+                continue
+            added_at = s.get("added_at", "")
+            try:
+                created_at = datetime.fromisoformat(added_at) if added_at else datetime.now()
+            except ValueError:
+                created_at = datetime.now()
+            session.add(UserFavorite(
+                user_id=user_id,
+                ts_code=code,
+                stock_name=s.get("stock_name", ""),
+                created_at=created_at,
+            ))
+            count += 1
+        if count:
+            await session.commit()
+            logger.info(f"Backfilled {count} favorites for user {user_id} from JSON to SQLite")

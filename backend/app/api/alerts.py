@@ -28,7 +28,7 @@ async def list_favorites(request: Request, user: dict = Depends(require_auth)):
     if not uid:
         return APIResponse(data={"total": 0, "items": []}, timestamp=int(time.time()))
 
-    stocks = user_data.get_favorites(uid)
+    stocks = await user_data.get_favorites(uid)
     items = [{"id": s.get("added_at", ""), "stock_code": s["stock_code"], "stock_name": s.get("stock_name", ""), "added_at": s.get("added_at", "")} for s in stocks]
     return APIResponse(data={"total": len(items), "items": items}, timestamp=int(time.time()))
 
@@ -65,7 +65,7 @@ async def add_favorite(req: AddFavRequest, user: dict = Depends(require_auth)):
     if not uid:
         raise HTTPException(401, "请先登录")
 
-    added = user_data.add_favorite(uid, req.stock_code, req.stock_name if hasattr(req, "stock_name") else "")
+    added = await user_data.add_favorite(uid, req.stock_code, req.stock_name if hasattr(req, "stock_name") else "")
     if not added:
         return APIResponse(data={"message": "已在自选列表中"}, timestamp=int(time.time()))
 
@@ -78,7 +78,7 @@ async def remove_favorite(fav_id: str, user: dict = Depends(require_auth)):
     if not uid:
         raise HTTPException(401, "请先登录")
 
-    removed = user_data.remove_favorite(uid, fav_id)
+    removed = await user_data.remove_favorite(uid, fav_id)
     if not removed:
         raise HTTPException(404, "自选记录不存在")
     return APIResponse(data={"message": "已删除"}, timestamp=int(time.time()))
