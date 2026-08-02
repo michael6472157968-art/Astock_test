@@ -9,6 +9,32 @@
 <style>
 .review-chart { width:100%; height:400px; }
 .date-picker { padding:6px 12px; border-radius:6px; border:1px solid var(--color-border); background:var(--color-card); color:var(--color-text); font-size:0.9rem; }
+.status-dot-rev { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+.status-dot-rev.ready { background:#22c55e; box-shadow:0 0 4px rgba(34,197,94,0.5); }
+.status-dot-rev.expired { background:#f59e0b; box-shadow:0 0 4px rgba(245,158,11,0.5); }
+.status-dot-rev.empty { background:#6b7280; }
+.status-dot-rev.latest { background:#00d4aa; box-shadow:0 0 6px rgba(0,212,170,0.6); }
+.review-toolbar { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.review-toolbar .btn-dl { padding:6px 14px; font-size:0.8rem; border-radius:6px; border:1px solid var(--color-primary); background:transparent; color:var(--color-primary); cursor:pointer; transition:all 0.15s; text-decoration:none; display:inline-flex; align-items:center; gap:4px; }
+.review-toolbar .btn-dl:hover { background:var(--color-primary); color:#fff; }
+.review-toolbar .btn-dl:disabled { opacity:0.4; cursor:not-allowed; border-color:var(--color-border); color:var(--color-text-muted); }
+.review-toolbar .btn-dl:disabled:hover { background:transparent; }
+.expired-banner { text-align:center; padding:40px 20px; background:var(--color-card); border:1px solid var(--color-border); border-radius:10px; }
+.expired-banner .expired-icon { font-size:2rem; margin-bottom:12px; }
+.expired-banner .expired-msg { color:var(--color-text-muted); margin-bottom:16px; font-size:0.9rem; }
+.gen-progress { display:flex; flex-direction:column; align-items:center; gap:16px; padding:40px 20px; }
+.gen-progress .ring-wrap { position:relative; width:80px; height:80px; }
+.gen-progress .ring-wrap svg { transform:rotate(-90deg); }
+.gen-progress .ring-bg { fill:none; stroke:var(--color-border); stroke-width:4; }
+.gen-progress .ring-fg { fill:none; stroke:#00d4aa; stroke-width:4; stroke-linecap:round; transition:stroke-dashoffset 0.3s ease; }
+.gen-progress .ring-pct { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:0.9rem; font-weight:700; color:#00d4aa; }
+.gen-progress .phase-text { font-size:0.82rem; color:var(--color-text-muted); min-height:22px; }
+.review-header-row { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; flex-wrap:wrap; gap:8px; }
+@media (max-width:768px) {
+  .review-toolbar { width:100%; }
+  .review-header-row { flex-direction:column; }
+  .gen-progress .ring-wrap { width:60px; height:60px; }
+}
 </style>
 </head>
 <body>
@@ -16,10 +42,11 @@
   <h2 class="page-title">每日市场复盘简报</h2>
   <p class="page-desc">大盘解读、热点板块、涨跌统计分析</p>
 
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
     <span style="font-size:0.85rem;color:var(--color-text-muted)">选择日期：</span>
     <select id="dateSelect" class="date-picker" onchange="loadReview(this.value)"></select>
     <span id="reviewCount" style="font-size:0.82rem;color:var(--color-text-muted)">共 0 份复盘报告</span>
+    <span style="font-size:0.72rem;color:var(--color-text-muted);margin-left:auto;" id="dateStatus"></span>
   </div>
 
   <div id="reviewDetail" style="width:100%;"></div>
@@ -29,8 +56,18 @@
 <script>
 var allDates = [];
 var allReviews = {};
+var allStatuses = {};
 var _emptyDates = {};
 var _skipTarget = null;
+var _genTimer = null;
+
+var GEN_PHASES = [
+  { pct: 25, text: '正在获取市场数据...' },
+  { pct: 50, text: '正在分析板块表现...' },
+  { pct: 75, text: '正在计算资金流向...' },
+  { pct: 95, text: '正在生成报告文档...' },
+  { pct: 100, text: '即将完成...' },
+];
 
 (function() {
   var dd = new Date();
@@ -41,79 +78,200 @@ var _skipTarget = null;
     allDates.push(y + m + d);
     dd.setDate(dd.getDate() - 1);
   }
-  buildDateSelect();
-  loadReview(allDates[0]);
+  preloadStatuses(function() {
+    buildDateSelect();
+    loadReview(allDates[0]);
+  });
 })();
+
+function preloadStatuses(cb) {
+  var pending = allDates.length;
+  var done = 0;
+  function check() { done++; if (done >= pending) cb(); }
+  allDates.forEach(function(td) {
+    API.get('/review/status/' + td).then(function(r) {
+      allStatuses[td] = r.data.status || 'not_generated';
+      if (r.data.is_latest) allStatuses[td] = 'latest';
+      check();
+    }).catch(function() {
+      allStatuses[td] = 'not_generated';
+      check();
+    });
+  });
+}
 
 function buildDateSelect() {
   var sel = document.getElementById('dateSelect');
   sel.innerHTML = '';
-  allDates.forEach(function(td, idx) {
+  allDates.forEach(function(td) {
     if (_emptyDates[td]) return;
     var opt = document.createElement('option');
     opt.value = td;
-    opt.textContent = td.substring(0,4) + '-' + td.substring(4,6) + '-' + td.substring(6,8);
+    var label = td.substring(0,4) + '-' + td.substring(4,6) + '-' + td.substring(6,8);
+    var st = allStatuses[td] || 'not_generated';
+    if (st === 'latest') label = '⭐ ' + label;
+    opt.textContent = label;
     if (td === _skipTarget) opt.selected = true;
-    else if (idx === 0 && !_skipTarget) opt.selected = true;
+    else if (allDates.indexOf(td) === 0 && !_skipTarget) opt.selected = true;
     sel.appendChild(opt);
   });
-  var cnt = sel.options.length;
-  document.getElementById('reviewCount').textContent = '共 ' + cnt + ' 份复盘报告';
+  document.getElementById('reviewCount').textContent = '共 ' + sel.options.length + ' 份复盘报告';
+}
+
+function statusDot(st) {
+  if (st === 'latest') return '<span class="status-dot-rev latest" title="最近交易日"></span>';
+  if (st === 'ready') return '<span class="status-dot-rev ready" title="已生成"></span>';
+  if (st === 'expired') return '<span class="status-dot-rev expired" title="已过期"></span>';
+  return '<span class="status-dot-rev empty" title="未生成"></span>';
+}
+
+function updateDateStatus(td) {
+  var st = allStatuses[td] || 'not_generated';
+  var labels = { latest: '⭐ 最近交易日', ready: '已生成', expired: '已过期', not_generated: '未生成' };
+  document.getElementById('dateStatus').innerHTML = statusDot(st) + ' ' + (labels[st] || '未知');
 }
 
 function loadReview(td) {
+  stopGenProgress();
   document.getElementById('reviewDetail').innerHTML = '<p class="state-loading">加载中...</p>';
   document.getElementById('reviewChart').style.display = 'none';
+  updateDateStatus(td);
 
   function _loaded(data) {
-    // Skip empty: total=0 means a non-trading-day report should be filtered
-    if (!data.content || !data.content.total) {
-      allReviews[td] = null;
+    if (!data) {
       _emptyDates[td] = true;
-      if (data.is_trade_day === false) {
-        _emptyDates[td] = true;
-      }
-      // Try next available date
-      var idx = allDates.indexOf(td);
-      if (idx >= 0 && idx < allDates.length - 1) {
-        _skipTarget = allDates[idx + 1];
-      }
-      buildDateSelect();
-      var sel = document.getElementById('dateSelect');
-      if (sel.options.length > 0) {
-        loadReview(sel.value);
-      } else {
-        document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">暂无复盘数据</p>';
-      }
-      return;
+      skipToNext(td); return;
+    }
+    if (!data.content || !data.content.total) {
+      _emptyDates[td] = true;
+      skipToNext(td); return;
     }
     _skipTarget = null;
     allReviews[td] = data;
+    allStatuses[td] = data.is_latest ? 'latest' : 'ready';
     buildDateSelect();
+    updateDateStatus(td);
     renderReview(td, data);
   }
 
   if (allReviews[td] !== undefined && allReviews[td] !== null) {
     _loaded(allReviews[td]);
-  } else {
-    API.get('/review/daily?date=' + td).then(function(r) {
-      _loaded(r.data);
-    }).catch(function() {
-      allReviews[td] = null;
-      _emptyDates[td] = true;
-      var idx = allDates.indexOf(td);
-      if (idx >= 0 && idx < allDates.length - 1) {
-        _skipTarget = allDates[idx + 1];
-      }
-      buildDateSelect();
-      var sel = document.getElementById('dateSelect');
-      if (sel.options.length > 0) {
-        loadReview(sel.value);
-      } else {
-        document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">暂无复盘数据</p>';
-      }
-    });
+    return;
   }
+  API.get('/review/daily?date=' + td).then(function(r) {
+    var d = r.data;
+    if (d.status === 'not_generated') {
+      allReviews[td] = null;
+      showGeneratePrompt(td);
+      buildDateSelect();
+      updateDateStatus(td);
+      return;
+    }
+    _loaded(d);
+  }).catch(function() {
+    allReviews[td] = null;
+    _emptyDates[td] = true;
+    skipToNext(td);
+  });
+}
+
+function skipToNext(td) {
+  var idx = allDates.indexOf(td);
+  if (idx >= 0 && idx < allDates.length - 1) {
+    _skipTarget = allDates[idx + 1];
+  }
+  buildDateSelect();
+  var sel = document.getElementById('dateSelect');
+  if (sel.options.length > 0) {
+    loadReview(sel.value);
+  } else {
+    document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">暂无复盘数据</p>';
+  }
+}
+
+function showGeneratePrompt(td) {
+  var dtLabel = td.substring(0,4) + '-' + td.substring(4,6) + '-' + td.substring(6,8);
+  var isLatest = allStatuses[td] === 'latest' || td === allDates[0];
+  var html = '<div class="expired-banner">';
+  html += '<div class="expired-icon">📅</div>';
+  html += '<div style="font-size:1rem;font-weight:600;margin-bottom:6px;">' + dtLabel + ' 复盘报告</div>';
+  html += '<div class="expired-msg">';
+  if (allStatuses[td] === 'expired') {
+    html += '⚠️ 报告已过期（7天前生成），请重新生成';
+  } else {
+    html += '该日期尚未生成复盘报告';
+  }
+  html += '</div>';
+  if (isLatest) {
+    html += '<div style="color:var(--color-text-muted);font-size:0.78rem;margin-bottom:12px;">（将设为最新报告）</div>';
+  }
+  html += '<button class="load-more-btn" onclick="event.stopPropagation(); generateReport(\'' + td + '\')" style="font-size:0.85rem;">生成报告</button>';
+  html += '</div>';
+  document.getElementById('reviewDetail').innerHTML = html;
+  document.getElementById('reviewChart').style.display = 'none';
+}
+
+function generateReport(td) {
+  stopGenProgress();
+  var R = 36, CIRC = 2 * Math.PI * R;
+  var html = '<div class="gen-progress">';
+  html += '<div class="ring-wrap"><svg width="80" height="80" viewBox="0 0 80 80"><circle class="ring-bg" cx="40" cy="40" r="' + R + '"/><circle class="ring-fg" id="genRing" cx="40" cy="40" r="' + R + '" stroke-dasharray="' + CIRC.toFixed(3) + '" stroke-dashoffset="' + CIRC.toFixed(3) + '"/></svg><div class="ring-pct" id="genPct">0%</div></div>';
+  html += '<div class="phase-text" id="genPhase">正在获取市场数据...</div>';
+  html += '</div>';
+  document.getElementById('reviewDetail').innerHTML = html;
+  document.getElementById('reviewChart').style.display = 'none';
+
+  var phaseIdx = 0;
+  var startedAt = Date.now();
+  var TOTAL_DURATION = 4000;
+
+  function tick() {
+    var elapsed = Date.now() - startedAt;
+    var progress = Math.min(98, (elapsed / TOTAL_DURATION) * 100);
+    var phase = GEN_PHASES[phaseIdx];
+    if (progress >= phase.pct && phaseIdx < GEN_PHASES.length - 1) {
+      phaseIdx++;
+      phase = GEN_PHASES[phaseIdx];
+    }
+    setGenRing(progress);
+    document.getElementById('genPhase').textContent = phase.text;
+    if (progress < 98) {
+      _genTimer = requestAnimationFrame(tick);
+    }
+  }
+  _genTimer = requestAnimationFrame(tick);
+
+  API.post('/review/generate', {}).then(function(r) {
+    stopGenProgress();
+    setGenRing(100);
+    document.getElementById('genPhase').textContent = '完成!';
+    var d = r.data;
+    if (d.content && d.content.total) {
+      allReviews[td] = d;
+      allStatuses[td] = d.is_latest ? 'latest' : 'ready';
+      buildDateSelect();
+      updateDateStatus(td);
+      setTimeout(function() { renderReview(td, d); }, 400);
+    } else {
+      document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">该日期暂无交易数据</p>';
+    }
+  }).catch(function(e) {
+    stopGenProgress();
+    document.getElementById('reviewDetail').innerHTML = '<p class="state-error">生成失败: ' + (e.message || '服务器错误') + ' <button class="load-more-btn" onclick="generateReport(\'' + td + '\')" style="font-size:0.78rem;margin-left:8px;">重试</button></p>';
+  });
+}
+
+function setGenRing(pct) {
+  var CIRC = 2 * Math.PI * 36;
+  var ring = document.getElementById('genRing');
+  var pctEl = document.getElementById('genPct');
+  if (!ring || !pctEl) return;
+  ring.setAttribute('stroke-dashoffset', (CIRC - (pct / 100) * CIRC).toFixed(3));
+  pctEl.textContent = Math.round(pct) + '%';
+}
+
+function stopGenProgress() {
+  if (_genTimer) { cancelAnimationFrame(_genTimer); _genTimer = null; }
 }
 
 function renderReview(td, data) {
@@ -123,18 +281,28 @@ function renderReview(td, data) {
     return;
   }
   var dtLabel = td.substring(0,4) + '-' + td.substring(4,6) + '-' + td.substring(6,8);
-  var html = '<div class="stat-grid" style="margin-bottom:20px">';
+
+  // Header row with download button
+  var headerHtml = '<div class="review-header-row"><div style="font-weight:600;font-size:0.95rem;">📊 ' + dtLabel + ' 市场概览</div>';
+  headerHtml += '<div class="review-toolbar">';
+  if (data.generated_at) {
+    var genDate = data.generated_at.substring(0,10);
+    headerHtml += '<span style="font-size:0.72rem;color:var(--color-text-muted);">生成于 ' + genDate + '</span>';
+  }
+  headerHtml += '<a class="btn-dl" href="/api/v1/review/download?date=' + td + '" download title="下载 Markdown 报告">📥 下载报告</a>';
+  headerHtml += '</div></div>';
+
+  var html = headerHtml;
+  html += '<div class="stat-grid" style="margin-bottom:20px">';
   html += '<div class="stat-card"><div class="stat-label">全市场</div><div class="stat-value" style="font-size:1.2rem;">' + c.total + ' 只</div></div>';
   html += '<div class="stat-card"><div class="stat-label">上涨 / 平 / 下跌</div><div class="stat-value" style="font-size:1rem;">' + c.up_count + ' / ' + (c.flat_count || 0) + ' / ' + c.down_count + '</div></div>';
   html += '<div class="stat-card"><div class="stat-label">涨停 / 跌停</div><div class="stat-value" style="font-size:1rem;"><span style="color:var(--color-danger)">' + c.limit_up + '</span> / <span style="color:var(--color-success)">' + c.limit_down + '</span></div></div>';
   html += '<div class="stat-card"><div class="stat-label">平均涨跌幅</div><div class="stat-value ' + (c.avg_pct > 0 ? 'risk-low' : 'risk-high') + '">' + (c.avg_pct > 0 ? '+' : '') + c.avg_pct + '%</div></div>';
   html += '</div>';
 
-  // 涨跌分布图
   document.getElementById('reviewChart').style.display = 'block';
   drawPieChart(td, c);
 
-  // 涨幅TOP5
   if (c.top_gainers && c.top_gainers.length) {
     html += '<div class="card" style="margin-bottom:16px"><div class="card-header">涨幅TOP5</div><div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>名称</th><th>涨幅</th><th>行业</th></tr></thead><tbody>';
     c.top_gainers.forEach(function(s) {
@@ -143,7 +311,6 @@ function renderReview(td, data) {
     html += '</tbody></table></div></div>';
   }
 
-  // 跌幅TOP5
   if (c.top_losers && c.top_losers.length) {
     html += '<div class="card" style="margin-bottom:16px"><div class="card-header">跌幅TOP5</div><div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>名称</th><th>涨幅</th><th>行业</th></tr></thead><tbody>';
     c.top_losers.forEach(function(s) {
@@ -152,7 +319,6 @@ function renderReview(td, data) {
     html += '</tbody></table></div></div>';
   }
 
-  // 行业TOP5
   if (c.top_sectors && c.top_sectors.length) {
     html += '<div class="card" style="margin-bottom:16px"><div class="card-header">行业涨幅TOP5</div><div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>行业</th><th>平均涨幅</th></tr></thead><tbody>';
     c.top_sectors.forEach(function(s) {

@@ -67,6 +67,8 @@ async def lifespan(app: FastAPI):
             from app.services.sector_analysis import SectorAnalysisEngine
             from app.services.market_review import MarketReviewEngine
             from app.services.risk_scanner import RiskScanner
+            from app.api.market import _ensure_review_table, _set_latest_flag, _save_review_meta, _purge_expired_reviews, cache_delete as _m_cache_delete
+            from datetime import datetime as _dt, timezone as _tz
 
             logger.info("Auto-sync: stock basic...")
             await sync_stock_basic()
@@ -75,7 +77,18 @@ async def lifespan(app: FastAPI):
             logger.info("Auto-sync: computing engines...")
             await StockPoolEngine().compute_all()
             await SectorAnalysisEngine().compute_all()
-            await MarketReviewEngine().compute()
+            await _ensure_review_table()
+            await _purge_expired_reviews()
+            review_result = await MarketReviewEngine().compute()
+            trade_date = review_result.get("date", "")
+            if trade_date and review_result.get("content", {}).get("total"):
+                latest = await get_latest_trade_date()
+                gen_at = _dt.now(_tz.utc).isoformat()
+                is_latest_flag = 1 if trade_date == latest else 0
+                if is_latest_flag:
+                    await _set_latest_flag(trade_date)
+                await _save_review_meta(trade_date, gen_at, is_latest_flag)
+                await _m_cache_delete(f"review:{trade_date}")
             scanner = RiskScanner()
             await scanner.scan_risk_list()
             logger.info("Auto-sync: all engines complete")

@@ -72,8 +72,25 @@ async def admin_refresh_pool():
 @router.post("/cache/refresh/review")
 async def admin_refresh_review():
     try:
+        from datetime import datetime, timezone
         from app.services.market_review import MarketReviewEngine
+        from app.api.market import (
+            _ensure_review_table, _set_latest_flag, _save_review_meta,
+            _purge_expired_reviews, cache_delete,
+        )
+        await _ensure_review_table()
+        await _purge_expired_reviews()
         result = await MarketReviewEngine().compute()
+        trade_date = result.get("date", "")
+        if trade_date and result.get("content", {}).get("total"):
+            from app.utils.trading_calendar import get_latest_trade_date
+            latest = await get_latest_trade_date()
+            generated_at = datetime.now(timezone.utc).isoformat()
+            is_latest_flag = 1 if trade_date == latest else 0
+            if is_latest_flag:
+                await _set_latest_flag(trade_date)
+            await _save_review_meta(trade_date, generated_at, is_latest_flag)
+            await cache_delete(f"review:{trade_date}")
         return APIResponse(data={"message": "复盘已刷新", "result": str(result)}, timestamp=int(time.time()))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -121,10 +138,21 @@ async def admin_run_daily_batch():
         from app.services.stock_pool_engine import StockPoolEngine
         from app.services.sector_analysis import SectorAnalysisEngine
         from app.services.market_review import MarketReviewEngine
-        from app.services.risk_scanner import RiskScanner
-        await StockPoolEngine().compute_all()
-        await SectorAnalysisEngine().compute_all()
-        await MarketReviewEngine().compute()
+        from app.api.market import _ensure_review_table, _set_latest_flag, _save_review_meta, _purge_expired_reviews, cache_delete as _cache_delete
+        from datetime import datetime as _datetime, timezone as _timezone
+        await _ensure_review_table()
+        await _purge_expired_reviews()
+        review_result = await MarketReviewEngine().compute()
+        trade_date = review_result.get("date", "")
+        if trade_date and review_result.get("content", {}).get("total"):
+            from app.utils.trading_calendar import get_latest_trade_date as _gltd
+            latest = await _gltd()
+            gen_at = _datetime.now(_timezone.utc).isoformat()
+            is_latest_flag = 1 if trade_date == latest else 0
+            if is_latest_flag:
+                await _set_latest_flag(trade_date)
+            await _save_review_meta(trade_date, gen_at, is_latest_flag)
+            await _cache_delete(f"review:{trade_date}")
         scanner2 = RiskScanner()
         await scanner2.scan_risk_list()
 

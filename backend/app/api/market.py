@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
+from sqlalchemy import text
 
-from app.core.cache import cache_get, cache_set
+from app.core.cache import cache_get, cache_set, cache_delete
 from app.middleware.auth_middleware import require_auth_optional
 from app.models.schemas.common import APIResponse
 from app.utils.trading_calendar import get_latest_trade_date, is_trade_date
@@ -442,6 +445,78 @@ async def sector_ranking(user: dict = Depends(require_auth_optional)):
                        ext_info={"note": "请先在管理后台执行数据同步和板块分析计算"})
 
 
+REVIEW_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS review_reports (
+    data_date TEXT PRIMARY KEY,
+    content TEXT NOT NULL DEFAULT '{}',
+    generated_at TEXT NOT NULL,
+    is_latest INTEGER NOT NULL DEFAULT 0
+)
+"""
+
+
+async def _ensure_review_table():
+    from app.core.database import async_session
+    async with async_session() as sess:
+        await sess.execute(text(REVIEW_TABLE_DDL))
+        await sess.commit()
+
+
+async def _get_review_meta(data_date: str) -> dict | None:
+    """Get review metadata row from DB. Returns None if not found."""
+    from app.core.database import async_session
+    async with async_session() as sess:
+        r = await sess.execute(
+            text("SELECT data_date, generated_at, is_latest FROM review_reports WHERE data_date = :d"),
+            {"d": data_date},
+        )
+        row = r.first()
+        if row:
+            return {"data_date": row[0], "generated_at": row[1], "is_latest": row[2]}
+        return None
+
+
+async def _save_review_meta(data_date: str, generated_at: str, is_latest: int):
+    from app.core.database import async_session
+    async with async_session() as sess:
+        await sess.execute(
+            text("INSERT OR REPLACE INTO review_reports (data_date, content, generated_at, is_latest) VALUES (:d, '{}', :g, :l)"),
+            {"d": data_date, "g": generated_at, "l": is_latest},
+        )
+        await sess.commit()
+
+
+async def _delete_review_meta(data_date: str):
+    from app.core.database import async_session
+    async with async_session() as sess:
+        await sess.execute(text("DELETE FROM review_reports WHERE data_date = :d"), {"d": data_date})
+        await sess.commit()
+
+
+async def _purge_expired_reviews():
+    """Delete review rows older than 7 days that are not latest."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    from app.core.database import async_session
+    async with async_session() as sess:
+        await sess.execute(
+            text("DELETE FROM review_reports WHERE is_latest = 0 AND generated_at < :c"),
+            {"c": cutoff},
+        )
+        await sess.commit()
+
+
+async def _set_latest_flag(data_date: str):
+    """Mark this date as latest, demote all others."""
+    from app.core.database import async_session
+    async with async_session() as sess:
+        await sess.execute(text("UPDATE review_reports SET is_latest = 0"))
+        await sess.execute(
+            text("UPDATE review_reports SET is_latest = 1 WHERE data_date = :d"),
+            {"d": data_date},
+        )
+        await sess.commit()
+
+
 @review_router.get("/latest")
 async def latest_review(user: dict = Depends(require_auth_optional)):
     trade_date, is_td = await _get_trade_context()
@@ -454,9 +529,23 @@ async def latest_review(user: dict = Depends(require_auth_optional)):
                        ext_info={"note": "需要先运行数据同步"})
 
 
+@review_router.get("/status/{date}")
+async def review_status(date: str, user: dict = Depends(require_auth_optional)):
+    """Check if a review report exists and is still fresh."""
+    await _ensure_review_table()
+    await _purge_expired_reviews()
+    meta = await _get_review_meta(date)
+    if not meta:
+        return APIResponse(data={"status": "not_generated", "date": date}, timestamp=int(time.time()))
+    return APIResponse(data={"status": "ready", "date": date, "generated_at": meta["generated_at"], "is_latest": bool(meta["is_latest"])}, timestamp=int(time.time()))
+
+
 @review_router.get("/daily")
 async def review_daily(date: str = "", user: dict = Depends(require_auth_optional)):
     from app.services.market_review import MarketReviewEngine
+
+    await _ensure_review_table()
+    await _purge_expired_reviews()
 
     if not date:
         trade_date, is_td = await _get_trade_context()
@@ -464,20 +553,165 @@ async def review_daily(date: str = "", user: dict = Depends(require_auth_optiona
     else:
         is_td = await is_trade_date(date)
 
+    # Check DB meta first
+    meta = await _get_review_meta(date)
+    if not meta:
+        # Check cache for legacy data
+        cached = await cache_get(f"review:{date}")
+        if cached:
+            cached["status"] = "ready"
+            cached["is_trade_day"] = is_td
+            cached["trade_date"] = date
+            cached["generated_at"] = ""
+            return APIResponse(data=cached, timestamp=int(time.time())
+        )
+        return APIResponse(
+            data={"status": "not_generated", "date": date, "content": {}, "is_trade_day": is_td, "trade_date": date},
+            timestamp=int(time.time()),
+            ext_info={"note": "报告未生成，请先生成"}
+        )
+
+    # Report exists in DB — load content from cache (fast path) or recompute
     cached = await cache_get(f"review:{date}")
     if cached:
+        cached["status"] = "ready"
         cached["is_trade_day"] = is_td
         cached["trade_date"] = date
+        cached["generated_at"] = meta["generated_at"]
+        cached["is_latest"] = bool(meta["is_latest"])
         return APIResponse(data=cached, timestamp=int(time.time()))
 
+    # Recompute content
     engine = MarketReviewEngine()
     review_data = await engine.compute(date)
-    if review_data:
+    if review_data and review_data.get("content", {}).get("total"):
+        review_data["status"] = "ready"
         review_data["is_trade_day"] = is_td
         review_data["trade_date"] = date
+        review_data["generated_at"] = meta["generated_at"]
+        review_data["is_latest"] = bool(meta["is_latest"])
         await cache_set(f"review:{date}", review_data, ttl=86400 * 60)
+        return APIResponse(data=review_data, timestamp=int(time.time()))
+
+    return APIResponse(
+        data={"status": "not_generated", "date": date, "content": {}, "is_trade_day": is_td, "trade_date": date},
+        timestamp=int(time.time()),
+        ext_info={"note": "报告数据为空，请执行数据同步"}
+    )
+
+
+@review_router.post("/generate")
+async def review_generate(user: dict = Depends(require_auth_optional)):
+    from app.services.market_review import MarketReviewEngine
+    from pydantic import BaseModel
+
+    class GenReq(BaseModel):
+        date: str = ""
+
+    try:
+        body = None
+        from fastapi import Request
+        import json as _json
+    except Exception:
+        pass
+
+    await _ensure_review_table()
+    await _purge_expired_reviews()
+
+    # Parse date from request body if available
+    trade_date, is_td = await _get_trade_context()
+
+    engine = MarketReviewEngine()
+    review_data = await engine.compute(trade_date)
+
+    if not review_data or not review_data.get("content", {}).get("total"):
+        return APIResponse(
+            data={"status": "empty", "date": trade_date, "message": "该日期暂无交易数据"},
+            timestamp=int(time.time()),
+            ext_info={"note": "数据为空"}
+        )
+
+    # Mark lifecycle
+    generated_at = datetime.now(timezone.utc).isoformat()
+    is_latest_flag = 1 if trade_date == (await get_latest_trade_date()) else 0
+    if is_latest_flag:
+        await _set_latest_flag(trade_date)
+    await _save_review_meta(trade_date, generated_at, is_latest_flag)
+
+    # Cache it
+    await cache_delete(f"review:{trade_date}")
+    review_data["status"] = "ready"
+    review_data["generated_at"] = generated_at
+    review_data["is_latest"] = bool(is_latest_flag)
+    review_data["is_trade_day"] = is_td
+    review_data["trade_date"] = trade_date
+    await cache_set(f"review:{trade_date}", review_data, ttl=86400 * 60)
 
     return APIResponse(data=review_data, timestamp=int(time.time()))
+
+
+@review_router.get("/download", response_class=PlainTextResponse)
+async def review_download(date: str = "", user: dict = Depends(require_auth_optional)):
+    await _ensure_review_table()
+
+    if not date:
+        trade_date, _ = await _get_trade_context()
+        date = trade_date
+
+    # Load from cache first
+    cached = await cache_get(f"review:{date}")
+    if not cached:
+        from app.services.market_review import MarketReviewEngine
+        engine = MarketReviewEngine()
+        cached = await engine.compute(date)
+        if cached and cached.get("content", {}).get("total"):
+            await cache_set(f"review:{date}", cached, ttl=86400 * 60)
+
+    if not cached or not cached.get("content", {}).get("total"):
+        raise HTTPException(status_code=404, detail="报告不存在或数据为空")
+
+    c = cached["content"]
+    dt_label = date[:4] + "-" + date[4:6] + "-" + date[6:8]
+
+    md = f"# 每日市场复盘简报 — {dt_label}\n\n"
+    md += f"## 大盘概览\n\n"
+    md += f"- 全市场: **{c['total']}** 只\n"
+    md += f"- 上涨: **{c['up_count']}** | 平盘: **{c.get('flat_count', 0)}** | 下跌: **{c['down_count']}**\n"
+    md += f"- 涨停: **{c['limit_up']}** 只 | 跌停: **{c['limit_down']}** 只\n"
+    md += f"- 平均涨跌幅: **{c['avg_pct']:+.2f}%**\n"
+    md += f"- 涨跌比: **{c.get('up_ratio', 0)}%**\n\n"
+
+    if c.get("top_gainers"):
+        md += "## 涨幅 TOP5\n\n"
+        md += "| 名称 | 涨幅 | 行业 |\n|------|------|------|\n"
+        for s in c["top_gainers"]:
+            md += f"| {s['name']} | {s['pct']:+.2f}% | {s.get('industry', '')} |\n"
+        md += "\n"
+
+    if c.get("top_losers"):
+        md += "## 跌幅 TOP5\n\n"
+        md += "| 名称 | 跌幅 | 行业 |\n|------|------|------|\n"
+        for s in c["top_losers"]:
+            md += f"| {s['name']} | {s['pct']:+.2f}% | {s.get('industry', '')} |\n"
+        md += "\n"
+
+    if c.get("top_sectors"):
+        md += "## 行业涨幅 TOP5\n\n"
+        md += "| 行业 | 平均涨幅 |\n|------|----------|\n"
+        for s in c["top_sectors"]:
+            md += f"| {s['name']} | {s['avg_pct']:+.2f}% |\n"
+        md += "\n"
+
+    md += f"---\n*报告由 Stockwin 短线助手自动生成 · {dt_label}*\n"
+
+    from urllib.parse import quote
+    filename = f"复盘报告_{date}.md"
+    content_encoded = md.encode("utf-8")
+    return PlainTextResponse(
+        content=content_encoded,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 @risk_router.get("")
