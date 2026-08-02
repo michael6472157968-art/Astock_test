@@ -13,6 +13,7 @@ from app.core.database import async_session
 from app.core.security import (create_access_token, create_refresh_token,
                                 decode_token, hash_password, verify_password)
 from app.core.settings import get_settings
+from app.middleware.auth_middleware import require_auth, require_auth_optional
 from app.models.orm.models import User
 from app.models.schemas.common import APIResponse
 
@@ -56,6 +57,10 @@ async def register(req: RegisterRequest):
         access = create_access_token(user.id, user.tier)
         refresh = create_refresh_token(user.id, user.tier)
 
+        from app.middleware.access_log import log_access
+
+        log_access(user.id, "/api/v1/auth/register", "", "")
+
         return APIResponse(
             data={
                 "user_id": user.id,
@@ -84,6 +89,10 @@ async def login(req: LoginRequest):
         remain = None
         if user.member_expire:
             remain = max(0, (user.member_expire - datetime.now()).days)
+
+        from app.middleware.access_log import log_access
+
+        log_access(user.id, "/api/v1/auth/login", "", "")
 
         return APIResponse(
             data={
@@ -121,9 +130,9 @@ async def refresh_token(req: RefreshRequest):
 
 
 @router.get("/profile")
-async def profile(request: Request):
+async def profile(user: dict = Depends(require_auth)):
     """获取当前用户信息（需登录）。"""
-    user_id, tier = _get_user_from_request(request)
+    user_id, tier = user["user_id"], user["tier"]
     if user_id is None:
         raise HTTPException(status_code=401, detail="请先登录")
 
@@ -165,15 +174,3 @@ def _tier_to_label(tier: int) -> str:
 
 def _label_name(tier: int) -> str:
     return {0: "游客", 1: "注册用户", 2: "月度VIP", 3: "年度VIP", 99: "管理员"}.get(tier, "免费用户")
-
-
-def _get_user_from_request(request: Request) -> tuple[int | None, int]:
-    """从 Authorization header 提取 user_id 和 tier。失败返回 (None, 0)。"""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return None, 0
-    try:
-        payload = decode_token(auth[7:])
-        return int(payload["sub"]), payload.get("tier", 0)
-    except Exception:
-        return None, 0

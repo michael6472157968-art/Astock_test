@@ -7,9 +7,10 @@ import logging
 import time
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.cache import cache_get
+from app.middleware.auth_middleware import require_auth_optional
 from app.models.schemas.common import APIResponse
 
 logger = logging.getLogger("market")
@@ -38,7 +39,7 @@ def _is_trading_time() -> bool:
 
 
 @market_router.get("/stock_count")
-async def stock_count():
+async def stock_count(user: dict = Depends(require_auth_optional)):
     from app.core.cache import cache_get, cache_set
     from app.core.database import async_session
     from sqlalchemy import text
@@ -56,7 +57,7 @@ async def stock_count():
 
 
 @market_router.get("/index")
-async def market_index():
+async def market_index(user: dict = Depends(require_auth_optional)):
     now_ts = datetime.now().isoformat()
     trading = _is_trading_time()
 
@@ -68,14 +69,27 @@ async def market_index():
     cache_key = f"market:index:{today_key}"
     cached = await cache_get(cache_key)
     if cached is not None:
-        return APIResponse(data={"indices": cached, "source": "tushare", "update_time": now_ts, "trading": trading}, timestamp=int(time.time()))
+        trade_date = today_key
+        # Try to get the actual trade date for the cached response
+        async with async_session() as sess:
+            r = await sess.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
+            latest_td = r.scalar()
+            if latest_td:
+                trade_date = latest_td
+        return APIResponse(data={"indices": cached, "source": "tushare", "update_time": now_ts, "trading": trading, "date": trade_date}, timestamp=int(time.time()))
 
+    # 非交易时段：回退到最新交易日数据
     results = []
+    trade_date = today_key
     async with async_session() as sess:
+        r = await sess.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
+        latest_trade_date = r.scalar()
+        if latest_trade_date:
+            trade_date = latest_trade_date
         for code, name in INDEX_CODES:
             r = await sess.execute(
-                text("SELECT close, pct_chg, change FROM stock_daily WHERE ts_code=:code ORDER BY trade_date DESC LIMIT 1"),
-                {"code": code},
+                text("SELECT close, pct_chg, change FROM stock_daily WHERE ts_code=:code AND trade_date=:td ORDER BY trade_date DESC LIMIT 1"),
+                {"code": code, "td": trade_date},
             )
             row = r.first()
             if row:
@@ -84,7 +98,7 @@ async def market_index():
     if results and all(r["close"] for r in results):
         ttl = 300 if trading else 3600
         await cache_set(cache_key, results, ttl=ttl)
-        return APIResponse(data={"indices": results, "source": "tushare", "update_time": now_ts, "trading": trading}, timestamp=int(time.time()))
+        return APIResponse(data={"indices": results, "source": "tushare", "update_time": now_ts, "trading": trading, "date": trade_date}, timestamp=int(time.time()))
 
     # DB 为空时调 Tushare API
     try:
@@ -104,7 +118,7 @@ async def market_index():
         if results:
             ttl = 300 if trading else 3600
             await cache_set(cache_key, results, ttl=ttl)
-            return APIResponse(data={"indices": results, "source": "tushare", "update_time": now_ts, "trading": trading}, timestamp=int(time.time()))
+            return APIResponse(data={"indices": results, "source": "tushare", "update_time": now_ts, "trading": trading, "date": trade_date}, timestamp=int(time.time()))
     except Exception:
         pass
 
@@ -113,7 +127,7 @@ async def market_index():
 
 
 @market_router.get("/mood")
-async def market_mood():
+async def market_mood(user: dict = Depends(require_auth_optional)):
     now_ts = datetime.now().isoformat()
     trading = _is_trading_time()
 
@@ -241,7 +255,7 @@ async def _db_sector_heat(trade_date: str) -> list[dict]:
 
 
 @sector_heat_router.get("/heat")
-async def sector_heat():
+async def sector_heat(user: dict = Depends(require_auth_optional)):
     now_ts = datetime.now().isoformat()
     trading = _is_trading_time()
 
@@ -297,7 +311,7 @@ async def sector_heat():
 
 
 @sector_heat_router.get("/{sector_code}/leaders")
-async def sector_leaders(sector_code: str):
+async def sector_leaders(sector_code: str, user: dict = Depends(require_auth_optional)):
     """获取某个板块领涨股 Top 5"""
     cached = await cache_get(f"sector:leaders:{sector_code}")
     if cached is not None:
@@ -399,7 +413,7 @@ def _normalize_ts_code(raw: str) -> str:
 # ── 旧板块分析（保留兼容）──
 
 @sector_router.get("/ranking")
-async def sector_ranking():
+async def sector_ranking(user: dict = Depends(require_auth_optional)):
     today = date.today()
     for offset in [1, 2, 3]:
         td = (today - timedelta(days=offset)).strftime("%Y%m%d")
@@ -412,7 +426,7 @@ async def sector_ranking():
 
 
 @review_router.get("/latest")
-async def latest_review():
+async def latest_review(user: dict = Depends(require_auth_optional)):
     from app.core.cache import cache_get
     from datetime import date, timedelta
     today = date.today()
@@ -427,7 +441,7 @@ async def latest_review():
 
 
 @review_router.get("/daily")
-async def review_daily(date: str = ""):
+async def review_daily(date: str = "", user: dict = Depends(require_auth_optional)):
     from app.core.cache import cache_get, cache_set
     from datetime import date as _date, timedelta
     from app.services.market_review import MarketReviewEngine
@@ -449,7 +463,7 @@ async def review_daily(date: str = ""):
 
 
 @risk_router.get("")
-async def risk_list(page: int = 1, page_size: int = 20):
+async def risk_list(page: int = 1, page_size: int = 20, user: dict = Depends(require_auth_optional)):
     from app.core.cache import cache_get
     from app.core.database import async_session
     from app.models.orm.models import RiskListResult

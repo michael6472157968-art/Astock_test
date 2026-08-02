@@ -261,7 +261,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var page = window.location.pathname.split('/').pop() || 'index.html';
 
   // 需要登录的页面
-  var needAuth = ['alerts.html', 'admin-trigger.html'];
+  var needAuth = ['alerts.html', 'admin-trigger.html', 'stock-pool.html', 'diagnosis.html', 'sector.html', 'sector-rotation.html', 'backtest.html'];
   if (needAuth.indexOf(page) >= 0 && !Session.loggedIn()) {
     window.location.href = 'login.html?redirect=' + encodeURIComponent(page);
   }

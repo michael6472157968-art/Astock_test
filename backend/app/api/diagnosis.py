@@ -6,11 +6,15 @@ import math
 import time
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.cache import cache_get, cache_set
 from app.core.settings import get_settings
+from app.middleware.auth_middleware import require_auth_optional
 from app.models.schemas.common import APIResponse
+
+router = APIRouter(prefix="/api/v1/diagnosis", tags=["诊股"])
+_settings = get_settings()
 
 router = APIRouter(prefix="/api/v1/diagnosis", tags=["诊股"])
 _settings = get_settings()
@@ -322,16 +326,12 @@ def _build_kline_data(df) -> dict:
 # ── API ──
 
 @router.get("/quota")
-async def get_quota(request: Request):
+async def get_quota(request: Request, user: dict = Depends(require_auth_optional)):
     """返回当前用户每日诊股配额信息。GUEST 必须在 /{stock_code} 之前注册。"""
-    from app.core.security import get_current_user
-    from app.core.exceptions import AuthError
-
-    try:
-        user = get_current_user(request)
+    if user:
         tier = user["tier"]
         user_id = user["user_id"]
-    except AuthError:
+    else:
         tier = 0
         user_id = 0
 
@@ -355,16 +355,11 @@ async def get_quota(request: Request):
 
 
 @router.get("/{stock_code}")
-async def get_diagnosis(stock_code: str, request: Request):
-    from app.core.security import get_current_user
-    from app.core.exceptions import AuthError, TierDeniedError
-
-    # 尝试获取用户（不强制登录）
-    try:
-        user = get_current_user(request)
+async def get_diagnosis(stock_code: str, request: Request, user: dict = Depends(require_auth_optional)):
+    if user:
         tier = user["tier"]
         user_id = user["user_id"]
-    except AuthError:
+    else:
         tier = 0
         user_id = 0
 
@@ -463,7 +458,3 @@ def _build_response(report: dict, tier: int, cache_hit: bool) -> APIResponse:
         timestamp=int(time.time()),
         ext_info={"cache_hit": cache_hit},
     )
-
-
-def _get_tier(request: Request) -> int:
-    return getattr(request.state, "tier", 0) if hasattr(request.state, "tier") else 0

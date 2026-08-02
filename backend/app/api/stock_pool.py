@@ -5,10 +5,11 @@ from __future__ import annotations
 import time
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.core.settings import get_settings
+from app.middleware.auth_middleware import require_auth_optional
 from app.models.schemas.common import APIResponse
 
 router = APIRouter(prefix="/api/v1/stock-pool", tags=["选股池"])
@@ -23,7 +24,7 @@ POOL_TYPES = {
 
 
 @router.get("/categories")
-async def list_categories():
+async def list_categories(user: dict = Depends(require_auth_optional)):
     return APIResponse(
         data={"categories": [{"type": k, **v} for k, v in POOL_TYPES.items()]},
         timestamp=int(time.time()),
@@ -31,9 +32,10 @@ async def list_categories():
 
 
 @router.get("/{pool_type}")
-async def list_pool(pool_type: str, page: int = 1, page_size: int = 20, request: Request = None,
+async def list_pool(pool_type: str, page: int = 1, page_size: int = 20,
                     exclude_300: bool = False, exclude_301: bool = False,
-                    exclude_688: bool = False, exclude_920: bool = False):
+                    exclude_688: bool = False, exclude_920: bool = False,
+                    user: dict = Depends(require_auth_optional)):
     if pool_type not in POOL_TYPES:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"无效的选股池类型: {pool_type}")
@@ -82,8 +84,3 @@ async def list_pool(pool_type: str, page: int = 1, page_size: int = 20, request:
         ext_info={"cache_hit": cached is not None},
     )
 
-
-def _get_tier(request: Request | None) -> int:
-    if request is None:
-        return 0
-    return getattr(request.state, "tier", 0) if hasattr(request.state, "tier") else 0

@@ -13,7 +13,8 @@ from sqlalchemy import select
 
 from app.core.cache import cache_get, cache_set
 from app.core.database import async_session
-from app.core.security import get_current_user
+from app.core.security import create_access_token, create_refresh_token, get_current_user
+from app.middleware.auth_middleware import require_auth
 from app.models.orm.models import User
 from app.models.schemas.common import APIResponse
 
@@ -44,7 +45,7 @@ def _calc_remain(member_expire) -> int | None:
 
 
 @router.get("/profile")
-async def user_profile(user: dict = Depends(get_current_user)):
+async def user_profile(user: dict = Depends(require_auth)):
     """获取个人中心详细信息。"""
     user_id = user["user_id"]
 
@@ -71,7 +72,7 @@ async def user_profile(user: dict = Depends(get_current_user)):
 
 
 @router.get("/connection")
-async def user_connection(request: Request, user: dict = Depends(get_current_user)):
+async def user_connection(request: Request, user: dict = Depends(require_auth)):
     """生成移动端连接 token（6位数字，5分钟有效）。"""
     token = "".join(random.choices(string.digits, k=6))
     await cache_set(f"connection:token:{token}", user["user_id"], ttl=300)

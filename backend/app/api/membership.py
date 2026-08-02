@@ -11,8 +11,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.core.database import async_session
-from app.core.security import create_access_token, create_refresh_token, get_current_user
+from app.core.security import create_access_token, create_refresh_token
 from app.core.settings import get_settings
+from app.middleware.auth_middleware import require_auth
 from app.models.orm.models import MembershipCode, User
 from app.models.schemas.common import APIResponse
 
@@ -37,7 +38,7 @@ def _calc_remain(member_expire) -> int | None:
 
 
 @router.get("/status")
-async def membership_status(user: dict = Depends(get_current_user)):
+async def membership_status(user: dict = Depends(require_auth)):
     """查询当前用户会员状态。"""
     user_id, tier = user["user_id"], user["tier"]
 
@@ -66,7 +67,7 @@ class ActivateRequest(BaseModel):
 
 
 @router.post("/activate")
-async def membership_activate(req: ActivateRequest, user: dict = Depends(get_current_user)):
+async def membership_activate(req: ActivateRequest, user: dict = Depends(require_auth)):
     """使用激活码充值会员。"""
     user_id, _ = user["user_id"], user["tier"]
     code = req.code.strip().upper()

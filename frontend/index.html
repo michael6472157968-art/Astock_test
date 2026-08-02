@@ -102,13 +102,13 @@
         var src = d.source || '';
         if (src === 'tushare') badge.textContent = '收盘';
         else if (src === 'none') badge.textContent = '无';
-        else badge.textContent = src;
         else badge.textContent = src || '--';
       }
       // Update status bar date from update_time
-      if (d.update_time) {
-        var dt = d.update_time.substring(0, 10);
-        document.getElementById('statusDataDate').textContent = dt;
+      if (d.date) {
+        document.getElementById('statusDataDate').textContent = d.date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+      } else if (d.update_time) {
+        document.getElementById('statusDataDate').textContent = d.update_time.substring(0, 10);
       }
     }).catch(function() {});
   }
@@ -157,7 +157,7 @@
         var tsCode = s.stock_code || s.ts_code || '';
         var name = s.stock_name || s.name || tsCode;
         var close = s.close !== undefined ? s.close : 0;
-        var pct = s.pct_chg !== undefined ? s.pct_chg : 0;
+        var pct = s.change_pct !== undefined ? s.change_pct : (s.pct_chg !== undefined ? s.pct_chg : 0);
         var chartId = 'spark_' + idx;
         html += '<div class="hot-stock-card" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(tsCode) + '\'">' +
           '<div class="hs-info">' +
@@ -173,7 +173,7 @@
       top4.forEach(function(s, idx) {
         var el = document.getElementById('spark_' + idx);
         if (el) renderSparkline(el, s.stock_code || s.ts_code,
-          s.pct_chg !== undefined ? s.pct_chg : 0);
+          s.change_pct !== undefined ? s.change_pct : (s.pct_chg !== undefined ? s.pct_chg : 0));
       });
     }).catch(function() {
       document.getElementById('hotStocks').innerHTML =

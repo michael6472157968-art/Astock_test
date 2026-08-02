@@ -237,3 +237,14 @@ class AlertNotification(Base):
     content = Column(Text, default="")
     is_read = Column(Integer, default=0)
     created_at = Column(DateTime, default=_now)
+
+
+class AccessLog(Base):
+    __tablename__ = "access_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    endpoint = Column(String(200), nullable=False)
+    ip_address = Column(String(45), default="")
+    user_agent = Column(Text, default="")
+    created_at = Column(DateTime, default=_now)

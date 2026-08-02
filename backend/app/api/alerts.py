@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.database import async_session
 from app.core.settings import get_settings
+from app.middleware.auth_middleware import require_auth
 from app.models.orm.models import AlertNotification, UserAlertConfig, UserFavorite
 from app.models.schemas.common import APIResponse
 from app.services import user_data
@@ -18,23 +19,12 @@ router = APIRouter(prefix="/api/v1/alerts", tags=["预警"])
 _settings = get_settings()
 
 
-def _get_user(request: Request) -> tuple[int | None, int]:
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return None, 0
-    try:
-        from app.core.security import decode_token
-        payload = decode_token(auth[7:])
-        return int(payload["sub"]), payload.get("tier", 0)
-    except Exception:
-        return None, 0
-
 
 # ── 自选股 ──
 
 @router.get("/favorites")
-async def list_favorites(request: Request):
-    uid, tier = _get_user(request)
+async def list_favorites(request: Request, user: dict = Depends(require_auth)):
+    uid, tier = user["user_id"], user["tier"]
     if not uid:
         return APIResponse(data={"total": 0, "items": []}, timestamp=int(time.time()))
 
@@ -44,9 +34,8 @@ async def list_favorites(request: Request):
 
 
 @router.get("/favorites-quotes")
-async def favorites_quotes(codes: str = "", request: Request = None):
-    """批量获取自选股最新行情数据"""
-    uid, tier = _get_user(request)
+async def favorites_quotes(codes: str = "", user: dict = Depends(require_auth)):
+    uid, tier = user["user_id"], user["tier"]
     if not uid or not codes:
         return APIResponse(data={"quotes": {}}, timestamp=int(time.time()))
 
@@ -71,8 +60,8 @@ class AddFavRequest(BaseModel):
 
 
 @router.post("/favorites")
-async def add_favorite(req: AddFavRequest, request: Request):
-    uid, tier = _get_user(request)
+async def add_favorite(req: AddFavRequest, user: dict = Depends(require_auth)):
+    uid, tier = user["user_id"], user["tier"]
     if not uid:
         raise HTTPException(401, "请先登录")
 
@@ -84,9 +73,8 @@ async def add_favorite(req: AddFavRequest, request: Request):
 
 
 @router.delete("/favorites/{fav_id}")
-async def remove_favorite(fav_id: str, request: Request):
-    """fav_id 在这里是 stock_code（去重键），非自增ID"""
-    uid, tier = _get_user(request)
+async def remove_favorite(fav_id: str, user: dict = Depends(require_auth)):
+    uid, tier = user["user_id"], user["tier"]
     if not uid:
         raise HTTPException(401, "请先登录")
 
@@ -99,8 +87,8 @@ async def remove_favorite(fav_id: str, request: Request):
 # ── 预警配置 ──
 
 @router.get("/configs")
-async def list_configs(request: Request):
-    uid, tier = _get_user(request)
+async def list_configs(user: dict = Depends(require_auth)):
+    uid, tier = user["user_id"], user["tier"]
     if not uid:
         return APIResponse(data={"total": 0, "items": []}, timestamp=int(time.time()))
 
@@ -120,8 +108,8 @@ class AlertConfigRequest(BaseModel):
 
 
 @router.post("/configs")
-async def create_config(req: AlertConfigRequest, request: Request):
-    uid, tier = _get_user(request)
+async def create_config(req: AlertConfigRequest, user: dict = Depends(require_auth)):
+    uid, tier = user["user_id"], user["tier"]
     if not uid:
         raise HTTPException(401, "请先登录")
 
@@ -134,8 +122,8 @@ async def create_config(req: AlertConfigRequest, request: Request):
 
 
 @router.delete("/configs/{cfg_id}")
-async def delete_config(cfg_id: int, request: Request):
-    uid, tier = _get_user(request)
+async def delete_config(cfg_id: int, user: dict = Depends(require_auth)):
+    uid, tier = user["user_id"], user["tier"]
     if not uid:
         raise HTTPException(401, "请先登录")
 
@@ -154,8 +142,8 @@ async def delete_config(cfg_id: int, request: Request):
 # ── 通知 ──
 
 @router.get("/notifications")
-async def list_notifications(request: Request):
-    uid, tier = _get_user(request)
+async def list_notifications(user: dict = Depends(require_auth)):
+    uid, tier = user["user_id"], user["tier"]
     if not uid:
         return APIResponse(data={"total": 0, "items": []}, timestamp=int(time.time()))
 
