@@ -664,7 +664,7 @@ async def review_generate(request: Request, user: dict = Depends(require_auth_op
 
 
 @review_router.get("/download", response_class=PlainTextResponse)
-async def review_download(date: str = "", user: dict = Depends(require_auth_optional)):
+async def review_download(date: str = "", fmt: str = "md", user: dict = Depends(require_auth_optional)):
     await _ensure_review_table()
 
     if not date:
@@ -683,9 +683,25 @@ async def review_download(date: str = "", user: dict = Depends(require_auth_opti
     if not cached or not cached.get("content", {}).get("total"):
         raise HTTPException(status_code=404, detail="报告不存在或数据为空")
 
+    if fmt == "pdf":
+        return _build_pdf_response(date, cached)
+
     c = cached["content"]
     dt_label = date[:4] + "-" + date[4:6] + "-" + date[6:8]
 
+    md = _build_markdown(date, dt_label, c)
+
+    from urllib.parse import quote
+    filename = f"复盘报告_{date}.md"
+    content_encoded = md.encode("utf-8")
+    return PlainTextResponse(
+        content=content_encoded,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
+def _build_markdown(date: str, dt_label: str, c: dict) -> str:
     md = f"# 每日市场复盘简报 — {dt_label}\n\n"
     md += f"## 大盘概览\n\n"
     md += f"- 全市场: **{c['total']}** 只\n"
@@ -716,13 +732,104 @@ async def review_download(date: str = "", user: dict = Depends(require_auth_opti
         md += "\n"
 
     md += f"---\n*报告由 Stockwin 短线助手自动生成 · {dt_label}*\n"
+    return md
 
+
+def _build_pdf_response(date: str, cached: dict):
+    from io import BytesIO
     from urllib.parse import quote
-    filename = f"复盘报告_{date}.md"
-    content_encoded = md.encode("utf-8")
+
+    from fpdf import FPDF
+
+    c = cached["content"]
+    dt_label = date[:4] + "-" + date[4:6] + "-" + date[6:8]
+
+    pdf = FPDF()
+    pdf.add_page()
+
+    # Try to use a CJK font
+    font_name = "Helvetica"
+    font_path = None
+    for cand in [
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
+        "C:/Windows/Fonts/simsun.ttc",
+    ]:
+        import os as _os
+        if _os.path.exists(cand):
+            font_path = cand
+            break
+
+    if font_path:
+        pdf.add_font("CJK", "", font_path, uni=True)
+        pdf.add_font("CJK", "B", font_path, uni=True)
+        font_name = "CJK"
+
+    def _cjk(text, size=10, bold=False, align="L"):
+        style = "B" if bold else ""
+        pdf.set_font(font_name, style, size)
+        pdf.multi_cell(0, size * 1.5, text, align=align)
+
+    # Title
+    _cjk(f"每日市场复盘简报 — {dt_label}", size=18, bold=True, align="C")
+    pdf.ln(6)
+
+    # Summary section
+    _cjk("大盘概览", size=14, bold=True)
+    pdf.ln(2)
+    pdf.set_font(font_name, "", 11)
+    pdf.cell(0, 8, f"全市场: {c['total']} 只", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, f"上涨: {c['up_count']} | 平盘: {c.get('flat_count', 0)} | 下跌: {c['down_count']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, f"涨停: {c['limit_up']} 只 | 跌停: {c['limit_down']} 只", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, f"平均涨跌幅: {c['avg_pct']:+.2f}%", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, f"涨跌比: {c.get('up_ratio', 0)}%", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(6)
+
+    # Table helper
+    def _table(title, rows, headers, col_widths):
+        _cjk(title, size=13, bold=True)
+        pdf.ln(2)
+        pdf.set_font(font_name, "B", 10)
+        for i, h in enumerate(headers):
+            pdf.cell(col_widths[i], 8, h, border=1, align="C")
+        pdf.ln()
+        pdf.set_font(font_name, "", 10)
+        for row in rows:
+            for i, val in enumerate(row):
+                pdf.cell(col_widths[i], 8, str(val), border=1, align="C" if i > 0 else "L")
+            pdf.ln()
+        pdf.ln(4)
+
+    if c.get("top_gainers"):
+        _table("涨幅 TOP5",
+               [[s['name'], f"{s['pct']:+.2f}%", s.get('industry', '')] for s in c["top_gainers"]],
+               ["名称", "涨幅", "行业"],
+               [60, 40, 50])
+
+    if c.get("top_losers"):
+        _table("跌幅 TOP5",
+               [[s['name'], f"{s['pct']:+.2f}%", s.get('industry', '')] for s in c["top_losers"]],
+               ["名称", "跌幅", "行业"],
+               [60, 40, 50])
+
+    if c.get("top_sectors"):
+        _table("行业涨幅 TOP5",
+               [[s['name'], f"{s['avg_pct']:+.2f}%"] for s in c["top_sectors"]],
+               ["行业", "平均涨幅"],
+               [80, 50])
+
+    pdf.ln(4)
+    pdf.set_font(font_name, "", 9)
+    pdf.cell(0, 6, f"报告由 Stockwin 短线助手自动生成 · {dt_label}", align="C")
+
+    buf = BytesIO()
+    pdf.output(buf)
+    buf.seek(0)
+
+    filename = f"复盘报告_{date}.pdf"
     return PlainTextResponse(
-        content=content_encoded,
-        media_type="text/markdown; charset=utf-8",
+        content=buf.read(),
+        media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
     )
 
