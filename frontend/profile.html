@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>个人中心 - A股量化分析助手</title>
+<title>个人中心 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=3" />
 </head>
 <body>
 <header class="app-header">
-  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+  <div class="header-left"><a href="/"><svg width="24" height="24" viewBox="0 0 24 24" style="display:block"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00d4aa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><rect x="2" y="14" width="3" height="8" rx="0.5" fill="url(#lg)"/><rect x="7" y="10" width="3" height="12" rx="0.5" fill="url(#lg)"/><rect x="12" y="6" width="3" height="16" rx="0.5" fill="url(#lg)"/><rect x="17" y="11" width="3" height="11" rx="0.5" fill="url(#lg)"/><polyline points="3.5,14 8.5,10 13.5,6 18.5,11" fill="none" stroke="#00d4aa" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/></svg><span style="font-size:1.05rem;font-weight:700;color:var(--color-primary)">Stockwin <span style="font-weight:400;color:var(--color-text-muted)">短线助手</span></span></a></div>
   <nav id="topNav" class="header-nav"></nav>
 </header>
 <div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
@@ -29,7 +29,7 @@
 
     <!-- 激活码充值 -->
     <div class="card" id="activateCard"><div class="card-header">激活码充值</div><div class="card-body">
-      <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:10px">输入激活码兑换会员，支持月卡(30天)和年卡(365天)</p>
+      <p style="font-size:0.85rem;color:var(--color-text-muted);margin-bottom:10px">输入激活码兑换会员，支持月卡(30天)和年卡(365天)</p>
       <div style="display:flex;gap:8px">
         <input class="form-input" id="activateCode" placeholder="输入8位激活码" maxlength="12" style="flex:1;font-family:monospace;letter-spacing:2px;text-transform:uppercase" />
         <button class="btn btn-primary" onclick="doActivate()">激活</button>
@@ -39,7 +39,7 @@
 
     <!-- 移动端连接 -->
     <div class="card"><div class="card-header">移动端连接</div><div class="card-body" id="mobileCard">
-      <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px">生成一次性连接码，在手机上打开浏览器输入即可登录</p>
+      <p style="font-size:0.85rem;color:var(--color-text-muted);margin-bottom:12px">生成一次性连接码，在手机上打开浏览器输入即可登录</p>
       <button class="btn btn-outline" onclick="genConnection()">生成连接码</button>
       <div id="connectionResult" style="margin-top:12px"></div>
     </div></div>
@@ -72,7 +72,7 @@
         <button class="btn btn-outline btn-sm" onclick="refreshSector()">刷新板块分析</button>
         <button class="btn btn-outline btn-sm" onclick="refreshReview()">刷新复盘</button>
         <button class="btn btn-outline btn-sm" onclick="syncData()">同步日线数据</button>
-        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="clearAllCache()">清空缓存</button>
+        <button class="btn btn-outline btn-sm" style="color:var(--color-danger);border-color:var(--color-danger)" onclick="clearAllCache()">清空缓存</button>
       </div>
       <p id="adminMsg" style="margin-top:8px;font-size:0.8rem"></p>
     </div></div>
@@ -114,9 +114,9 @@
       var avatarText = d.phone.replace(/\*/g, '').slice(-2);
       document.getElementById('userInfoCard').innerHTML =
         '<div style="display:flex;align-items:center;gap:16px">' +
-        '<div style="width:56px;height:56px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.3rem;font-weight:700">' + avatarText + '</div>' +
+        '<div style="width:56px;height:56px;border-radius:50%;background:var(--color-primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.3rem;font-weight:700">' + avatarText + '</div>' +
         '<div><div style="font-weight:600;font-size:1.05rem">' + d.phone + '</div>' +
-        '<div style="font-size:0.8rem;color:var(--text-secondary)">注册于 ' + (d.created_at || '--').slice(0,10) + '</div></div>' +
+        '<div style="font-size:0.8rem;color:var(--color-text-muted)">注册于 ' + (d.created_at || '--').slice(0,10) + '</div></div>' +
         '</div>';
 
       // 会员卡片
@@ -145,24 +145,24 @@
 function doActivate() {
   var code = document.getElementById('activateCode').value.trim();
   var msg = document.getElementById('activateMsg');
-  if (!code) { msg.textContent = '请输入激活码'; msg.style.color = 'var(--danger)'; return; }
-  msg.textContent = '激活中...'; msg.style.color = 'var(--text-secondary)';
+  if (!code) { msg.textContent = '请输入激活码'; msg.style.color = 'var(--color-danger)'; return; }
+  msg.textContent = '激活中...'; msg.style.color = 'var(--color-text-muted)';
   API.post('/membership/activate', { code: code }).then(function(r) {
     Session.save(r.data);
     msg.textContent = '激活成功！当前等级: ' + r.data.member_name + '，剩余 ' + r.data.remain_days + ' 天';
-    msg.style.color = 'var(--success)';
+    msg.style.color = 'var(--color-success)';
     showToast('会员激活成功！', 'success');
     setTimeout(function() { window.location.reload(); }, 1500);
   }).catch(function(e) {
     msg.textContent = e.message || '激活失败';
-    msg.style.color = 'var(--danger)';
+    msg.style.color = 'var(--color-danger)';
   });
 }
 
 // 生成连接码
 function genConnection() {
   var el = document.getElementById('connectionResult');
-  el.innerHTML = '<span style="color:var(--text-secondary)">生成中...</span>';
+  el.innerHTML = '<span style="color:var(--color-text-muted)">生成中...</span>';
   API.get('/user/connection').then(function(r) {
     el.innerHTML =
       '<div class="qr-box">' +
@@ -172,7 +172,7 @@ function genConnection() {
       '<div style="font-size:0.7rem;color:#94a3b8">5分钟内有效</div>' +
       '</div>';
   }).catch(function(e) {
-    el.innerHTML = '<span style="color:var(--danger)">生成失败: ' + (e.message || '') + '</span>';
+    el.innerHTML = '<span style="color:var(--color-danger)">生成失败: ' + (e.message || '') + '</span>';
   });
 }
 
@@ -185,13 +185,13 @@ function genCodes() {
   API.post('/admin/membership/codes', { code_type: codeType, count: count }).then(function(r) {
     var codes = r.data.codes;
     var html = '<div style="font-weight:600;margin-bottom:8px">已生成 ' + codes.length + ' 个 ' + (codeType === 'monthly' ? '月卡' : '年卡') + ' 激活码：</div>';
-    html += '<div style="max-height:200px;overflow-y:auto;background:var(--bg-secondary);padding:8px;border-radius:6px;font-family:monospace;font-size:0.82rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:4px">';
+    html += '<div style="max-height:200px;overflow-y:auto;background:var(--color-bg);padding:8px;border-radius:6px;font-family:monospace;font-size:0.82rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:4px">';
     codes.forEach(function(c) { html += '<span>' + c + '</span>'; });
     html += '</div>';
     html += '<button class="btn btn-sm btn-outline" style="margin-top:8px" onclick="navigator.clipboard.writeText(\'' + codes.join('\\n') + '\');showToast(\'已复制到剪贴板\',\'success\')">复制全部</button>';
     el.innerHTML = html;
   }).catch(function(e) {
-    el.innerHTML = '<span style="color:var(--danger)">生成失败: ' + (e.message || '') + '</span>';
+    el.innerHTML = '<span style="color:var(--color-danger)">生成失败: ' + (e.message || '') + '</span>';
   });
 }
 
@@ -206,7 +206,7 @@ function loadCacheStats() {
 }
 function adminMsg(text, ok) {
   var el = document.getElementById('adminMsg');
-  el.textContent = text; el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+  el.textContent = text; el.style.color = ok ? 'var(--color-success)' : 'var(--color-danger)';
 }
 
 function refreshPool() { adminMsg('刷新中...'); API.post('/admin/cache/refresh/pool').then(function() { adminMsg('选股池已刷新', true); loadCacheStats(); }).catch(function(e) { adminMsg(e.message); }); }

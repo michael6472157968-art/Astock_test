@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>自选预警 - A股量化分析助手</title>
+<title>自选预警 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=3" />
 </head>
 <body>
@@ -34,7 +34,7 @@ function loadFavorites() {
         items.forEach(function(f) {
           var qd = quotes[f.stock_code] || {};
           var pct = qd.pct_chg || 0;
-          var color = pct > 0 ? 'color:var(--danger)' : (pct < 0 ? 'color:var(--success)' : '');
+          var color = pct > 0 ? 'color:var(--color-danger)' : (pct < 0 ? 'color:var(--color-success)' : '');
           tableHtml += '<tr>';
           tableHtml += '<td><a href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '">' + f.stock_code + '</a></td>';
           tableHtml += '<td>' + (qd.name || '--') + '</td>';
@@ -72,7 +72,7 @@ function loadNotifications() {
       html += '<td><a href="diagnosis.html?code=' + encodeURIComponent(n.ts_code) + '">' + (n.stock_name || n.ts_code) + '</a></td>';
       html += '<td><span class="signal-tag ' + typeClass + '">' + n.alert_type + '</span></td>';
       html += '<td>' + n.content + '</td>';
-      html += '<td style="font-size:0.8rem;color:var(--text-secondary)">' + (n.created_at ? n.created_at.slice(0,16).replace('T',' ') : '') + '</td>';
+      html += '<td style="font-size:0.8rem;color:var(--color-text-muted)">' + (n.created_at ? n.created_at.slice(0,16).replace('T',' ') : '') + '</td>';
       html += '</tr>';
     });
     html += '</tbody></table></div></div>';

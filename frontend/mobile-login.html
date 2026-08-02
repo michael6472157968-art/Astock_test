@@ -3,22 +3,22 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>移动端登录 - A股量化分析助手</title>
+<title>移动端登录 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=3" />
 <style>
-  .code-input { width: 100%; padding: 16px 20px; font-size: 1.8rem; text-align: center; letter-spacing: 12px; font-family: "Courier New", monospace; font-weight: 700; border: 2px solid var(--border); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); }
-  .code-input:focus { outline: none; border-color: var(--accent); }
+  .code-input { width: 100%; padding: 16px 20px; font-size: 1.8rem; text-align: center; letter-spacing: 12px; font-family: "Courier New", monospace; font-weight: 700; border: 2px solid var(--color-border); border-radius: 10px; background: var(--color-bg); color: var(--color-text); }
+  .code-input:focus { outline: none; border-color: var(--color-primary); }
 </style>
 </head>
 <body>
 <header class="app-header">
-  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+  <div class="header-left"><a href="/"><svg width="24" height="24" viewBox="0 0 24 24" style="display:block"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00d4aa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><rect x="2" y="14" width="3" height="8" rx="0.5" fill="url(#lg)"/><rect x="7" y="10" width="3" height="12" rx="0.5" fill="url(#lg)"/><rect x="12" y="6" width="3" height="16" rx="0.5" fill="url(#lg)"/><rect x="17" y="11" width="3" height="11" rx="0.5" fill="url(#lg)"/><polyline points="3.5,14 8.5,10 13.5,6 18.5,11" fill="none" stroke="#00d4aa" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/></svg><span style="font-size:1.05rem;font-weight:700;color:var(--color-primary)">Stockwin <span style="font-weight:400;color:var(--color-text-muted)">短线助手</span></span></a></div>
 </header>
 <div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
 <main class="main-content">
   <div style="max-width:380px;margin:60px auto">
     <div class="card"><div class="card-header">移动端连接登录</div><div class="card-body">
-      <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;text-align:center">请在电脑端个人中心生成连接码，然后在此输入</p>
+      <p style="font-size:0.85rem;color:var(--color-text-muted);margin-bottom:16px;text-align:center">请在电脑端个人中心生成连接码，然后在此输入</p>
       <div class="form-group">
         <input class="code-input" id="token" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="off" />
       </div>

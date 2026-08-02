@@ -129,7 +129,7 @@ function renderChrome() {
 
   var header = document.createElement('header');
   header.className = 'app-header';
-  header.innerHTML = '<div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div><nav id="topNav" class="header-nav"></nav>';
+  header.innerHTML = '<div class="header-left"><a href="/"><svg width="24" height="24" viewBox="0 0 24 24" style="display:block"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00d4aa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><rect x="2" y="14" width="3" height="8" rx="0.5" fill="url(#lg)"/><rect x="7" y="10" width="3" height="12" rx="0.5" fill="url(#lg)"/><rect x="12" y="6" width="3" height="16" rx="0.5" fill="url(#lg)"/><rect x="17" y="11" width="3" height="11" rx="0.5" fill="url(#lg)"/><polyline points="3.5,14 8.5,10 13.5,6 18.5,11" fill="none" stroke="#00d4aa" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/></svg><span style="font-size:1.05rem;font-weight:700;color:var(--color-primary)">Stockwin <span style="font-weight:400;color:var(--color-text-muted)">短线助手</span></span></a></div><nav id="topNav" class="header-nav"></nav>';
 
   var banner = document.createElement('div');
   banner.className = 'risk-banner';
@@ -192,7 +192,7 @@ function renderNav() {
   html += '<select onchange="setTheme(this.value)" class="theme-select"><option value="light">亮色</option><option value="dark">暗色终端</option><option value="warm">暖色护眼</option></select>';
   html += '</div>';
   nav.innerHTML = html;
-  setTheme(localStorage.getItem('theme') || 'light');
+  setTheme(localStorage.getItem('theme') || 'dark');
 }
 
 // 用户菜单下拉切换

@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>个股诊股 - A股量化分析助手</title>
+<title>个股诊股 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=2" />
 <script src="/lib/echarts.js"></script>
 <style>
 .signal-tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; margin:2px; }
-.signal-bullish { background:#16a34a20; color:var(--success); }
-.signal-bearish { background:#dc262620; color:var(--danger); }
-.signal-neutral { background:#64748b20; color:var(--text-secondary); }
-.risk-low { color:var(--success); } .risk-mid { color:var(--warning); } .risk-high { color:var(--danger); }
+.signal-bullish { background:#16a34a20; color:var(--color-success); }
+.signal-bearish { background:#dc262620; color:var(--color-danger); }
+.signal-neutral { background:#64748b20; color:var(--color-text-muted); }
+.risk-low { color:var(--color-success); } .risk-mid { color:var(--color-warning); } .risk-high { color:var(--color-danger); }
 </style>
 </head>
 <body>
@@ -22,7 +22,7 @@
   <div style="display:flex;gap:12px;margin-bottom:20px;align-items:center">
     <input class="form-input" id="codeInput" placeholder="输入股票代码，如 000001.SZ" style="max-width:240px" onkeypress="if(event.key==='Enter')search()" />
     <button class="btn btn-primary" onclick="search()">诊股</button>
-    <span id="quotaBadge" style="font-size:0.85rem;color:var(--text-secondary)"></span>
+    <span id="quotaBadge" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
   </div>
   <div id="result"></div>
 </main>
@@ -39,14 +39,14 @@ function loadQuota() {
   API.get('/diagnosis/quota').then(function(r) {
     var d = r.data;
     if (d.daily_limit < 0) {
-      badge.innerHTML = '<span style="color:var(--success);font-weight:700;">&#8734; 无限次</span>';
+      badge.innerHTML = '<span style="color:var(--color-success);font-weight:700;">&#8734; 无限次</span>';
       return;
     }
     var remaining = d.remaining;
     if (remaining > 0) {
       badge.innerHTML = '今日剩余 <strong>' + remaining + '</strong>/' + d.daily_limit + ' 次免费诊股';
     } else {
-      badge.innerHTML = '<span style="color:var(--danger);font-weight:700;">&#x26A0; 今日次数已用完</span>';
+      badge.innerHTML = '<span style="color:var(--color-danger);font-weight:700;">&#x26A0; 今日次数已用完</span>';
     }
   }).catch(function() { badge.textContent = ''; });
 }
@@ -110,11 +110,11 @@ function search() {
     if (q.key_levels) {
       var kl = q.key_levels;
       html += '<div class="card" style="margin-bottom:16px"><div class="card-header">关键价位</div><div class="card-body"><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;text-align:center">';
-      html += '<div><div style="font-size:0.8rem;color:var(--text-secondary)">支撑位</div><div style="font-weight:700;color:var(--success)">' + kl.support_price + '</div><div style="font-size:0.7rem;color:var(--text-secondary)">' + (kl.support_desc||'') + '</div></div>';
-      html += '<div><div style="font-size:0.8rem;color:var(--text-secondary)">阻力位</div><div style="font-weight:700;color:var(--danger)">' + kl.resistance_price + '</div><div style="font-size:0.7rem;color:var(--text-secondary)">' + (kl.resistance_desc||'') + '</div></div>';
-      html += '<div><div style="font-size:0.8rem;color:var(--text-secondary)">止损价</div><div style="font-weight:700;color:var(--danger)">' + kl.stop_loss_price + '</div></div>';
-      html += '<div><div style="font-size:0.8rem;color:var(--text-secondary)">止盈 T1</div><div style="font-weight:700;color:var(--success)">' + (kl.take_profit_price_1||'--') + '</div></div>';
-      html += '<div><div style="font-size:0.8rem;color:var(--text-secondary)">止盈 T2</div><div style="font-weight:700;color:var(--success)">' + (kl.take_profit_price_2||'--') + '</div></div>';
+      html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">支撑位</div><div style="font-weight:700;color:var(--color-success)">' + kl.support_price + '</div><div style="font-size:0.7rem;color:var(--color-text-muted)">' + (kl.support_desc||'') + '</div></div>';
+      html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">阻力位</div><div style="font-weight:700;color:var(--color-danger)">' + kl.resistance_price + '</div><div style="font-size:0.7rem;color:var(--color-text-muted)">' + (kl.resistance_desc||'') + '</div></div>';
+      html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">止损价</div><div style="font-weight:700;color:var(--color-danger)">' + kl.stop_loss_price + '</div></div>';
+      html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">止盈 T1</div><div style="font-weight:700;color:var(--color-success)">' + (kl.take_profit_price_1||'--') + '</div></div>';
+      html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">止盈 T2</div><div style="font-weight:700;color:var(--color-success)">' + (kl.take_profit_price_2||'--') + '</div></div>';
       html += '</div></div></div>';
     }
 
@@ -128,11 +128,11 @@ function search() {
     if (e.code === 403 && e.data && e.data.daily_limit) {
       var limit = e.data.daily_limit;
       container.innerHTML =
-        '<div class="card" style="border-left:4px solid var(--warning);margin-top:16px;">' +
+        '<div class="card" style="border-left:4px solid var(--color-warning);margin-top:16px;">' +
           '<div class="card-body" style="text-align:center;padding:24px;">' +
-            '<div style="font-size:1.2rem;font-weight:700;color:var(--warning);margin-bottom:8px;">' +
+            '<div style="font-size:1.2rem;font-weight:700;color:var(--color-warning);margin-bottom:8px;">' +
               '&#x1F512; 每日免费诊股 ' + limit + ' 次已用完</div>' +
-            '<p style="color:var(--text-secondary);margin-bottom:16px;">' +
+            '<p style="color:var(--color-text-muted);margin-bottom:16px;">' +
               '升级会员解锁无限次诊股，享选股池、回测、预警等更多功能</p>' +
             '<a href="profile.html" class="btn btn-primary" style="display:inline-block;">' +
               '&#x2B06; 升级会员</a>' +

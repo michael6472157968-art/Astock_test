@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>每日复盘 - A股量化分析助手</title>
+<title>每日复盘 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=3" />
 <script src="/lib/echarts.js"></script>
 <style>
 .review-chart { width:100%; height:400px; }
-.date-picker { padding:6px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-primary); font-size:0.9rem; }
+.date-picker { padding:6px 12px; border-radius:6px; border:1px solid var(--color-border); background:var(--color-card); color:var(--color-text); font-size:0.9rem; }
 </style>
 </head>
 <body>
@@ -17,7 +17,7 @@
   <p class="page-desc">大盘解读、热点板块、涨跌统计分析</p>
 
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-    <span style="font-size:0.85rem;color:var(--text-secondary)">选择日期：</span>
+    <span style="font-size:0.85rem;color:var(--color-text-muted)">选择日期：</span>
     <select id="dateSelect" class="date-picker" onchange="loadReview(this.value)"></select>
   </div>
 
@@ -75,7 +75,7 @@ function renderReview(td, data) {
   var html = '<div class="stat-grid" style="margin-bottom:20px">';
   html += '<div class="stat-card"><div class="stat-label">全市场</div><div class="stat-value" style="font-size:1.2rem;">' + c.total + ' 只</div></div>';
   html += '<div class="stat-card"><div class="stat-label">上涨 / 平 / 下跌</div><div class="stat-value" style="font-size:1rem;">' + c.up_count + ' / ' + (c.flat_count || 0) + ' / ' + c.down_count + '</div></div>';
-  html += '<div class="stat-card"><div class="stat-label">涨停 / 跌停</div><div class="stat-value" style="font-size:1rem;"><span style="color:var(--danger)">' + c.limit_up + '</span> / <span style="color:var(--success)">' + c.limit_down + '</span></div></div>';
+  html += '<div class="stat-card"><div class="stat-label">涨停 / 跌停</div><div class="stat-value" style="font-size:1rem;"><span style="color:var(--color-danger)">' + c.limit_up + '</span> / <span style="color:var(--color-success)">' + c.limit_down + '</span></div></div>';
   html += '<div class="stat-card"><div class="stat-label">平均涨跌幅</div><div class="stat-value ' + (c.avg_pct > 0 ? 'risk-low' : 'risk-high') + '">' + (c.avg_pct > 0 ? '+' : '') + c.avg_pct + '%</div></div>';
   html += '</div>';
 
@@ -87,7 +87,7 @@ function renderReview(td, data) {
   if (c.top_gainers && c.top_gainers.length) {
     html += '<div class="card" style="margin-bottom:16px"><div class="card-header">涨幅TOP5</div><div class="card-body"><table class="data-table"><thead><tr><th>名称</th><th>涨幅</th><th>行业</th></tr></thead><tbody>';
     c.top_gainers.forEach(function(s) {
-      html += '<tr><td>' + s.name + '</td><td style="color:var(--danger)">' + (s.pct > 0 ? '+' : '') + s.pct + '%</td><td style="color:var(--text-secondary)">' + (s.industry || '') + '</td></tr>';
+      html += '<tr><td>' + s.name + '</td><td style="color:var(--color-danger)">' + (s.pct > 0 ? '+' : '') + s.pct + '%</td><td style="color:var(--color-text-muted)">' + (s.industry || '') + '</td></tr>';
     });
     html += '</tbody></table></div></div>';
   }
@@ -96,7 +96,7 @@ function renderReview(td, data) {
   if (c.top_losers && c.top_losers.length) {
     html += '<div class="card" style="margin-bottom:16px"><div class="card-header">跌幅TOP5</div><div class="card-body"><table class="data-table"><thead><tr><th>名称</th><th>涨幅</th><th>行业</th></tr></thead><tbody>';
     c.top_losers.forEach(function(s) {
-      html += '<tr><td>' + s.name + '</td><td style="color:var(--success)">' + (s.pct > 0 ? '+' : '') + s.pct + '%</td><td style="color:var(--text-secondary)">' + (s.industry || '') + '</td></tr>';
+      html += '<tr><td>' + s.name + '</td><td style="color:var(--color-success)">' + (s.pct > 0 ? '+' : '') + s.pct + '%</td><td style="color:var(--color-text-muted)">' + (s.industry || '') + '</td></tr>';
     });
     html += '</tbody></table></div></div>';
   }
@@ -105,7 +105,7 @@ function renderReview(td, data) {
   if (c.top_sectors && c.top_sectors.length) {
     html += '<div class="card" style="margin-bottom:16px"><div class="card-header">行业涨幅TOP5</div><div class="card-body"><table class="data-table"><thead><tr><th>行业</th><th>平均涨幅</th></tr></thead><tbody>';
     c.top_sectors.forEach(function(s) {
-      html += '<tr><td>' + s.name + '</td><td style="color:var(--danger)">' + (s.avg_pct > 0 ? '+' : '') + s.avg_pct + '%</td></tr>';
+      html += '<tr><td>' + s.name + '</td><td style="color:var(--color-danger)">' + (s.avg_pct > 0 ? '+' : '') + s.avg_pct + '%</td></tr>';
     });
     html += '</tbody></table></div></div>';
   }
@@ -117,7 +117,7 @@ function drawPieChart(td, c) {
   var el = document.getElementById('reviewChart');
   var chart = echarts.init(el);
   chart.setOption({
-    title: { text: '涨跌分布', left: 'center', textStyle: { fontSize: 14, color: 'var(--text-primary)' } },
+    title: { text: '涨跌分布', left: 'center', textStyle: { fontSize: 14, color: 'var(--color-text)' } },
     tooltip: { trigger: 'item' },
     series: [{
       type: 'pie', radius: ['40%', '70%'], center: ['50%', '55%'],
@@ -126,7 +126,7 @@ function drawPieChart(td, c) {
         { value: c.flat_count || 0, name: '平盘(' + (c.flat_count || 0) + '只)', itemStyle: { color: '#8392A5' } },
         { value: c.down_count, name: '下跌(' + c.down_count + '只)', itemStyle: { color: '#14b143' } },
       ],
-      label: { color: 'var(--text-primary)', fontSize: 11 },
+      label: { color: 'var(--color-text)', fontSize: 11 },
     }]
   });
   window.addEventListener('resize', function() { chart.resize(); });

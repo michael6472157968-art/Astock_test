@@ -3,23 +3,23 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>登录 - A股量化分析助手</title>
+<title>登录 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=3" />
 </head>
 <body>
 <header class="app-header">
-  <div class="header-left"><a href="/"><h1>A股量化分析助手</h1></a></div>
+  <div class="header-left"><a href="/"><svg width="24" height="24" viewBox="0 0 24 24" style="display:block"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00d4aa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><rect x="2" y="14" width="3" height="8" rx="0.5" fill="url(#lg)"/><rect x="7" y="10" width="3" height="12" rx="0.5" fill="url(#lg)"/><rect x="12" y="6" width="3" height="16" rx="0.5" fill="url(#lg)"/><rect x="17" y="11" width="3" height="11" rx="0.5" fill="url(#lg)"/><polyline points="3.5,14 8.5,10 13.5,6 18.5,11" fill="none" stroke="#00d4aa" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/></svg><span style="font-size:1.05rem;font-weight:700;color:var(--color-primary)">Stockwin <span style="font-weight:400;color:var(--color-text-muted)">短线助手</span></span></a></div>
 </header>
 <div class="risk-banner">⚠️ 免责声明：本平台所有分析内容仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
 <main class="main-content">
   <div style="max-width:400px;margin:60px auto">
-    <a href="/" style="display:inline-block;margin-bottom:16px;color:var(--text-secondary);font-size:0.85rem;text-decoration:none">← 返回首页</a>
+    <a href="/" style="display:inline-block;margin-bottom:16px;color:var(--color-text-muted);font-size:0.85rem;text-decoration:none">← 返回首页</a>
     <div class="card"><div class="card-header">登录</div><div class="card-body">
       <div class="form-group"><label class="form-label">手机号</label><input class="form-input" id="phone" placeholder="请输入手机号" maxlength="11" /></div>
       <div class="form-group"><label class="form-label">密码</label><input class="form-input" id="password" type="password" placeholder="请输入密码" /></div>
       <div id="error" class="form-error" style="display:none"></div>
       <button class="btn btn-primary btn-block" onclick="doLogin()" style="margin-top:12px">登录</button>
-      <p style="text-align:center;margin-top:16px;font-size:0.85rem;color:var(--text-secondary)">还没有账号？<a href="register.html" style="color:var(--accent)">去注册</a></p>
+      <p style="text-align:center;margin-top:16px;font-size:0.85rem;color:var(--color-text-muted)">还没有账号？<a href="register.html" style="color:var(--color-primary)">去注册</a></p>
     </div></div>
   </div>
 </main>

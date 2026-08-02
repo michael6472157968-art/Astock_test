@@ -1,0 +1,51 @@
+{
+  "$description": "Design tokens extracted from QuantDinger brand inspiration + Bloomberg/TradingView dark terminal style",
+  "source": "QuantDinger (brand concept), Bloomberg Terminal, TradingView",
+  "theme": "Dark Finance Terminal",
+  "colors": {
+    "background": {
+      "base": { "value": "#0a0e17", "var": "--color-bg", "role": "page background" },
+      "surface": { "value": "#111827", "var": "--color-surface", "role": "section/modal backdrop" },
+      "card": { "value": "#1a1f2e", "var": "--color-card", "role": "card/header/footer background" }
+    },
+    "text": {
+      "primary": { "value": "#e8ecf1", "var": "--color-text", "role": "headlines, body copy" },
+      "muted": { "value": "#8892a4", "var": "--color-text-muted", "role": "labels, secondary info" }
+    },
+    "brand": {
+      "primary": { "value": "#00d4aa", "var": "--color-primary", "role": "buttons, links, active state" },
+      "primaryHover": { "value": "#00e8bb", "var": "--color-primary-hover", "role": "hover/active darker" }
+    },
+    "border": {
+      "default": { "value": "#1f2937", "var": "--color-border", "role": "card/table/input borders" }
+    },
+    "semantic": {
+      "success": { "value": "#22c55e", "var": "--color-success", "role": "positive / 跌(A股)" },
+      "danger": { "value": "#ef4444", "var": "--color-danger", "role": "negative / 涨(A股)" },
+      "warning": { "value": "#f59e0b", "var": "--color-warning", "role": "alerts, mid-risk" },
+      "gold": { "value": "#f0b90b", "var": "--color-gold", "role": "VIP/premium accent" },
+      "up": { "value": "#ef4444", "var": "--color-up", "role": "A股上涨(红)" },
+      "down": { "value": "#22c55e", "var": "--color-down", "role": "A股下跌(绿)" }
+    }
+  },
+  "shadows": {
+    "sm": { "value": "0 1px 2px rgba(0,0,0,0.4)", "var": "--shadow-sm" },
+    "md": { "value": "0 4px 12px rgba(0,0,0,0.5)", "var": "--shadow-md" },
+    "lg": { "value": "0 8px 24px rgba(0,0,0,0.6)", "var": "--shadow-lg" }
+  },
+  "radii": {
+    "sm": { "value": "4px", "var": "--radius-sm" },
+    "md": { "value": "8px", "var": "--radius-md" },
+    "lg": { "value": "12px", "var": "--radius-lg" }
+  },
+  "charts": {
+    "line": { "value": "#00d4aa", "var": "--chart-line", "role": "chart line stroke" },
+    "fill": { "value": "rgba(0,212,170,0.12)", "var": "--chart-fill", "role": "chart area fill" },
+    "grid": { "value": "#1f2937", "var": "--chart-grid", "role": "chart grid lines" }
+  },
+  "typography": {
+    "fontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif",
+    "fontSizeBase": "16px",
+    "lineHeight": "1.6"
+  }
+}

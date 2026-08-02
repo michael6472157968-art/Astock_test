@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>风险避雷 - A股量化分析助手</title>
+<title>风险避雷 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=3" />
 <style>
 .risk-cat-tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600; }
-.risk-st { background:#dc262620; color:var(--danger); }
+.risk-st { background:#dc262620; color:var(--color-danger); }
 .risk-surge { background:#f9731620; color:#ea580c; }
-.risk-cliff { background:#e11d4820; color:var(--danger); }
+.risk-cliff { background:#e11d4820; color:var(--color-danger); }
 .risk-turnover { background:#f59e0b20; color:#b45309; }
-.risk-drain { background:#6b728020; color:var(--text-secondary); }
-.stat-warn { color:var(--danger); }
+.risk-drain { background:#6b728020; color:var(--color-text-muted); }
+.stat-warn { color:var(--color-danger); }
 .stat-num { font-size:2rem; font-weight:700; }
 </style>
 </head>
@@ -61,7 +61,7 @@ function render() {
   Object.keys(CAT_CFG).forEach(function(k) {
     var cnt = cats[k] || 0;
     var cfg = CAT_CFG[k];
-    statsHtml += '<div class="stat-card"><div class="stat-label">' + cfg.icon + ' ' + cfg.label + '</div><div class="stat-num' + (cnt > 0 && k !== 'st_risk' ? ' stat-warn' : '') + '">' + cnt + '</div><div style="font-size:0.7rem;color:var(--text-secondary)">只股票</div></div>';
+    statsHtml += '<div class="stat-card"><div class="stat-label">' + cfg.icon + ' ' + cfg.label + '</div><div class="stat-num' + (cnt > 0 && k !== 'st_risk' ? ' stat-warn' : '') + '">' + cnt + '</div><div style="font-size:0.7rem;color:var(--color-text-muted)">只股票</div></div>';
   });
   document.getElementById('statsRow').innerHTML = statsHtml;
 

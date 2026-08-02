@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>板块分析 - A股量化分析助手</title>
+<title>板块分析 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=3" />
 <style>
-.heat-bar { display:inline-block; height:16px; border-radius:3px; background:var(--accent); vertical-align:middle; margin-right:6px; }
+.heat-bar { display:inline-block; height:16px; border-radius:3px; background:var(--color-primary); vertical-align:middle; margin-right:6px; }
 </style>
 </head>
 <body>
@@ -30,14 +30,14 @@ API.get('/sector-rotation/ranking').then(function(r) {
   sectors.forEach(function(s, i) {
     var heat = s.heat_score || 0;
     var barW = Math.max(4, Math.abs(heat) / Math.max(maxHeat, 1) * 120);
-    var heatColor = heat > 0 ? 'var(--danger)' : 'var(--success)';
+    var heatColor = heat > 0 ? 'var(--color-danger)' : 'var(--color-success)';
     html += '<tr>';
     html += '<td>' + (i + 1) + '</td>';
     html += '<td><strong>' + s.name + '</strong></td>';
     html += '<td><span class="heat-bar" style="width:' + barW + 'px;background:' + heatColor + '"></span>' + (heat > 0 ? '+' : '') + heat.toFixed(1) + '</td>';
-    html += '<td style="color:' + ((s.momentum || 0) > 0 ? 'var(--danger)' : 'var(--success)') + '">' + ((s.momentum || 0) > 0 ? '+' : '') + (s.momentum || 0).toFixed(1) + '</td>';
+    html += '<td style="color:' + ((s.momentum || 0) > 0 ? 'var(--color-danger)' : 'var(--color-success)') + '">' + ((s.momentum || 0) > 0 ? '+' : '') + (s.momentum || 0).toFixed(1) + '</td>';
     html += '<td>' + (s.phase || '--') + '</td>';
-    html += '<td style="color:var(--text-secondary)">' + s.count + '只</td>';
+    html += '<td style="color:var(--color-text-muted)">' + s.count + '只</td>';
     html += '</tr>';
   });
   html += '</tbody></table></div></div>';

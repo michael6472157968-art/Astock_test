@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>A股量化分析助手</title>
+<title>Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=2" />
 </head>
 <body>
 <main class="main-content" data-chrome>
   <h2 class="page-title">市场概览</h2>
-  <p class="page-desc">A股量化分析助手 — 数据驱动决策</p>
+  <p class="page-desc">Stockwin 短线助手 — 数据驱动决策</p>
 
   <div class="stat-grid" style="margin-bottom:24px">
     <div class="stat-card"><div class="stat-label">系统状态</div><div class="stat-value" style="font-size:1rem;" id="healthStatus">检查中...</div></div>
@@ -35,7 +35,7 @@
   ];
   var html = '';
   modules.forEach(function(m) {
-    html += '<div class="card" style="cursor:pointer" onclick="location.href=\'' + m.href + '\'"><div class="card-header">' + m.icon + ' ' + m.name + '</div><div class="card-body"><p style="font-size:0.85rem;color:var(--text-secondary)">' + m.desc + '</p></div></div>';
+    html += '<div class="card" style="cursor:pointer" onclick="location.href=\'' + m.href + '\'"><div class="card-header">' + m.icon + ' ' + m.name + '</div><div class="card-body"><p style="font-size:0.85rem;color:var(--color-text-muted)">' + m.desc + '</p></div></div>';
   });
   document.getElementById('modules').innerHTML = html;
 
