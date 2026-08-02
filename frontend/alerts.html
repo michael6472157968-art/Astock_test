@@ -10,7 +10,7 @@
 <main class="main-content" data-chrome>
   <h2 class="page-title">自选股异动预警</h2>
   <p class="page-desc">技术面信号：放量突破压力位、跌破支撑位、MACD金叉死叉、RSI超买超卖</p>
-  <div id="content"><p class="state-loading">加载中...</p></div>
+  <div id="content" style="width:100%;"><p class="state-loading">加载中...</p></div>
 </main>
 <script src="/js/app.js?v=5"></script>
 <script>
@@ -30,7 +30,7 @@ function loadFavorites() {
       var codes = items.map(function(f){return f.stock_code;}).join(',');
       API.get('/alerts/favorites-quotes?codes=' + encodeURIComponent(codes)).then(function(qr) {
         var quotes = qr.data.quotes || {};
-        var tableHtml = '<div class="card"><div class="card-header">我的自选股（' + items.length + '只）</div><div class="card-body"><table class="data-table"><thead><tr><th>代码</th><th>名称</th><th>现价</th><th>涨跌幅</th><th>操作</th></tr></thead><tbody>';
+        var tableHtml = '<div class="card"><div class="card-header">我的自选股（' + items.length + '只）</div><div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>代码</th><th>名称</th><th>现价</th><th>涨跌幅</th><th>操作</th></tr></thead><tbody>';
         items.forEach(function(f) {
           var qd = quotes[f.stock_code] || {};
           var pct = qd.pct_chg || 0;
@@ -63,7 +63,7 @@ function loadNotifications() {
       container.insertAdjacentHTML('beforeend', '<div class="card" style="margin-top:16px"><div class="card-header">异动预警通知</div><div class="card-body"><p class="state-empty">暂无预警通知。收盘后15:40系统将自动扫描生成异动预警。</p></div></div>');
       return;
     }
-    var html = '<div class="card" style="margin-top:16px"><div class="card-header">异动预警通知（' + notifs.length + '条）</div><div class="card-body"><table class="data-table"><thead><tr><th>股票</th><th>类型</th><th>内容</th><th>时间</th></tr></thead><tbody>';
+    var html = '<div class="card" style="margin-top:16px"><div class="card-header">异动预警通知（' + notifs.length + '条）</div><div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>股票</th><th>类型</th><th>内容</th><th>时间</th></tr></thead><tbody>';
     notifs.forEach(function(n) {
       var typeClass = '';
       if (n.alert_type && n.alert_type.indexOf('金叉') >= 0 || n.alert_type && n.alert_type.indexOf('超卖') >= 0) typeClass = 'signal-bullish';

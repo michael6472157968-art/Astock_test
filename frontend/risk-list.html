@@ -23,7 +23,7 @@
   <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">⚠️ 风险清单基于公开数据自动筛选，未被列入清单不代表无风险。数据每日收盘后自动更新。</div>
 
   <div class="stat-grid" style="margin-bottom:20px" id="statsRow"></div>
-  <div id="content"><p class="state-loading">加载中...</p></div>
+  <div id="content" style="width:100%;"><p class="state-loading">加载中...</p></div>
 </main>
 <script src="/js/app.js?v=5"></script>
 <script>
@@ -73,7 +73,7 @@ function render() {
     var cfg = CAT_CFG[k];
     html += '<div class="card" style="margin-bottom:16px">';
     html += '<div class="card-header">' + cfg.icon + ' ' + cfg.label + ' <span class="risk-cat-tag ' + cfg.cls + '">' + items.length + ' 只</span></div>';
-    html += '<div class="card-body"><table class="data-table"><thead><tr><th>代码</th><th>名称</th><th>风险详情</th></tr></thead><tbody>';
+    html += '<div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>代码</th><th>名称</th><th>风险详情</th></tr></thead><tbody>';
     items.forEach(function(r) {
       html += '<tr>';
       html += '<td><a href="diagnosis.html?code=' + encodeURIComponent(r.ts_code) + '">' + r.ts_code + '</a></td>';

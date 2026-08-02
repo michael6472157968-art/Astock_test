@@ -21,8 +21,8 @@
     <select id="dateSelect" class="date-picker" onchange="loadReview(this.value)"></select>
   </div>
 
-  <div id="reviewDetail"></div>
-  <div id="reviewChart" class="review-chart" style="display:none;"></div>
+  <div id="reviewDetail" style="width:100%;"></div>
+  <div id="reviewChart" class="review-chart" style="display:none;width:100%;"></div>
 </main>
 <script src="/js/app.js?v=5"></script>
 <script>
@@ -85,7 +85,7 @@ function renderReview(td, data) {
 
   // 涨幅TOP5
   if (c.top_gainers && c.top_gainers.length) {
-    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">涨幅TOP5</div><div class="card-body"><table class="data-table"><thead><tr><th>名称</th><th>涨幅</th><th>行业</th></tr></thead><tbody>';
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">涨幅TOP5</div><div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>名称</th><th>涨幅</th><th>行业</th></tr></thead><tbody>';
     c.top_gainers.forEach(function(s) {
       html += '<tr><td>' + s.name + '</td><td style="color:var(--color-danger)">' + (s.pct > 0 ? '+' : '') + s.pct + '%</td><td style="color:var(--color-text-muted)">' + (s.industry || '') + '</td></tr>';
     });
@@ -94,7 +94,7 @@ function renderReview(td, data) {
 
   // 跌幅TOP5
   if (c.top_losers && c.top_losers.length) {
-    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">跌幅TOP5</div><div class="card-body"><table class="data-table"><thead><tr><th>名称</th><th>涨幅</th><th>行业</th></tr></thead><tbody>';
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">跌幅TOP5</div><div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>名称</th><th>涨幅</th><th>行业</th></tr></thead><tbody>';
     c.top_losers.forEach(function(s) {
       html += '<tr><td>' + s.name + '</td><td style="color:var(--color-success)">' + (s.pct > 0 ? '+' : '') + s.pct + '%</td><td style="color:var(--color-text-muted)">' + (s.industry || '') + '</td></tr>';
     });
@@ -103,7 +103,7 @@ function renderReview(td, data) {
 
   // 行业TOP5
   if (c.top_sectors && c.top_sectors.length) {
-    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">行业涨幅TOP5</div><div class="card-body"><table class="data-table"><thead><tr><th>行业</th><th>平均涨幅</th></tr></thead><tbody>';
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">行业涨幅TOP5</div><div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>行业</th><th>平均涨幅</th></tr></thead><tbody>';
     c.top_sectors.forEach(function(s) {
       html += '<tr><td>' + s.name + '</td><td style="color:var(--color-danger)">' + (s.avg_pct > 0 ? '+' : '') + s.avg_pct + '%</td></tr>';
     });

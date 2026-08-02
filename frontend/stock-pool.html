@@ -25,6 +25,13 @@
 
   <div class="tabs" id="tabs"></div>
 
+  <div class="stat-grid" id="poolStats" style="margin-bottom:20px">
+    <div class="stat-card"><div class="stat-label">策略总数</div><div class="stat-value" style="font-size:1.2rem;">4</div></div>
+    <div class="stat-card"><div class="stat-label">当前策略</div><div class="stat-value" style="font-size:1.2rem;" id="statName">热点龙头池</div></div>
+    <div class="stat-card"><div class="stat-label">信号数量</div><div class="stat-value" style="font-size:1.2rem;" id="statCount">--</div></div>
+    <div class="stat-card"><div class="stat-label">数据日期</div><div class="stat-value" style="font-size:1rem;" id="statDate">--</div></div>
+  </div>
+
   <div class="toolbar">
     <div class="dropdown">
       <button class="btn-sm" onclick="document.getElementById('filterMenu').classList.toggle('show')" id="btnFilter">
@@ -125,6 +132,7 @@ function renderTabs() {
 function loadPool(type) {
   activePool = type;
   renderTabs();
+  document.getElementById('statName').textContent = pools.find(function(p) { return p.type === type; }).name;
   var content = document.getElementById('content');
   content.innerHTML = '<p class="state-loading">加载中...</p>';
   API.get('/stock-pool/' + type + getExcludeParams()).then(function(r) {
@@ -144,8 +152,13 @@ function renderTable(items) {
   var content = document.getElementById('content');
   if (!items.length) {
     content.innerHTML = '<p class="state-empty">当前筛选条件下无结果，请调整板块筛选或<a href="#" onclick="doRefresh()">刷新数据</a></p>';
+    document.getElementById('statCount').textContent = '0';
     return;
   }
+  document.getElementById('statCount').textContent = items.length + ' 条';
+  var dt = items[0].calc_date || items[0].trade_date || '';
+  if (dt && dt.length === 8) dt = dt.substring(0,4) + '-' + dt.substring(4,6) + '-' + dt.substring(6,8);
+  document.getElementById('statDate').textContent = dt || '--';
   var html = '<table class="data-table"><thead><tr><th>排名</th><th>代码</th><th>名称</th><th>收盘价</th><th>涨跌幅</th><th>入选理由</th></tr></thead><tbody>';
   items.forEach(function(s, i) {
     var color = s.change_pct > 0 ? 'color:var(--color-danger)' : 'color:var(--color-success)';
