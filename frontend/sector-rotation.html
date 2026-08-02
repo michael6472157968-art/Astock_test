@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>板块轮动热力图 - Stockwin 短线助手</title>
+<link rel="stylesheet" href="/css/app.css?v=3" />
+<script src="/lib/echarts.js"></script>
+<style>
+#treemapChart { width: 100%; height: 560px; }
+.sector-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+.sector-meta .source-tag { font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; background: var(--color-border); color: var(--color-text-muted); }
+.modal-overlay {
+  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.65); z-index: 500;
+  align-items: center; justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal-box {
+  background: var(--color-card); border: 1px solid var(--color-border);
+  border-radius: 12px; padding: 24px; max-width: 520px; width: 90vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6); max-height: 80vh; overflow-y: auto;
+}
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-header h3 { font-size: 1.1rem; font-weight: 700; }
+.modal-header .modal-close {
+  background: none; border: none; color: var(--color-text-muted);
+  font-size: 1.4rem; cursor: pointer; padding: 4px 8px; border-radius: 4px;
+}
+.modal-header .modal-close:hover { color: var(--color-text); background: var(--color-bg); }
+.modal-pct { font-size: 1.3rem; font-weight: 700; margin-bottom: 16px; }
+.modal-pct.up { color: var(--color-up); }
+.modal-pct.down { color: var(--color-down); }
+.leader-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.leader-table th {
+  text-align: left; padding: 8px 10px; font-size: 0.78rem;
+  font-weight: 600; color: var(--color-text-muted); border-bottom: 2px solid var(--color-border);
+}
+.leader-table td { padding: 10px 10px; font-size: 0.85rem; border-bottom: 1px solid var(--color-border); }
+.leader-table tr:hover { background: var(--color-bg); }
+.leader-table .stock-link { color: var(--color-primary); text-decoration: none; cursor: pointer; }
+.leader-table .stock-link:hover { text-decoration: underline; }
+.leader-table .pct.up { color: var(--color-up); }
+.leader-table .pct.down { color: var(--color-down); }
+.modal-loading { text-align: center; padding: 30px; color: var(--color-text-muted); }
+.modal-error { text-align: center; padding: 30px; color: var(--color-danger); }
+</style>
+</head>
+<body>
+<main class="main-content" data-chrome>
+  <h2 class="page-title">板块轮动热力图</h2>
+  <div class="sector-meta">
+    <span class="page-desc" style="margin-bottom:0;">概念板块实时涨跌分布 · 点击矩形查看领涨股</span>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span class="source-tag" id="dataSource">--</span>
+      <span style="font-size:0.72rem;color:var(--color-text-muted);" id="updateTime"></span>
+    </div>
+  </div>
+  <div id="treemapChart"></div>
+  <div style="text-align:center;padding:12px;font-size:0.72rem;color:var(--color-text-muted);">
+    数据来源：<span id="sourceDetail">--</span> | 盘中 120s 刷新 | 红色=上涨，绿色=下跌
+  </div>
+  <div id="errorMsg" style="display:none;text-align:center;padding:60px 20px;color:var(--color-danger);"></div>
+</main>
+
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-box" id="modalBox" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="modalTitle">--</h3>
+      <button class="modal-close" onclick="document.getElementById('modalOverlay').classList.remove('show')">&times;</button>
+    </div>
+    <div class="modal-pct" id="modalPct">--</div>
+    <div id="modalBody"><div class="modal-loading">加载中...</div></div>
+  </div>
+</div>
+
+<script src="/js/app.js?v=5"></script>
+<script>
+(function() {
+  var chartDom = document.getElementById('treemapChart');
+  var chart = echarts.init(chartDom);
+  var sectorsData = [];
+  var refreshTimer = null;
+
+  function fmtSign(v) { return v >= 0 ? '+' + v.toFixed(2) : v.toFixed(2); }
+
+  function inTradingHours() {
+    var d = new Date();
+    if (d.getDay() === 0 || d.getDay() === 6) return false;
+    var m = d.getHours() * 60 + d.getMinutes();
+    return m >= 540 && m <= 930;
+  }
+
+  function getColor(pct) {
+    if (pct > 2) return '#cc2222';
+    if (pct > 0) return '#e87373';
+    if (pct > -2) return '#6fcf6f';
+    return '#1a8a1a';
+  }
+
+  function renderTreemap(data) {
+    chart.setOption({
+      tooltip: {
+        formatter: function(p) {
+          return '<strong>' + p.name + '</strong><br/>涨跌幅: ' + fmtSign(p.value) + '%';
+        }
+      },
+      series: [{
+        type: 'treemap',
+        width: '100%',
+        height: '100%',
+        roam: false,
+        nodeClick: false,
+        breadcrumb: { show: false },
+        label: {
+          show: true,
+          formatter: function(p) {
+            return '{name|' + p.name + '}\n{val|' + fmtSign(p.value) + '%}';
+          },
+          rich: {
+            name: { fontSize: 13, color: '#fff', lineHeight: 20 },
+            val: { fontSize: 16, fontWeight: 'bold', color: '#fff', lineHeight: 24 }
+          }
+        },
+        upperLabel: { show: true, height: 30, color: '#8892a4' },
+        itemStyle: { borderColor: '#0a0e17', borderWidth: 2 },
+        levels: [{
+          itemStyle: { borderColor: '#0a0e17', borderWidth: 2, gapWidth: 2 },
+          upperLabel: { show: false }
+        }, {
+          itemStyle: { borderColor: '#0a0e17', borderWidth: 2, gapWidth: 2 },
+          upperLabel: { show: false }
+        }],
+        data: data.map(function(s) {
+          return {
+            name: s.name,
+            value: Math.abs(s.pct_chg) + 0.5,
+            pct_chg: s.pct_chg,
+            code: s.code,
+            itemStyle: { color: getColor(s.pct_chg) }
+          };
+        })
+      }]
+    });
+  }
+
+  function loadHeat() {
+    API.get('/sector/heat').then(function(r) {
+      var d = r.data;
+      sectorsData = d.sectors || [];
+      var src = d.source || 'none';
+      var srcLabels = { 'akshare_realtime': 'AKShare 实时', 'db_industry': 'DB行业聚合', 'db_cache': '本地缓存', 'none': '无数据' };
+      document.getElementById('dataSource').textContent = srcLabels[src] || src;
+      document.getElementById('sourceDetail').textContent = srcLabels[src] || src;
+      var dt = d.date || '';
+      if (dt.length === 8) dt = dt.substring(0,4) + '-' + dt.substring(4,6) + '-' + dt.substring(6,8);
+      document.getElementById('updateTime').textContent = dt;
+      document.getElementById('errorMsg').style.display = 'none';
+      chartDom.style.display = '';
+
+      if (!sectorsData.length) {
+        document.getElementById('errorMsg').style.display = 'block';
+        document.getElementById('errorMsg').textContent = '暂无板块数据，请稍后刷新或执行数据同步';
+        chartDom.style.display = 'none';
+        return;
+      }
+      renderTreemap(sectorsData);
+    }).catch(function(e) {
+      document.getElementById('errorMsg').style.display = 'block';
+      document.getElementById('errorMsg').textContent = '数据加载失败: ' + (e.message || '网络错误');
+      chartDom.style.display = 'none';
+    });
+  }
+
+  chart.on('click', function(params) {
+    if (!params.data || !params.data.name) return;
+    var name = params.data.name;
+    var code = params.data.code || name;
+    var pct = params.data.pct_chg || 0;
+    showSectorModal(name, code, pct);
+  });
+
+  function showSectorModal(name, code, pct) {
+    document.getElementById('modalTitle').textContent = name;
+    var pctEl = document.getElementById('modalPct');
+    pctEl.textContent = fmtSign(pct) + '%';
+    pctEl.className = 'modal-pct ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : '');
+    document.getElementById('modalBody').innerHTML = '<div class="modal-loading">加载中...</div>';
+    document.getElementById('modalOverlay').classList.add('show');
+
+    API.get('/sector/' + encodeURIComponent(code) + '/leaders').then(function(r) {
+      var stocks = r.data.stocks || [];
+      var sname = r.data.sector_name || name;
+      document.getElementById('modalTitle').textContent = sname;
+
+      if (!stocks.length) {
+        document.getElementById('modalBody').innerHTML = '<div class="modal-error">暂无该板块成分股数据</div>';
+        return;
+      }
+
+      var html = '<table class="leader-table"><thead><tr><th>#</th><th>股票名称</th><th>最新价</th><th>涨跌幅</th></tr></thead><tbody>';
+      stocks.forEach(function(s, i) {
+        var pctCls = s.pct_chg > 0 ? 'up' : s.pct_chg < 0 ? 'down' : '';
+        var codeForLink = encodeURIComponent(s.ts_code || '');
+        html += '<tr>';
+        html += '<td style="color:var(--color-text-muted)">' + (i + 1) + '</td>';
+        html += '<td><a class="stock-link" href="diagnosis.html?code=' + codeForLink + '">' + (s.name || s.ts_code) + '</a></td>';
+        html += '<td>' + (s.close ? s.close.toFixed(2) : '--') + '</td>';
+        html += '<td class="pct ' + pctCls + '">' + fmtSign(s.pct_chg) + '%</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      document.getElementById('modalBody').innerHTML = html;
+    }).catch(function(e) {
+      document.getElementById('modalBody').innerHTML = '<div class="modal-error">加载失败: ' + (e.message || '') + '</div>';
+    });
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      document.getElementById('modalOverlay').classList.remove('show');
+    }
+  });
+
+  function autoRefresh() {
+    loadHeat();
+    if (inTradingHours()) {
+      refreshTimer = setInterval(function() {
+        if (!inTradingHours()) { clearInterval(refreshTimer); return; }
+        loadHeat();
+      }, 120000);
+    }
+  }
+
+  window.addEventListener('resize', function() { chart.resize(); });
+
+  autoRefresh();
+})();
+</script>
+</body>
+</html>

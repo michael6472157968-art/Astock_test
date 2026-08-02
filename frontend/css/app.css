@@ -575,6 +575,16 @@ body {
   /* Charts — reduce height */
   .chart-container { height: 260px; }
 
+  /* Sector rotation treemap */
+  #treemapChart { height: 280px !important; }
+  .sector-meta { flex-direction: column; align-items: flex-start; }
+  .modal-box { width: 95vw; padding: 16px; max-height: 85vh; }
+  .modal-header h3 { font-size: 1rem; }
+  .modal-pct { font-size: 1.1rem; }
+  .leader-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .leader-table thead, .leader-table tbody { white-space: nowrap; }
+  .leader-table th, .leader-table td { padding: 8px 8px; font-size: 0.78rem; }
+
   /* Dashboard mobile */
   .index-bar { grid-template-columns: 1fr 1fr; gap:8px; }
   .index-card { padding:12px 14px; }

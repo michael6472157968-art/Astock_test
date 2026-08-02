@@ -174,7 +174,7 @@ function renderNav() {
     { href: 'stock-pool.html', label: '选股池' },
     { href: 'diagnosis.html', label: '诊股' },
     { href: 'review.html', label: '复盘' },
-    { href: 'sector.html', label: '板块' },
+    { href: 'sector-rotation.html', label: '板块' },
     { href: 'risk-list.html', label: '风险' },
     { href: 'alerts.html', label: '预警' },
     { href: 'backtest.html', label: '回测' },
