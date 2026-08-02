@@ -8,6 +8,7 @@ python-jose[cryptography]==3.5.0
 bcrypt==5.0.0
 apscheduler==3.11.3
 tushare==1.4.29
+akshare>=1.17.0
 httpx==0.28.1
 python-multipart==0.0.32
 alembic==1.17.2

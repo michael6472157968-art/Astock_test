@@ -11,6 +11,10 @@
   <div class="dashboard">
 
     <!-- 2a. Real-time Index Bar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+      <h3 style="font-size:0.95rem;font-weight:600;">指数行情</h3>
+      <span style="font-size:0.7rem;padding:2px 8px;border-radius:4px;background:var(--color-border);color:var(--color-text-muted);" id="indexSource">--</span>
+    </div>
     <div class="index-bar" id="indexBar">
       <div class="index-card"><div class="ic-name">上证指数</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
       <div class="index-card"><div class="ic-name">深证成指</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
@@ -82,7 +86,8 @@
   // ── 2a. Load index data ──
   function loadIndices() {
     API.get('/market/index').then(function(r) {
-      var indices = r.data.indices || [];
+      var d = r.data;
+      var indices = d.indices || [];
       var cards = document.querySelectorAll('.index-card');
       indices.forEach(function(idx, i) {
         if (i >= cards.length) return;
@@ -91,6 +96,19 @@
         chg.innerHTML = fmtSign(idx.pct_chg) + '% <span style="font-size:0.75rem;opacity:0.8">' + fmtSign(idx.change) + '</span>';
         chg.className = 'ic-change ' + pctCls(idx.pct_chg);
       });
+      // Update source badge
+      var badge = document.getElementById('indexSource');
+      if (badge) {
+        var src = d.source || '';
+        if (src === 'akshare_realtime') badge.textContent = '实时';
+        else if (src === 'tushare_daily') badge.textContent = '收盘';
+        else badge.textContent = src || '--';
+      }
+      // Update status bar date from update_time
+      if (d.update_time) {
+        var dt = d.update_time.substring(0, 10);
+        document.getElementById('statusDataDate').textContent = dt;
+      }
     }).catch(function() {});
   }
 
@@ -113,11 +131,9 @@
 
   // ── 2c. Load hot stocks ──
   function renderSparkline(container, tsCode, pctChg) {
-    // Try to fetch 5-day data for sparkline
     var el = typeof container === 'string' ? document.getElementById(container) : container;
     if (!el) return;
     var c = pctChg >= 0 ? '#ef4444' : '#22c55e';
-    // Show simple bar using divs since we can't easily get 5-day data without another API
     var h = Math.min(Math.abs(pctChg) * 2.5, 30);
     h = Math.max(h, 4);
     el.innerHTML = '<div style="display:flex;align-items:flex-end;gap:2px;height:36px;justify-content:center">' +
@@ -188,25 +204,16 @@
       document.getElementById('statusStockCount').textContent = '--';
     });
   }
-  function loadLatestDate() {
-    API.get('/stock-pool/hot_leader').then(function(r) {
-      var d = r.data.date || '';
-      document.getElementById('statusDataDate').textContent = d ? d.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '--';
-    }).catch(function() {
-      document.getElementById('statusDataDate').textContent = '--';
-    });
-  }
 
   // ── Auto-refresh logic ──
   var indexTimer = null;
   function autoRefresh() {
     updateHealth();
     loadStockCount();
-    loadLatestDate();
     if (inTradingHours()) {
       loadIndices();
       loadMood();
-      document.getElementById('refreshHint').textContent = '交易时段 · 60s 刷新';
+      document.getElementById('refreshHint').textContent = '交易时段 | 60s 刷新';
       indexTimer = setInterval(function() {
         if (!inTradingHours()) {
           clearInterval(indexTimer);
