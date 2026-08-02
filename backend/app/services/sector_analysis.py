@@ -23,7 +23,6 @@ class SectorAnalysisEngine:
         td5 = (date.today() - timedelta(days=6)).strftime("%Y%m%d")
 
         async with async_session() as session:
-            # 当日行业涨幅排行
             r = await session.execute(text("""
                 SELECT s.industry,
                        AVG(d.pct_chg) as avg_pct,
@@ -39,25 +38,37 @@ class SectorAnalysisEngine:
                 LIMIT 50
             """), {"td": trade_date})
 
+            rows = list(r)
+
+            # 批量查询所有行业的5日平均值（消除 N+1）
+            prev_map: dict[str, float] = {}
+            if rows:
+                industries = [row[0] for row in rows]
+                placeholders = ",".join([f":ind{i}" for i in range(len(industries))])
+                params = {"td5": td5}
+                for i, ind in enumerate(industries):
+                    params[f"ind{i}"] = ind
+                prev_r = await session.execute(text(f"""
+                    SELECT s2.industry, AVG(d2.pct_chg)
+                    FROM stock_daily d2
+                    JOIN stocks s2 ON s2.ts_code = d2.ts_code
+                    WHERE d2.trade_date = :td5 AND s2.industry IN ({placeholders})
+                    GROUP BY s2.industry
+                """), params)
+                for row in prev_r:
+                    v = row[1]
+                    prev_map[row[0]] = round(float(v), 2) if v else 0
+
             sectors = []
-            for row in r:
+            for row in rows:
                 industry = row[0]
                 avg_pct = round(float(row[1]), 2)
                 cnt = row[2]
+                prev_avg = prev_map.get(industry, 0)
 
-                # 计算热度：基于连续上涨天数 vs 5日前
-                prev_r = await session.execute(text("""
-                    SELECT AVG(d2.pct_chg)
-                    FROM stock_daily d2
-                    JOIN stocks s2 ON s2.ts_code = d2.ts_code
-                    WHERE d2.trade_date = :td5 AND s2.industry = :ind
-                """), {"td5": td5, "ind": industry})
-                prev_avg = prev_r.scalar()
-                prev_avg = round(float(prev_avg), 2) if prev_avg else 0
+                momentum = avg_pct - prev_avg
+                heat = round(avg_pct + momentum * 2, 2)
 
-                momentum = avg_pct - prev_avg  # 动量：当日vs5日前差值
-                heat = round(avg_pct + momentum * 2, 2)  # 综合热度
-                # 阶段判断
                 if avg_pct > 2 and momentum > 1:
                     phase = "加速上涨"
                 elif avg_pct > 0 and momentum > 0:

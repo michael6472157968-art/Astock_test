@@ -40,5 +40,11 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 存量数据库补充 industry 索引
+        await conn.run_sync(lambda sync_conn: sync_conn.execute(
+            __import__("sqlalchemy").text(
+                "CREATE INDEX IF NOT EXISTS ix_stocks_industry ON stocks (industry)"
+            )
+        ))
 
     logger.info("SQLite tables created (migrations run via entrypoint)")

@@ -57,7 +57,7 @@ class Stock(Base):
     ts_code = Column(String(20), primary_key=True)
     symbol = Column(String(10), nullable=False)
     name = Column(String(50), nullable=False)
-    industry = Column(String(50), default="")
+    industry = Column(String(50), default="", index=True)
     area = Column(String(20), default="")
     market = Column(String(10), default="")
     list_date = Column(String(8), default="")

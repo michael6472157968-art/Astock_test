@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
@@ -218,23 +217,6 @@ async def market_mood(user: dict = Depends(require_auth_optional)):
 
 # ── 板块行情热力图 ──
 
-async def _akshare_sector_heat() -> list[dict]:
-    """AKShare 实时板块行情——概念板块。"""
-    import akshare as ak
-    df = ak.stock_board_concept_name_em()
-    if df is None or df.empty:
-        return []
-    sectors = []
-    for _, row in df.head(50).iterrows():
-        sectors.append({
-            "name": str(row.get("板块名称", "")),
-            "code": str(row.get("板块代码", "")),
-            "pct_chg": round(float(row.get("涨跌幅", 0)), 2),
-            "leading_stock": str(row.get("领涨股票", "")),
-        })
-    return sectors
-
-
 async def _tushare_concept_heat(trade_date: str) -> list[dict]:
     """DB 行业聚合——按 industry 分组计算板块涨跌幅。"""
     from app.core.database import async_session
@@ -281,11 +263,8 @@ async def _db_sector_heat(trade_date: str) -> list[dict]:
 
 @sector_heat_router.get("/heat")
 async def sector_heat(limit: int = 0, user: dict = Depends(require_auth_optional)):
-    now_ts = datetime.now().isoformat()
     trading = _is_trading_time()
-
     trade_date, is_td = await _get_trade_context()
-
     cache_ttl = 600 if trading else 86400
     cache_key = f"sector:heat:v3:{trade_date}"
     cached = await cache_get(cache_key)
@@ -300,44 +279,29 @@ async def sector_heat(limit: int = 0, user: dict = Depends(require_auth_optional
         return APIResponse(data=result, timestamp=int(time.time()))
 
     sectors: list[dict] = []
-    source = "none"
 
-    # 1. Try AKShare (only on trade days)
-    if is_td:
+    # 1. DB 行业聚合
+    for offset in range(4):
+        td = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
         try:
-            sectors = await asyncio.wait_for(_akshare_sector_heat(), timeout=15)
+            sectors = await _tushare_concept_heat(td)
             if sectors:
-                source = "akshare_realtime"
-                logger.info(f"Sector heat from AKShare: {len(sectors)} sectors")
+                logger.info(f"Sector heat from DB ({td}): {len(sectors)} sectors")
+                break
         except Exception as e:
-            logger.warning(f"AKShare sector heat failed: {e}")
+            logger.warning(f"DB sector heat ({td}) failed: {e}")
 
-    # 2. Fallback to DB industry aggregation for latest trade date
-    if not sectors:
-        for offset in range(4):
-            td = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
-            try:
-                sectors = await _tushare_concept_heat(td)
-                if sectors:
-                    source = "db_industry"
-                    logger.info(f"Sector heat from DB ({td}): {len(sectors)} sectors")
-                    break
-            except Exception as e:
-                logger.warning(f"DB sector heat ({td}) failed: {e}")
-
-    # 3. Fallback to DB cache
+    # 2. Fallback to DB cache
     if not sectors:
         for offset in range(4):
             td = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
             sectors = await _db_sector_heat(td)
             if sectors:
-                source = "db_cache"
                 logger.info(f"Sector heat from DB cache ({td}): {len(sectors)} sectors")
                 break
 
     data = {
         "sectors": sectors,
-        "source": source,
         "date": trade_date,
         "trade_date": trade_date,
         "is_trade_day": is_td,
@@ -365,72 +329,38 @@ async def sector_leaders(sector_code: str, user: dict = Depends(require_auth_opt
     stocks: list[dict] = []
     sector_name = sector_code
 
-    # 1. Try AKShare
-    try:
-        import akshare as ak
-        df = await asyncio.wait_for(
-            asyncio.to_thread(ak.stock_board_concept_cons_em, symbol=sector_code),
-            timeout=15,
-        )
-        if df is not None and not df.empty:
-            sector_name = str(df.iloc[0].get("板块名称", sector_code)) if "板块名称" in df.columns else sector_code
-            df_sorted = df.sort_values("涨跌幅", ascending=False) if "涨跌幅" in df.columns else df
-            for _, row in df_sorted.head(5).iterrows():
-                raw_code = str(row.get("代码", ""))
-                pct = round(float(row.get("涨跌幅", 0)), 2)
-                close = round(float(row.get("最新价", 0)), 2)
-                name = str(row.get("名称", ""))
-                ts_code = _normalize_ts_code(raw_code)
-                stocks.append({"ts_code": ts_code, "name": name, "close": close, "pct_chg": pct})
-            logger.info(f"Sector leaders from AKShare for {sector_code}: {len(stocks)}")
-    except Exception as e:
-        logger.warning(f"AKShare sector leaders failed for {sector_code}: {e}")
-
-    # 2. Fallback to DB
-    if not stocks:
-        from app.core.database import async_session
-        from sqlalchemy import text
-        for offset in range(4):
-            td = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
-            async with async_session() as sess:
-                r = await sess.execute(text("""
-                    SELECT s.industry FROM stocks s WHERE s.ts_code LIKE :prefix LIMIT 1
-                """), {"prefix": f"%{sector_code}%"})
-                row = r.first()
-                if row:
-                    sector_name = row[0]
-                r = await sess.execute(text("""
-                    SELECT d.ts_code, s.name, d.close, d.pct_chg
-                    FROM stock_daily d
-                    JOIN stocks s ON s.ts_code = d.ts_code
-                    WHERE d.trade_date = :td AND s.industry = :ind
-                    ORDER BY d.pct_chg DESC
-                    LIMIT 5
-                """), {"td": td, "ind": sector_name})
-                for row in r:
-                    stocks.append({
-                        "ts_code": row[0], "name": row[1],
-                        "close": round(float(row[2] if row[2] else 0), 2),
-                        "pct_chg": round(float(row[3] if row[3] else 0), 2),
-                    })
-                if stocks:
-                    break
+    from app.core.database import async_session
+    from sqlalchemy import text
+    for offset in range(4):
+        td = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
+        async with async_session() as sess:
+            r = await sess.execute(text("""
+                SELECT s.industry FROM stocks s WHERE s.ts_code LIKE :prefix LIMIT 1
+            """), {"prefix": f"%{sector_code}%"})
+            row = r.first()
+            if row:
+                sector_name = row[0]
+            r = await sess.execute(text("""
+                SELECT d.ts_code, s.name, d.close, d.pct_chg
+                FROM stock_daily d
+                JOIN stocks s ON s.ts_code = d.ts_code
+                WHERE d.trade_date = :td AND s.industry = :ind
+                ORDER BY d.pct_chg DESC
+                LIMIT 5
+            """), {"td": td, "ind": sector_name})
+            for row in r:
+                stocks.append({
+                    "ts_code": row[0], "name": row[1],
+                    "close": round(float(row[2] if row[2] else 0), 2),
+                    "pct_chg": round(float(row[3] if row[3] else 0), 2),
+                })
+            if stocks:
+                break
 
     data = {"sector_name": sector_name, "stocks": stocks, "is_trade_day": is_td, "trade_date": trade_date}
     ttl = 600 if _is_trading_time() else 86400
     await cache_set(f"sector:leaders:{sector_code}", data, ttl=ttl)
     return APIResponse(data=data, timestamp=int(time.time()))
-
-
-def _normalize_ts_code(raw: str) -> str:
-    code = raw.strip()
-    if "." in code:
-        return code
-    if code.startswith("60") or code.startswith("68"):
-        return code + ".SH"
-    if code.startswith("00") or code.startswith("30"):
-        return code + ".SZ"
-    return code
 
 
 # ── 旧板块分析（保留兼容）──
