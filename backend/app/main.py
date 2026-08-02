@@ -68,6 +68,7 @@ async def lifespan(app: FastAPI):
             from app.services.market_review import MarketReviewEngine
             from app.services.risk_scanner import RiskScanner
             from app.api.market import _ensure_review_table, _set_latest_flag, _save_review_meta, _purge_expired_reviews, cache_delete as _m_cache_delete
+            from app.utils.trading_calendar import get_latest_trade_date
             from datetime import datetime as _dt, timezone as _tz
 
             logger.info("Auto-sync: stock basic...")
