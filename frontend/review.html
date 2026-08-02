@@ -19,6 +19,7 @@
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
     <span style="font-size:0.85rem;color:var(--color-text-muted)">选择日期：</span>
     <select id="dateSelect" class="date-picker" onchange="loadReview(this.value)"></select>
+    <span id="reviewCount" style="font-size:0.82rem;color:var(--color-text-muted)">共 0 份复盘报告</span>
   </div>
 
   <div id="reviewDetail" style="width:100%;"></div>
@@ -28,8 +29,9 @@
 <script>
 var allDates = [];
 var allReviews = {};
+var _emptyDates = {};
+var _skipTarget = null;
 
-// 生成最近30天日期列表加载选择器
 (function() {
   var dd = new Date();
   for (var i = 0; i < 30; i++) {
@@ -39,28 +41,77 @@ var allReviews = {};
     allDates.push(y + m + d);
     dd.setDate(dd.getDate() - 1);
   }
+  buildDateSelect();
+  loadReview(allDates[0]);
+})();
+
+function buildDateSelect() {
   var sel = document.getElementById('dateSelect');
+  sel.innerHTML = '';
   allDates.forEach(function(td, idx) {
+    if (_emptyDates[td]) return;
     var opt = document.createElement('option');
     opt.value = td;
     opt.textContent = td.substring(0,4) + '-' + td.substring(4,6) + '-' + td.substring(6,8);
-    if (idx === 0) opt.selected = true;
+    if (td === _skipTarget) opt.selected = true;
+    else if (idx === 0 && !_skipTarget) opt.selected = true;
     sel.appendChild(opt);
   });
-  loadReview(allDates[0]);
-})();
+  var cnt = sel.options.length;
+  document.getElementById('reviewCount').textContent = '共 ' + cnt + ' 份复盘报告';
+}
 
 function loadReview(td) {
   document.getElementById('reviewDetail').innerHTML = '<p class="state-loading">加载中...</p>';
   document.getElementById('reviewChart').style.display = 'none';
-  if (allReviews[td]) {
-    renderReview(td, allReviews[td]);
+
+  function _loaded(data) {
+    // Skip empty: total=0 means a non-trading-day report should be filtered
+    if (!data.content || !data.content.total) {
+      allReviews[td] = null;
+      _emptyDates[td] = true;
+      if (data.is_trade_day === false) {
+        _emptyDates[td] = true;
+      }
+      // Try next available date
+      var idx = allDates.indexOf(td);
+      if (idx >= 0 && idx < allDates.length - 1) {
+        _skipTarget = allDates[idx + 1];
+      }
+      buildDateSelect();
+      var sel = document.getElementById('dateSelect');
+      if (sel.options.length > 0) {
+        loadReview(sel.value);
+      } else {
+        document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">暂无复盘数据</p>';
+      }
+      return;
+    }
+    _skipTarget = null;
+    allReviews[td] = data;
+    buildDateSelect();
+    renderReview(td, data);
+  }
+
+  if (allReviews[td] !== undefined && allReviews[td] !== null) {
+    _loaded(allReviews[td]);
   } else {
     API.get('/review/daily?date=' + td).then(function(r) {
-      allReviews[td] = r.data;
-      renderReview(td, r.data);
+      _loaded(r.data);
     }).catch(function() {
-      document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">该日期暂无复盘数据</p>';
+      allReviews[td] = null;
+      _emptyDates[td] = true;
+      var idx = allDates.indexOf(td);
+      if (idx >= 0 && idx < allDates.length - 1) {
+        _skipTarget = allDates[idx + 1];
+      }
+      buildDateSelect();
+      var sel = document.getElementById('dateSelect');
+      if (sel.options.length > 0) {
+        loadReview(sel.value);
+      } else {
+        document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">暂无复盘数据</p>';
+      }
     });
   }
 }
