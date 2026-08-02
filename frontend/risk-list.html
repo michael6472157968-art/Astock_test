@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>风险避雷 - Stockwin 短线助手</title>
-<link rel="stylesheet" href="/css/app.css?v=3" />
+<link rel="stylesheet" href="/css/app.css?v=4" />
 <style>
 .risk-cat-tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600; }
 .risk-st { background:#dc262620; color:var(--color-danger); }
@@ -14,13 +14,32 @@
 .risk-drain { background:#6b728020; color:var(--color-text-muted); }
 .stat-warn { color:var(--color-danger); }
 .stat-num { font-size:2rem; font-weight:700; }
+
+.risk-panel { margin-bottom:12px; border-radius:8px; overflow:hidden; background:var(--color-card); border:1px solid var(--color-border); }
+.risk-panel-header { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; cursor:pointer; user-select:none; transition:background 0.2s; }
+.risk-panel-header:hover { background:var(--color-bg); }
+.risk-panel-header .title { font-size:15px; font-weight:600; color:var(--color-text); display:flex; align-items:center; gap:8px; }
+.risk-panel-header .right-side { display:flex; align-items:center; gap:10px; }
+.risk-panel-header .badge { background:#e74c3c; color:#fff; padding:2px 10px; border-radius:12px; font-size:12px; min-width:24px; text-align:center; }
+.risk-panel-header .arrow { transition:transform 0.3s; font-size:12px; color:var(--color-text-muted); display:inline-block; }
+.risk-panel-header .arrow.open { transform:rotate(180deg); }
+.risk-panel-body { max-height:0; overflow:hidden; transition:max-height 0.35s ease; }
+.risk-panel-body.open { max-height:6000px; }
+.risk-panel-body .body-inner { padding:12px 18px 18px; }
+
+.load-more-wrap { text-align:center; padding:12px 0 4px; }
+.load-more-btn { display:inline-block; padding:10px 28px; background:var(--color-bg); border:1px dashed var(--color-border); border-radius:6px; color:var(--color-text-muted); cursor:pointer; font-size:0.82rem; transition:all 0.2s; }
+.load-more-btn:hover { background:var(--color-primary); color:#fff; border-color:var(--color-primary); }
+.load-more-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.load-more-btn.done { border-style:solid; color:var(--color-text-muted); cursor:default; }
+.load-more-btn.done:hover { background:var(--color-bg); border-color:var(--color-border); }
 </style>
 </head>
 <body>
 <main class="main-content" data-chrome>
   <h2 class="page-title">短线风险避雷清单</h2>
   <p class="page-desc">技术面 + 基本面双维度自动扫描，关注短线交易风险信号</p>
-  <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">⚠️ 风险清单基于公开数据自动筛选，未被列入清单不代表无风险。数据每日收盘后自动更新。</div>
+  <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">风险清单基于公开数据自动筛选，未被列入清单不代表无风险。数据每日收盘后自动更新。</div>
 
   <div class="stat-grid" style="margin-bottom:20px" id="statsRow"></div>
   <div id="content" style="width:100%;"><p class="state-loading">加载中...</p></div>
@@ -30,12 +49,17 @@
 var _allItems = [];
 
 var CAT_CFG = {
-  st_risk:        { label: 'ST退市风险', cls: 'risk-st', icon: '🚫' },
+  st_risk:        { label: 'ST退市风险', cls: 'risk-st', icon: '🚫', highRisk: true },
   surge_overheat: { label: '连板过热',   cls: 'risk-surge', icon: '🔥' },
   cliff_drop:     { label: '断崖下跌',   cls: 'risk-cliff', icon: '📉' },
   high_turnover:  { label: '高换手异动', cls: 'risk-turnover', icon: '⚡' },
   volume_drain:   { label: '缩量阴跌',   cls: 'risk-drain', icon: '💧' },
 };
+
+var CAT_ORDER = ['surge_overheat', 'cliff_drop', 'high_turnover', 'volume_drain', 'st_risk'];
+
+var ST_PAGE_CONFIG = { initial: 10, more: 20 };
+var _stVisible = {}; // track ST load state per panel instance
 
 API.get('/risk-list?page_size=500').then(function(r) {
   _allItems = r.data.items || [];
@@ -43,6 +67,15 @@ API.get('/risk-list?page_size=500').then(function(r) {
 }).catch(function(e) {
   document.getElementById('content').innerHTML = '<p class="state-error">加载失败: ' + (e.message || '') + '</p>';
 });
+
+function groupByCat() {
+  var map = {};
+  CAT_ORDER.forEach(function(k) { map[k] = []; });
+  _allItems.forEach(function(r) {
+    if (map[r.risk_category]) map[r.risk_category].push(r);
+  });
+  return map;
+}
 
 function render() {
   var content = document.getElementById('content');
@@ -52,38 +85,112 @@ function render() {
     return;
   }
 
-  // 统计卡片
-  var cats = {};
-  _allItems.forEach(function(r) {
-    cats[r.risk_category] = (cats[r.risk_category] || 0) + 1;
-  });
+  var grouped = groupByCat();
+
+  // Stats cards
   var statsHtml = '';
-  Object.keys(CAT_CFG).forEach(function(k) {
-    var cnt = cats[k] || 0;
+  CAT_ORDER.forEach(function(k) {
+    var cnt = grouped[k].length;
     var cfg = CAT_CFG[k];
-    statsHtml += '<div class="stat-card"><div class="stat-label">' + cfg.icon + ' ' + cfg.label + '</div><div class="stat-num' + (cnt > 0 && k !== 'st_risk' ? ' stat-warn' : '') + '">' + cnt + '</div><div style="font-size:0.7rem;color:var(--color-text-muted)">只股票</div></div>';
+    statsHtml += '<div class="stat-card" onclick="scrollToPanel(\'' + k + '\')" style="cursor:pointer">';
+    statsHtml += '<div class="stat-label">' + cfg.icon + ' ' + cfg.label + '</div>';
+    statsHtml += '<div class="stat-num' + (cnt > 0 && k !== 'st_risk' ? ' stat-warn' : '') + '">' + cnt + '</div>';
+    statsHtml += '<div style="font-size:0.7rem;color:var(--color-text-muted)">只股票</div></div>';
   });
   document.getElementById('statsRow').innerHTML = statsHtml;
 
-  // 按类别分组渲染
+  // Accordion panels
   var html = '';
-  Object.keys(CAT_CFG).forEach(function(k) {
-    var items = _allItems.filter(function(r) { return r.risk_category === k; });
+  CAT_ORDER.forEach(function(k) {
+    var items = grouped[k];
     if (!items.length) return;
     var cfg = CAT_CFG[k];
-    html += '<div class="card" style="margin-bottom:16px">';
-    html += '<div class="card-header">' + cfg.icon + ' ' + cfg.label + ' <span class="risk-cat-tag ' + cfg.cls + '">' + items.length + ' 只</span></div>';
-    html += '<div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>代码</th><th>名称</th><th>风险详情</th></tr></thead><tbody>';
-    items.forEach(function(r) {
-      html += '<tr>';
-      html += '<td><a href="diagnosis.html?code=' + encodeURIComponent(r.ts_code) + '">' + r.ts_code + '</a></td>';
-      html += '<td>' + r.stock_name + '</td>';
-      html += '<td style="font-size:0.85rem">' + (r.risk_detail || '') + '</td>';
-      html += '</tr>';
-    });
-    html += '</tbody></table></div></div>';
+    var isST = k === 'st_risk';
+    html += '<div class="risk-panel" id="panel-' + k + '">';
+    html += '<div class="risk-panel-header" onclick="togglePanel(\'' + k + '\')">';
+    html += '<span class="title">' + cfg.icon + ' ' + cfg.label + (cfg.highRisk ? ' <span class="risk-cat-tag ' + cfg.cls + '" style="font-size:0.68rem">高风险</span>' : '') + '</span>';
+    html += '<span class="right-side"><span class="badge">' + items.length + '</span><span class="arrow" id="arrow-' + k + '">▼</span></span>';
+    html += '</div>';
+    html += '<div class="risk-panel-body" id="body-' + k + '"><div class="body-inner" id="inner-' + k + '">';
+    if (isST) {
+      html += buildSTContent(k, items);
+    } else {
+      html += buildTable(items);
+    }
+    html += '</div></div></div>';
   });
   content.innerHTML = html;
+
+  // Init ST state
+  _stVisible = {};
+  Object.keys(grouped).forEach(function(k) {
+    if (k === 'st_risk' && grouped[k].length > ST_PAGE_CONFIG.initial) {
+      _stVisible[k] = ST_PAGE_CONFIG.initial;
+    } else {
+      _stVisible[k] = grouped[k].length;
+    }
+  });
+}
+
+function buildTable(items) {
+  var h = '<table class="data-table" style="width:100%;"><thead><tr><th>代码</th><th>名称</th><th>风险详情</th></tr></thead><tbody>';
+  items.forEach(function(r) {
+    h += '<tr>';
+    h += '<td><a href="diagnosis.html?code=' + encodeURIComponent(r.ts_code) + '">' + r.ts_code + '</a></td>';
+    h += '<td>' + r.stock_name + '</td>';
+    h += '<td style="font-size:0.85rem">' + (r.risk_detail || '') + '</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  return h;
+}
+
+function buildSTContent(k, allItems) {
+  var visible = _stVisible[k] || ST_PAGE_CONFIG.initial;
+  var slice = allItems.slice(0, visible);
+  var h = buildTable(slice);
+  if (visible < allItems.length) {
+    h += '<div class="load-more-wrap"><button class="load-more-btn" id="stLoadBtn-' + k + '" onclick="event.stopPropagation(); loadMoreST(\'' + k + '\')">加载更多（当前' + visible + '条，共' + allItems.length + '条）</button></div>';
+  } else if (allItems.length > ST_PAGE_CONFIG.initial) {
+    h += '<div class="load-more-wrap"><button class="load-more-btn done" disabled>已加载全部 ' + allItems.length + ' 条</button></div>';
+  }
+  return h;
+}
+
+function togglePanel(k) {
+  var body = document.getElementById('body-' + k);
+  var arrow = document.getElementById('arrow-' + k);
+  var isOpen = body.classList.contains('open');
+  if (isOpen) {
+    body.classList.remove('open');
+    arrow.classList.remove('open');
+  } else {
+    body.classList.add('open');
+    arrow.classList.add('open');
+  }
+}
+
+function scrollToPanel(k) {
+  var panel = document.getElementById('panel-' + k);
+  if (!panel) return;
+  var body = document.getElementById('body-' + k);
+  var arrow = document.getElementById('arrow-' + k);
+  if (!body.classList.contains('open')) {
+    body.classList.add('open');
+    arrow.classList.add('open');
+  }
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function loadMoreST(k) {
+  var allItems = groupByCat()[k];
+  var current = _stVisible[k] || ST_PAGE_CONFIG.initial;
+  var next = current + ST_PAGE_CONFIG.more;
+  if (next >= allItems.length) next = allItems.length;
+  _stVisible[k] = next;
+
+  var inner = document.getElementById('inner-' + k);
+  inner.innerHTML = buildSTContent(k, allItems);
 }
 </script>
 </body>
