@@ -1,9 +1,9 @@
-"""市场行情 API——板块分析、每日复盘、风险避雷。"""
+"""市场行情 API——板块分析、每日复盘、风险避雷、指数行情、市场情绪。"""
 
 from __future__ import annotations
 
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 
@@ -13,6 +13,167 @@ from app.models.schemas.common import APIResponse
 sector_router = APIRouter(prefix="/api/v1/sector-rotation", tags=["板块轮动"])
 review_router = APIRouter(prefix="/api/v1/review", tags=["每日复盘"])
 risk_router = APIRouter(prefix="/api/v1/risk-list", tags=["风险避雷"])
+
+# market router for general market endpoints
+market_router = APIRouter(prefix="/api/v1/market", tags=["市场概览"])
+
+INDEX_CODES = [
+    ("000001.SH", "上证指数"),
+    ("399001.SZ", "深证成指"),
+    ("399006.SZ", "创业板指"),
+    ("000688.SH", "科创50"),
+]
+
+
+def _is_trading_time() -> bool:
+    """判断当前是否在A股交易时段（9:00-15:30，周一至周五）。"""
+    now = datetime.now()
+    if now.weekday() >= 5:
+        return False
+    t = now.hour * 60 + now.minute
+    return 540 <= t <= 930  # 9:00-15:30
+
+
+@market_router.get("/stock_count")
+async def stock_count():
+    from app.core.cache import cache_get, cache_set
+    from app.core.database import async_session
+    from sqlalchemy import text
+
+    cached = await cache_get("market:stock_count")
+    if cached is not None:
+        return APIResponse(data={"count": cached}, timestamp=int(time.time()))
+
+    async with async_session() as sess:
+        r = await sess.execute(text("SELECT COUNT(*) FROM stocks"))
+        count = r.scalar() or 0
+
+    await cache_set("market:stock_count", count, ttl=7200)
+    return APIResponse(data={"count": count}, timestamp=int(time.time()))
+
+
+@market_router.get("/index")
+async def market_index():
+    """获取4大指数最新行情，优先缓存，回退Tushare。"""
+    from app.core.cache import cache_get, cache_set
+    from app.core.database import async_session
+    from sqlalchemy import text
+
+    today_key = date.today().strftime("%Y%m%d")
+    cache_key = f"market:index:{today_key}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return APIResponse(data={"indices": cached, "date": today_key, "trading": _is_trading_time()}, timestamp=int(time.time()))
+
+    # 先查 SQLite stock_daily 表是否有当天数据
+    results = []
+    async with async_session() as sess:
+        for code, name in INDEX_CODES:
+            r = await sess.execute(
+                text("SELECT close, pct_chg, change FROM stock_daily WHERE ts_code=:code ORDER BY trade_date DESC LIMIT 1"),
+                {"code": code},
+            )
+            row = r.first()
+            if row:
+                results.append({
+                    "code": code, "name": name,
+                    "close": round(row[0], 2), "pct_chg": round(row[1], 2), "change": round(row[2], 2),
+                })
+
+    if results and all(r["close"] for r in results):
+        ttl = 300 if _is_trading_time() else 3600
+        await cache_set(cache_key, results, ttl=ttl)
+        return APIResponse(data={"indices": results, "date": today_key, "trading": _is_trading_time()}, timestamp=int(time.time()))
+
+    # 回退到 Tushare index_daily
+    try:
+        from app.services.tushare_client import call_tushare
+        results = []
+        for code, name in INDEX_CODES:
+            df = await call_tushare("index_daily", ts_code=code, start_date="20200101")
+            if df is not None and not (hasattr(df, 'empty') and df.empty):
+                df_sorted = df.sort_values("trade_date", ascending=False)
+                latest = df_sorted.iloc[0]
+                results.append({
+                    "code": code, "name": name,
+                    "close": round(float(latest.get("close", 0)), 2),
+                    "pct_chg": round(float(latest.get("pct_chg", 0)), 2),
+                    "change": round(float(latest.get("change", 0)), 2),
+                })
+        if results:
+            ttl = 300 if _is_trading_time() else 3600
+            await cache_set(cache_key, results, ttl=ttl)
+            return APIResponse(data={"indices": results, "date": today_key, "trading": _is_trading_time()}, timestamp=int(time.time()))
+    except Exception as e:
+        pass
+
+    return APIResponse(data={"indices": [], "date": today_key, "trading": False}, timestamp=int(time.time()),
+                       ext_info={"note": "暂无指数数据，请执行数据同步"})
+
+
+@market_router.get("/mood")
+async def market_mood():
+    """市场情绪——上涨/下跌/平盘家数，涨停/跌停家数。"""
+    from app.core.cache import cache_get, cache_set
+    from app.core.database import async_session
+    from sqlalchemy import text
+
+    today = date.today()
+    mood_date = ""
+    mood_data = None
+
+    # 最近3个交易日内查询
+    for offset in range(4):
+        td = (today - timedelta(days=offset)).strftime("%Y%m%d")
+        cached = await cache_get(f"market:mood:{td}")
+        if cached is not None:
+            return APIResponse(data=cached, timestamp=int(time.time()))
+
+        # 从 stock_daily 查询当日涨跌统计
+        async with async_session() as sess:
+            r = await sess.execute(
+                text("SELECT COUNT(*) FILTER (WHERE pct_chg > 0) as up, "
+                     "COUNT(*) FILTER (WHERE pct_chg < 0) as down, "
+                     "COUNT(*) FILTER (WHERE pct_chg = 0) as flat "
+                     "FROM stock_daily WHERE trade_date = :td"),
+                {"td": td},
+            )
+            row = r.first()
+            if row and (row[0] or row[1]):
+                # 再查涨跌停数据
+                limit_up = 0
+                limit_down = 0
+                limit_r = await sess.execute(
+                    text("SELECT COUNT(*) FILTER (WHERE pct_chg >= 9.9) as up, "
+                         "COUNT(*) FILTER (WHERE pct_chg <= -9.9) as down "
+                         "FROM stock_daily WHERE trade_date = :td"),
+                    {"td": td},
+                )
+                lr = limit_r.first()
+                if lr:
+                    limit_up = lr[0] or 0
+                    limit_down = lr[1] or 0
+
+                mood_data = {
+                    "up": int(row[0]), "down": int(row[1]), "flat": int(row[2]),
+                    "limit_up": limit_up, "limit_down": limit_down,
+                    "date": td,
+                }
+                mood_date = td
+                break
+
+    if not mood_data:
+        return APIResponse(
+            data={"up": 0, "down": 0, "flat": 0, "limit_up": 0, "limit_down": 0, "date": ""},
+            timestamp=int(time.time()),
+            ext_info={"note": "暂无市场情绪数据，请执行数据同步"},
+        )
+
+    # 缓存（非当日数据缓存24h，当日缓存300s）
+    is_today = mood_date == today.strftime("%Y%m%d")
+    ttl = 300 if is_today else 86400
+    await cache_set(f"market:mood:{mood_date}", mood_data, ttl=ttl)
+    return APIResponse(data=mood_data, timestamp=int(time.time()))
 
 
 @sector_router.get("/ranking")

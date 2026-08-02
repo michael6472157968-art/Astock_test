@@ -115,7 +115,7 @@ def create_app() -> FastAPI:
     from app.api.stock_pool import router as stock_pool_router
     from app.api.diagnosis import router as diagnosis_router
     from app.api.alerts import router as alerts_router
-    from app.api.market import review_router, risk_router, sector_router
+    from app.api.market import review_router, risk_router, sector_router, market_router
     from app.api.backtest import router as backtest_router
     from app.api.admin import router as admin_router
     from app.api.membership import router as membership_router
@@ -128,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(sector_router)
     app.include_router(review_router)
     app.include_router(risk_router)
+    app.include_router(market_router)
     app.include_router(backtest_router)
     app.include_router(admin_router)
     app.include_router(membership_router)

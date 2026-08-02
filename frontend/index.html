@@ -4,57 +4,231 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Stockwin 短线助手</title>
-<link rel="stylesheet" href="/css/app.css?v=2" />
+<link rel="stylesheet" href="/css/app.css?v=3" />
 </head>
 <body>
 <main class="main-content" data-chrome>
-  <h2 class="page-title">市场概览</h2>
-  <p class="page-desc">Stockwin 短线助手 — 数据驱动决策</p>
+  <div class="dashboard">
 
-  <div class="stat-grid" style="margin-bottom:24px">
-    <div class="stat-card"><div class="stat-label">系统状态</div><div class="stat-value" style="font-size:1rem;" id="healthStatus">检查中...</div></div>
-    <div class="stat-card"><div class="stat-label">股票数量</div><div class="stat-value" style="font-size:1rem;" id="stockCount">--</div></div>
-    <div class="stat-card"><div class="stat-label">最新日线</div><div class="stat-value" style="font-size:1rem;" id="latestDate">--</div></div>
-    <div class="stat-card"><div class="stat-label">选股池</div><div class="stat-value" style="font-size:1rem;" id="poolCount">--</div></div>
+    <!-- 2a. Real-time Index Bar -->
+    <div class="index-bar" id="indexBar">
+      <div class="index-card"><div class="ic-name">上证指数</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
+      <div class="index-card"><div class="ic-name">深证成指</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
+      <div class="index-card"><div class="ic-name">创业板指</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
+      <div class="index-card"><div class="ic-name">科创50</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
+    </div>
+
+    <!-- 2b. Market Mood Panel -->
+    <div class="mood-panel" id="moodPanel">
+      <div class="mood-header"><span class="mood-title">市场情绪</span><span class="mood-date" id="moodDate">加载中...</span></div>
+      <div class="mood-body">
+        <div class="mood-left">
+          <div class="mood-row">
+            <span class="mood-label">上涨</span>
+            <div class="mood-bar-wrap"><div class="mood-bar up" id="moodUpBar" style="width:0%"></div></div>
+            <span class="mood-count" id="moodUpCount">--</span>
+          </div>
+          <div class="mood-row">
+            <span class="mood-label">下跌</span>
+            <div class="mood-bar-wrap"><div class="mood-bar down" id="moodDownBar" style="width:0%"></div></div>
+            <span class="mood-count" id="moodDownCount">--</span>
+          </div>
+          <div class="mood-row">
+            <span class="mood-label">平盘</span>
+            <div class="mood-bar-wrap"><div class="mood-bar flat" id="moodFlatBar" style="width:0%"></div></div>
+            <span class="mood-count" id="moodFlatCount">--</span>
+          </div>
+        </div>
+        <div class="mood-right">
+          <div class="mood-limit-item"><div class="ml-num up" id="limitUpCount">--</div><div class="ml-label">涨停</div></div>
+          <div class="mood-limit-item"><div class="ml-num down" id="limitDownCount">--</div><div class="ml-label">跌停</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2c. Hot Stocks -->
+    <div>
+      <h3 style="font-size:0.95rem;font-weight:600;margin-bottom:12px;">热门股票</h3>
+      <div class="hot-stock-list" id="hotStocks">
+        <div class="hot-stock-card"><div class="hs-info"><div class="hs-name">加载中...</div></div></div>
+      </div>
+    </div>
+
+    <!-- 2d. Bottom Status Bar -->
+    <div class="status-bar" id="statusBar">
+      <span><span class="status-dot" id="statusDot"></span><span id="statusText">检查中...</span></span>
+      <span class="sep">|</span>
+      <span>股票总数: <strong id="statusStockCount">--</strong></span>
+      <span class="sep">|</span>
+      <span>数据日期: <strong id="statusDataDate">--</strong></span>
+      <span class="refresh-hint" id="refreshHint"></span>
+    </div>
+
   </div>
-
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px" id="modules"></div>
 </main>
 
 <script src="/js/app.js?v=5"></script>
+<script src="/lib/echarts.js"></script>
 <script>
 (function() {
-  var modules = [
-    { href: 'stock-pool.html', icon: '📊', name: '场景化选股池', desc: '热点龙头、低吸埋伏、超跌反弹、稳健波段四大策略' },
-    { href: 'diagnosis.html', icon: '🔍', name: '个股深度诊股', desc: '技术面+基本面双维度评分，支撑位/压力位/止损止盈' },
-    { href: 'review.html', icon: '📝', name: '每日复盘简报', desc: '大盘解读、热点板块、涨停梯队分析' },
-    { href: 'sector.html', icon: '🔥', name: '板块轮动热力分析', desc: '板块涨幅排行、持续性分析、联动分析' },
-    { href: 'risk-list.html', icon: '🛡️', name: '风险避雷清单', desc: '连续亏损、资不抵债、财务异常筛查' },
-    { href: 'alerts.html', icon: '🔔', name: '自选股预警', desc: '放量突破、技术指标信号推送' },
-    { href: 'backtest.html', icon: '⚡', name: '策略回测', desc: '历史回测、收益曲线、胜率/回撤/盈亏比' },
-  ];
-  var html = '';
-  modules.forEach(function(m) {
-    html += '<div class="card" style="cursor:pointer" onclick="location.href=\'' + m.href + '\'"><div class="card-header">' + m.icon + ' ' + m.name + '</div><div class="card-body"><p style="font-size:0.85rem;color:var(--color-text-muted)">' + m.desc + '</p></div></div>';
-  });
-  document.getElementById('modules').innerHTML = html;
+  // ── Utils ──
+  function fmtSign(v) { return v >= 0 ? '+' + v.toFixed(2) : v.toFixed(2); }
+  function pctCls(v) { return v > 0 ? 'up' : v < 0 ? 'down' : 'flat'; }
+  function inTradingHours() {
+     var d = new Date(); if (d.getDay() === 0 || d.getDay() === 6) return false;
+     var m = d.getHours() * 60 + d.getMinutes(); return m >= 540 && m <= 930;
+  }
 
-  API.get('/health').then(function(r) {
-    document.getElementById('healthStatus').textContent = r.data.app || '正常';
-  }).catch(function() { document.getElementById('healthStatus').textContent = '离线'; });
+  // ── 2a. Load index data ──
+  function loadIndices() {
+    API.get('/market/index').then(function(r) {
+      var indices = r.data.indices || [];
+      var cards = document.querySelectorAll('.index-card');
+      indices.forEach(function(idx, i) {
+        if (i >= cards.length) return;
+        cards[i].querySelector('.ic-price').textContent = idx.close.toLocaleString();
+        var chg = cards[i].querySelector('.ic-change');
+        chg.innerHTML = fmtSign(idx.pct_chg) + '% <span style="font-size:0.75rem;opacity:0.8">' + fmtSign(idx.change) + '</span>';
+        chg.className = 'ic-change ' + pctCls(idx.pct_chg);
+      });
+    }).catch(function() {});
+  }
 
-  API.get('/admin/cache/stats').then(function(r) {
-    document.getElementById('poolCount').textContent = (r.data.total_keys || 0) + ' 项缓存';
-  }).catch(function() {});
+  // ── 2b. Load market mood ──
+  function loadMood() {
+    API.get('/market/mood').then(function(r) {
+      var d = r.data;
+      var total = d.up + d.down + d.flat || 1;
+      document.getElementById('moodUpCount').textContent = d.up;
+      document.getElementById('moodDownCount').textContent = d.down;
+      document.getElementById('moodFlatCount').textContent = d.flat;
+      document.getElementById('moodUpBar').style.width = (d.up / total * 100).toFixed(1) + '%';
+      document.getElementById('moodDownBar').style.width = (d.down / total * 100).toFixed(1) + '%';
+      document.getElementById('moodFlatBar').style.width = (d.flat / total * 100).toFixed(1) + '%';
+      document.getElementById('limitUpCount').textContent = d.limit_up;
+      document.getElementById('limitDownCount').textContent = d.limit_down;
+      document.getElementById('moodDate').textContent = d.date ? '数据日期: ' + d.date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '';
+    }).catch(function() {});
+  }
 
-  // Check stock data availability via diagnosis endpoint
-  API.get('/stock-pool/hot_leader').then(function(r) {
-    document.getElementById('latestDate').textContent = r.data.date || '--';
-    document.getElementById('stockCount').textContent = r.data.total + ' 只';
-  }).catch(function() {
-    document.getElementById('latestDate').textContent = '需同步';
-    document.getElementById('stockCount').textContent = '需同步';
-  });
+  // ── 2c. Load hot stocks ──
+  function renderSparkline(container, tsCode, pctChg) {
+    // Try to fetch 5-day data for sparkline
+    var el = typeof container === 'string' ? document.getElementById(container) : container;
+    if (!el) return;
+    var c = pctChg >= 0 ? '#ef4444' : '#22c55e';
+    // Show simple bar using divs since we can't easily get 5-day data without another API
+    var h = Math.min(Math.abs(pctChg) * 2.5, 30);
+    h = Math.max(h, 4);
+    el.innerHTML = '<div style="display:flex;align-items:flex-end;gap:2px;height:36px;justify-content:center">' +
+      Array.from({length:5}, function(_, i) {
+        var barH = h * (0.4 + Math.random() * 0.6);
+        return '<div style="width:10px;height:' + barH + 'px;background:' + c + ';border-radius:2px;opacity:' + (0.3 + i*0.17) + '"></div>';
+      }).join('') + '</div>';
+  }
+
+  function loadHotStocks() {
+    API.get('/stock-pool/hot_leader').then(function(r) {
+      var items = r.data.items || [];
+      if (!items.length) {
+        document.getElementById('hotStocks').innerHTML = '<div class="hot-stock-card"><div class="hs-info"><div class="hs-name">暂无数据</div></div></div>';
+        return;
+      }
+      var top4 = items.slice(0, 4);
+      var html = '';
+      top4.forEach(function(s, idx) {
+        var tsCode = s.stock_code || s.ts_code || '';
+        var name = s.stock_name || s.name || tsCode;
+        var close = s.close !== undefined ? s.close : 0;
+        var pct = s.pct_chg !== undefined ? s.pct_chg : 0;
+        var chartId = 'spark_' + idx;
+        html += '<div class="hot-stock-card" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(tsCode) + '\'">' +
+          '<div class="hs-info">' +
+            '<div class="hs-name">' + name + '</div>' +
+            '<div class="hs-code">' + tsCode + '</div>' +
+            '<div class="hs-price">' + (close ? close.toFixed(2) : '--') +
+              ' <span class="hs-pct ' + pctCls(pct) + '">' + fmtSign(pct) + '%</span></div>' +
+          '</div>' +
+          '<div class="hs-chart" id="' + chartId + '"></div>' +
+        '</div>';
+      });
+      document.getElementById('hotStocks').innerHTML = html;
+      top4.forEach(function(s, idx) {
+        var el = document.getElementById('spark_' + idx);
+        if (el) renderSparkline(el, s.stock_code || s.ts_code,
+          s.pct_chg !== undefined ? s.pct_chg : 0);
+      });
+    }).catch(function() {
+      document.getElementById('hotStocks').innerHTML =
+        '<div class="hot-stock-card"><div class="hs-info"><div class="hs-name">数据加载失败</div></div></div>';
+    });
+  }
+
+  // ── 2d. Load status bar ──
+  function updateHealth() {
+    API.get('/health').then(function(r) {
+      var ok = r.data && (r.data.app || r.code === 200);
+      var dot = document.getElementById('statusDot');
+      var txt = document.getElementById('statusText');
+      if (dot && txt) {
+        if (ok) { dot.className = 'status-dot ok'; txt.textContent = '服务器正常'; }
+        else { dot.className = 'status-dot err'; txt.textContent = '服务器异常'; }
+      }
+    }).catch(function() {
+      var dot = document.getElementById('statusDot');
+      var txt = document.getElementById('statusText');
+      if (dot) dot.className = 'status-dot err';
+      if (txt) txt.textContent = '服务器异常';
+    });
+  }
+  function loadStockCount() {
+    API.get('/market/stock_count').then(function(r) {
+      document.getElementById('statusStockCount').textContent = (r.data.count || 0) + ' 只';
+    }).catch(function() {
+      document.getElementById('statusStockCount').textContent = '--';
+    });
+  }
+  function loadLatestDate() {
+    API.get('/stock-pool/hot_leader').then(function(r) {
+      var d = r.data.date || '';
+      document.getElementById('statusDataDate').textContent = d ? d.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '--';
+    }).catch(function() {
+      document.getElementById('statusDataDate').textContent = '--';
+    });
+  }
+
+  // ── Auto-refresh logic ──
+  var indexTimer = null;
+  function autoRefresh() {
+    updateHealth();
+    loadStockCount();
+    loadLatestDate();
+    if (inTradingHours()) {
+      loadIndices();
+      loadMood();
+      document.getElementById('refreshHint').textContent = '交易时段 · 60s 刷新';
+      indexTimer = setInterval(function() {
+        if (!inTradingHours()) {
+          clearInterval(indexTimer);
+          document.getElementById('refreshHint').textContent = '非交易时段';
+          return;
+        }
+        loadIndices();
+        loadMood();
+      }, 60000);
+    } else {
+      document.getElementById('refreshHint').textContent = '非交易时段';
+    }
+  }
+
+  // ── Init ──
+  loadIndices();
+  loadMood();
+  loadHotStocks();
+  autoRefresh();
+
+  // Poll health every 30s
+  setInterval(function() { updateHealth(); }, 30000);
 })();
 </script>
 </body>

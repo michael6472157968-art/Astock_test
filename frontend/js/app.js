@@ -145,7 +145,7 @@ function renderChrome() {
 
   var header = document.createElement('header');
   header.className = 'app-header';
-  header.innerHTML = '<div class="header-left"><a href="/"><svg width="24" height="24" viewBox="0 0 24 24" style="display:block"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00d4aa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><rect x="2" y="14" width="3" height="8" rx="0.5" fill="url(#lg)"/><rect x="7" y="10" width="3" height="12" rx="0.5" fill="url(#lg)"/><rect x="12" y="6" width="3" height="16" rx="0.5" fill="url(#lg)"/><rect x="17" y="11" width="3" height="11" rx="0.5" fill="url(#lg)"/><polyline points="3.5,14 8.5,10 13.5,6 18.5,11" fill="none" stroke="#00d4aa" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/></svg><span style="font-size:1.05rem;font-weight:700;color:var(--color-primary)">Stockwin <span style="font-weight:400;color:var(--color-text-muted)">短线助手</span></span></a></div><nav id="topNav" class="header-nav"></nav>';
+  header.innerHTML = '<div class="header-left"><a href="/"><svg width="24" height="24" viewBox="0 0 24 24" style="display:block"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00d4aa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><rect x="2" y="14" width="3" height="8" rx="0.5" fill="url(#lg)"/><rect x="7" y="10" width="3" height="12" rx="0.5" fill="url(#lg)"/><rect x="12" y="6" width="3" height="16" rx="0.5" fill="url(#lg)"/><rect x="17" y="11" width="3" height="11" rx="0.5" fill="url(#lg)"/><polyline points="3.5,14 8.5,10 13.5,6 18.5,11" fill="none" stroke="#00d4aa" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/></svg><span style="font-size:1.05rem;font-weight:700;color:var(--color-primary)">Stockwin <span style="font-weight:400;color:var(--color-text-muted)">短线助手</span></span></a></div><button class="hamburger-btn" id="hamburgerBtn" aria-label="菜单" onclick="toggleMobileNav()">☰</button><nav id="topNav" class="header-nav"></nav><div class="mobile-nav-overlay" id="mobileOverlay" onclick="closeMobileNav()"></div>';
 
   var banner = document.createElement('div');
   banner.className = 'risk-banner';
@@ -228,6 +228,26 @@ function setTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   var sel = document.querySelector('.theme-select');
   if (sel) sel.value = t;
+}
+
+// 汉堡菜单
+function toggleMobileNav() {
+  var nav = document.getElementById('topNav');
+  var overlay = document.getElementById('mobileOverlay');
+  var btn = document.getElementById('hamburgerBtn');
+  var isOpen = nav && nav.classList.contains('open');
+  if (isOpen) { closeMobileNav(); return; }
+  if (nav) nav.classList.add('open');
+  if (overlay) overlay.classList.add('show');
+  if (btn) btn.textContent = '✕';
+}
+function closeMobileNav() {
+  var nav = document.getElementById('topNav');
+  var overlay = document.getElementById('mobileOverlay');
+  var btn = document.getElementById('hamburgerBtn');
+  if (nav) nav.classList.remove('open');
+  if (overlay) overlay.classList.remove('show');
+  if (btn) btn.textContent = '☰';
 }
 
 // 退出
