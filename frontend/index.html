@@ -100,8 +100,9 @@
       var badge = document.getElementById('indexSource');
       if (badge) {
         var src = d.source || '';
-        if (src === 'akshare_realtime') badge.textContent = '实时';
-        else if (src === 'tushare_daily') badge.textContent = '收盘';
+        if (src === 'tushare') badge.textContent = '收盘';
+        else if (src === 'none') badge.textContent = '无';
+        else badge.textContent = src;
         else badge.textContent = src || '--';
       }
       // Update status bar date from update_time
