@@ -103,6 +103,11 @@
     </div>
   </div>
 
+  <!-- 非交易日提示 -->
+  <div id="holidayBanner" style="display:none;text-align:center;padding:8px 16px;margin-bottom:12px;background:var(--color-card);border:1px solid var(--color-border);border-radius:8px;font-size:0.82rem;color:var(--color-text-muted);">
+    📌 <span id="holidayMsg">今日非交易日</span>
+  </div>
+
   <div class="loading-overlay" id="loadingOverlay">
     <div class="loading-ring">
       <svg width="90" height="90" viewBox="0 0 90 90">
@@ -212,6 +217,18 @@
     errorMsg.style.display = 'block';
   }
 
+  function fmtDate8(d) { if (!d || d.length !== 8) return d || ''; return d.substring(0,4) + '-' + d.substring(4,6) + '-' + d.substring(6,8); }
+
+  function applyHolidayBanner(d) {
+    var banner = document.getElementById('holidayBanner');
+    if (d && d.is_trade_day === false) {
+      document.getElementById('holidayMsg').textContent = d.message || ('今日非交易日，数据截止 ' + fmtDate8(d.trade_date || d.date));
+      banner.style.display = '';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
   function renderBarChart(data) {
     if (!data || !Array.isArray(data) || data.length === 0) {
       showError('暂无板块数据，请稍后刷新或执行数据同步', true);
@@ -292,13 +309,15 @@
     sectorsData = d.sectors || [];
     ALL_LOADED = !d.has_more;
 
+    applyHolidayBanner(d);
+
     var src = d.source || 'none';
     var srcLabels = { 'akshare_realtime': 'AKShare 实时', 'db_industry': 'DB行业聚合', 'db_cache': '本地缓存', 'none': '无数据' };
     document.getElementById('dataSource').textContent = srcLabels[src] || src;
     document.getElementById('sourceDetail').textContent = srcLabels[src] || src;
-    var dt = d.date || '';
-    if (dt.length === 8) dt = dt.substring(0,4) + '-' + dt.substring(4,6) + '-' + dt.substring(6,8);
-    document.getElementById('updateTime').textContent = dt;
+    var td = d.trade_date || d.date || '';
+    var label = d.is_trade_day === false ? '数据截止 ' : '';
+    document.getElementById('updateTime').textContent = label + fmtDate8(td);
     errorMsg.style.display = 'none';
 
     if (!sectorsData.length) {
