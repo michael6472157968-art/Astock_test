@@ -46,13 +46,11 @@ async def _get_trade_context() -> tuple[str, bool]:
         lt = await get_latest_trade_date()
     except Exception:
         lt = today_str
-    is_td = (lt == today_str and _is_trading_time()) or (lt == today_str and date.today().weekday() < 5)
-    # 更精确: 检查 today 是否真的是交易日
     try:
-        is_td = await is_trade_date(today_str)
+        is_td_val = await is_trade_date(today_str)
     except Exception:
-        is_td = date.today().weekday() < 5
-    return lt, is_td
+        is_td_val = date.today().weekday() < 5
+    return lt, is_td_val
 
 
 @market_router.get("/stock_count")
