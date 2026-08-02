@@ -90,7 +90,7 @@
 <body>
 <div style="position:absolute;opacity:0;pointer-events:none;width:0;height:0;overflow:hidden" aria-hidden="true">
   <h2 class="page-title">.</h2><span class="page-desc">.</span>
-  <div id="barChart" style="width:100%;height:1px"></div>
+  <div id="barChartPlaceholder" style="width:100%;height:1px"></div>
 </div>
 
 <main class="main-content" data-chrome>
@@ -327,6 +327,7 @@
 
     renderBarChart(sectorsData);
     hideLoading();
+    setTimeout(function() { chart.resize(); }, 50);
 
     loadMoreWrap.style.display = (!ALL_LOADED && sectorsData.length > 0) ? '' : 'none';
     return true;
