@@ -12,6 +12,38 @@
 .signal-bearish { background:#dc262620; color:var(--color-danger); }
 .signal-neutral { background:#64748b20; color:var(--color-text-muted); }
 .risk-low { color:var(--color-success); } .risk-mid { color:var(--color-warning); } .risk-high { color:var(--color-danger); }
+
+/* 信号 tooltip 容器 */
+.signal-tooltip-wrap { position:relative; display:inline-block; cursor:help; }
+.signal-tooltip-wrap .signal-tooltip {
+  position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%);
+  background:#1e293b; color:#f1f5f9; font-size:0.75rem; line-height:1.5;
+  padding:6px 10px; border-radius:6px; white-space:nowrap; max-width:260px;
+  white-space:normal; word-break:break-word;
+  opacity:0; visibility:hidden;
+  transition: opacity 0.2s ease 0.2s, visibility 0.2s ease 0.2s;
+  pointer-events:none; z-index:50;
+  box-shadow:0 4px 12px rgba(0,0,0,0.5); border:1px solid var(--color-border);
+}
+.signal-tooltip-wrap .signal-tooltip::after {
+  content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%);
+  border:5px solid transparent; border-top-color:#1e293b;
+}
+.signal-tooltip-wrap:hover .signal-tooltip { opacity:1; visibility:visible; }
+
+/* 诊股进度条 */
+.progress-loader { text-align:center; padding:40px 20px; }
+.progress-loader .progress-text { font-size:0.9rem; color:var(--color-text-muted); margin-bottom:12px; }
+.progress-bar-track {
+  width:100%; max-width:320px; height:6px; background:var(--color-border);
+  border-radius:3px; margin:0 auto; overflow:hidden;
+}
+.progress-bar-fill {
+  height:100%; width:0%; background:linear-gradient(90deg,var(--color-primary),#0ea5e9);
+  border-radius:3px; transition:width 0.3s ease;
+}
+.progress-bar-fill.error { background:linear-gradient(90deg,var(--color-danger),#f87171); }
+.progress-error-text { color:var(--color-danger); font-size:0.85rem; margin-top:8px; display:none; }
 </style>
 </head>
 <body>
@@ -20,7 +52,7 @@
   <p class="page-desc">短线 T+3 至 T+7 量化分析：技术指标 + 买卖信号 + 风险等级</p>
   <div class="risk-banner" style="border-radius:6px;margin-bottom:16px">⚠️ 诊股报告基于量化模型自动生成，所有结论依托指标数值，不构成投资建议</div>
   <div style="display:flex;gap:12px;margin-bottom:20px;align-items:center">
-    <input class="form-input" id="codeInput" placeholder="输入股票代码，如 000001.SZ" style="max-width:240px" onkeypress="if(event.key==='Enter')search()" />
+    <input class="form-input" id="codeInput" placeholder="输入股票代码，如 603091 或 000001.SZ" style="max-width:240px" oninput="this.value=filterStockInput(this.value)" onkeypress="if(event.key==='Enter')search()" />
     <button class="btn btn-primary" onclick="search()">诊股</button>
     <span id="quotaBadge" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
   </div>
@@ -52,78 +84,56 @@ function loadQuota() {
 }
 
 function escAttr(v) { return v.replace(/'/g, "\\'").replace(/"/g, "\\x22"); }
+
+var _progressTimer = null;
+
+function showProgress(container) {
+  container.innerHTML =
+    '<div class="progress-loader">' +
+      '<div class="progress-text">正在结合量化策略分析...</div>' +
+      '<div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>' +
+      '<p class="progress-error-text" id="progressError">分析失败，请重试</p>' +
+    '</div>';
+}
+
+function startProgress() {
+  var fill = document.getElementById('progressFill');
+  if (!fill) return;
+  fill.style.width = '0%';
+  fill.className = 'progress-bar-fill';
+  document.getElementById('progressError').style.display = 'none';
+  var width = 0;
+  clearInterval(_progressTimer);
+  _progressTimer = setInterval(function() {
+    width += (90 - width) * 0.12 + 0.5;
+    if (width >= 89) { width = 89; clearInterval(_progressTimer); }
+    fill.style.width = width + '%';
+  }, 200);
+}
+
+function finishProgress(status) {
+  clearInterval(_progressTimer);
+  var fill = document.getElementById('progressFill');
+  if (status === 100) {
+    if (fill) { fill.style.width = '100%'; }
+  } else {
+    if (fill) { fill.className = 'progress-bar-fill error'; fill.style.width = '100%'; }
+    var errEl = document.getElementById('progressError');
+    if (errEl) errEl.style.display = 'block';
+  }
+}
+
 function search() {
-  var code = document.getElementById('codeInput').value.trim();
+  var code = normalizeStockCode(document.getElementById('codeInput').value);
   if (!code) return;
   var result = document.getElementById('result');
-  result.innerHTML = '<p class="state-loading">查询中...</p>';
+  showProgress(result);
+  startProgress();
   API.get('/diagnosis/' + encodeURIComponent(code)).then(function(r) {
-    var q = (r.data && r.data.quant) || {};
-    var stockName = r.data.stock_name || code;
-    var html = '<h2 class="page-title" id="diagStockName">' + stockName + ' 量化诊股报告 <button class="btn btn-sm btn-primary" onclick="addFavorite(\'' + escAttr(code) + '\',\'' + escAttr(stockName) + '\')" id="favBtn">+ 自选</button></h2>';
-    html += '<div class="stat-grid" style="margin-bottom:20px">';
-    html += '<div class="stat-card"><div class="stat-label">量化评分</div><div class="stat-value">' + (q.score || '--') + '</div></div>';
-    html += '<div class="stat-card"><div class="stat-label">风险等级</div><div class="stat-value ' + riskClass(q.risk) + '">' + (q.risk || '--') + '</div></div>';
-    html += '<div class="stat-card"><div class="stat-label">最新收盘价</div><div class="stat-value">' + (q.close || '--') + '</div></div>';
-    html += '<div class="stat-card"><div class="stat-label">ATR波动</div><div class="stat-value" style="font-size:1rem;">' + ((q.indicators && q.indicators.atr) || '--') + '</div></div>';
-    html += '</div>';
-
-    if (q.indicators) {
-      var ind = q.indicators;
-      html += '<div class="card" style="margin-bottom:16px"><div class="card-header">技术指标</div><div class="card-body">';
-      html += '<div class="stat-grid">';
-      html += '<div class="stat-card"><div class="stat-label">RSI(14)</div><div class="stat-value" style="font-size:1rem;">' + (ind.rsi || '--') + '</div></div>';
-      html += '<div class="stat-card"><div class="stat-label">KDJ</div><div class="stat-value" style="font-size:1rem;">K' + (ind.kdj && ind.kdj.k || '--') + ' D' + (ind.kdj && ind.kdj.d || '--') + ' J' + (ind.kdj && ind.kdj.j || '--') + '</div></div>';
-      html += '<div class="stat-card"><div class="stat-label">MACD</div><div style="font-size:0.8rem;">DIF ' + (ind.macd && ind.macd.dif || '--') + '<br>DEA ' + (ind.macd && ind.macd.dea || '--') + '<br>BAR ' + (ind.macd && ind.macd.bar || '--') + '</div></div>';
-      html += '<div class="stat-card"><div class="stat-label">布林位置</div><div class="stat-value" style="font-size:1rem;">' + (ind.boll && ind.boll.position || '--') + '%</div><div style="font-size:0.7rem;">上轨' + (ind.boll && ind.boll.upper || '--') + ' / 下轨' + (ind.boll && ind.boll.lower || '--') + '</div></div>';
-      html += '</div>';
-      html += '<div class="stat-grid" style="margin-top:12px">';
-      html += '<div class="stat-card"><div class="stat-label">MA5</div><div class="stat-value" style="font-size:1rem;">' + (ind.ma5 || '--') + '</div></div>';
-      html += '<div class="stat-card"><div class="stat-label">MA10</div><div class="stat-value" style="font-size:1rem;">' + (ind.ma10 || '--') + '</div></div>';
-      html += '<div class="stat-card"><div class="stat-label">MA20</div><div class="stat-value" style="font-size:1rem;">' + (ind.ma20 || '--') + '</div></div>';
-      html += '<div class="stat-card"><div class="stat-label">量比 / 量能</div><div class="stat-value" style="font-size:1rem;">' + (ind.vol_ratio || '--') + '</div><div style="font-size:0.7rem;">' + (ind.vol_trend || '') + '</div></div>';
-      html += '</div></div></div>';
-    }
-
-    if (q.signals) {
-      html += '<div class="card" style="margin-bottom:16px"><div class="card-header">量化信号</div><div class="card-body">';
-      ['volume','trend','overbought_oversold','bollinger'].forEach(function(g) {
-        var arr = q.signals[g] || [];
-        if (typeof arr === 'string') arr = [arr];
-        arr.forEach(function(s) { html += '<span class="signal-tag ' + sigClass(s) + '">' + s + '</span>'; });
-      });
-      html += '</div></div>';
-    }
-
-    if (q.suggestion) {
-      var sug = q.suggestion;
-      html += '<div class="card" style="margin-bottom:16px"><div class="card-header">操作建议</div><div class="card-body">';
-      html += '<p style="font-weight:700;margin-bottom:8px;">' + sug.action + '</p>';
-      html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:0.8rem;">';
-      html += '<div>风险等级: <span class="' + riskClass(sug.risk_level) + '">' + sug.risk_level + '</span></div>';
-      html += '<div>目标价: ' + (sug.target_price || '--') + '</div>';
-      html += '<div>止损价: ' + (sug.stop_loss || '--') + '</div>';
-      html += '<div>建议仓位: ' + sug.position_advice + '</div>';
-      html += '</div></div></div>';
-    }
-
-    if (q.key_levels) {
-      var kl = q.key_levels;
-      html += '<div class="card" style="margin-bottom:16px"><div class="card-header">关键价位</div><div class="card-body"><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;text-align:center">';
-      html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">支撑位</div><div style="font-weight:700;color:var(--color-success)">' + kl.support_price + '</div><div style="font-size:0.7rem;color:var(--color-text-muted)">' + (kl.support_desc||'') + '</div></div>';
-      html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">阻力位</div><div style="font-weight:700;color:var(--color-danger)">' + kl.resistance_price + '</div><div style="font-size:0.7rem;color:var(--color-text-muted)">' + (kl.resistance_desc||'') + '</div></div>';
-      html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">止损价</div><div style="font-weight:700;color:var(--color-danger)">' + kl.stop_loss_price + '</div></div>';
-      html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">止盈 T1</div><div style="font-weight:700;color:var(--color-success)">' + (kl.take_profit_price_1||'--') + '</div></div>';
-      html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">止盈 T2</div><div style="font-weight:700;color:var(--color-success)">' + (kl.take_profit_price_2||'--') + '</div></div>';
-      html += '</div></div></div>';
-    }
-
-    html += '<div class="card" style="margin-top:16px"><div class="card-header">K线图（日线 / 近60日）</div><div class="card-body"><div id="klineChart" style="width:100%;height:500px;"></div></div></div>';
-    result.innerHTML = html;
-
-    setTimeout(function() { renderKlineChart(r.data); }, 100);
-    loadQuota();  // 诊股后刷新剩余次数
+    finishProgress(100);
+    setTimeout(function() { renderDiagnosis(r, code); loadQuota(); }, 200);
   }).catch(function(e) {
+    finishProgress(-1);
     var container = document.getElementById('result');
     if (e.code === 403 && e.data && e.data.daily_limit) {
       var limit = e.data.daily_limit;
@@ -144,6 +154,74 @@ function search() {
   });
 }
 
+function renderDiagnosis(r, code) {
+  var result = document.getElementById('result');
+  var q = (r.data && r.data.quant) || {};
+  var stockName = r.data.stock_name || code;
+  var html = '<h2 class="page-title" id="diagStockName">' + stockName + ' 量化诊股报告 <button class="btn btn-sm btn-primary" onclick="addFavorite(\'' + escAttr(code) + '\',\'' + escAttr(stockName) + '\')" id="favBtn">+ 自选</button></h2>';
+  html += '<div class="stat-grid" style="margin-bottom:20px">';
+  html += '<div class="stat-card"><div class="stat-label">量化评分</div><div class="stat-value">' + (q.score || '--') + '</div></div>';
+  html += '<div class="stat-card"><div class="stat-label">风险等级</div><div class="stat-value ' + riskClass(q.risk) + '">' + (q.risk || '--') + '</div></div>';
+  html += '<div class="stat-card"><div class="stat-label">最新收盘价</div><div class="stat-value">' + (q.close || '--') + '</div></div>';
+  html += '<div class="stat-card"><div class="stat-label">ATR波动</div><div class="stat-value" style="font-size:1rem;">' + ((q.indicators && q.indicators.atr) || '--') + '</div></div>';
+  html += '</div>';
+
+  if (q.indicators) {
+    var ind = q.indicators;
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">技术指标</div><div class="card-body">';
+    html += '<div class="stat-grid">';
+    html += '<div class="stat-card"><div class="stat-label">RSI(14)</div><div class="stat-value" style="font-size:1rem;">' + (ind.rsi || '--') + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">KDJ</div><div class="stat-value" style="font-size:1rem;">K' + (ind.kdj && ind.kdj.k || '--') + ' D' + (ind.kdj && ind.kdj.d || '--') + ' J' + (ind.kdj && ind.kdj.j || '--') + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">MACD</div><div style="font-size:0.8rem;">DIF ' + (ind.macd && ind.macd.dif || '--') + '<br>DEA ' + (ind.macd && ind.macd.dea || '--') + '<br>BAR ' + (ind.macd && ind.macd.bar || '--') + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">布林位置</div><div class="stat-value" style="font-size:1rem;">' + (ind.boll && ind.boll.position || '--') + '%</div><div style="font-size:0.7rem;">上轨' + (ind.boll && ind.boll.upper || '--') + ' / 下轨' + (ind.boll && ind.boll.lower || '--') + '</div></div>';
+    html += '</div>';
+    html += '<div class="stat-grid" style="margin-top:12px">';
+    html += '<div class="stat-card"><div class="stat-label">MA5</div><div class="stat-value" style="font-size:1rem;">' + (ind.ma5 || '--') + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">MA10</div><div class="stat-value" style="font-size:1rem;">' + (ind.ma10 || '--') + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">MA20</div><div class="stat-value" style="font-size:1rem;">' + (ind.ma20 || '--') + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">量比 / 量能</div><div class="stat-value" style="font-size:1rem;">' + (ind.vol_ratio || '--') + '</div><div style="font-size:0.7rem;">' + (ind.vol_trend || '') + '</div></div>';
+    html += '</div></div></div>';
+  }
+
+  if (q.signals) {
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">量化信号 <span style="font-size:0.75rem;color:var(--color-text-muted);font-weight:400">（鼠标悬浮查看信号说明）</span></div><div class="card-body">';
+    ['volume','trend','overbought_oversold','bollinger'].forEach(function(g) {
+      var arr = q.signals[g] || [];
+      if (typeof arr === 'string') arr = [arr];
+      arr.forEach(function(s) { html += signalTag(g, s); });
+    });
+    html += '</div></div>';
+  }
+
+  if (q.suggestion) {
+    var sug = q.suggestion;
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">操作建议</div><div class="card-body">';
+    html += '<p style="font-weight:700;margin-bottom:8px;">' + sug.action + '</p>';
+    html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:0.8rem;">';
+    html += '<div>风险等级: <span class="' + riskClass(sug.risk_level) + '">' + sug.risk_level + '</span></div>';
+    html += '<div>目标价: ' + (sug.target_price || '--') + '</div>';
+    html += '<div>止损价: ' + (sug.stop_loss || '--') + '</div>';
+    html += '<div>建议仓位: ' + sug.position_advice + '</div>';
+    html += '</div></div></div>';
+  }
+
+  if (q.key_levels) {
+    var kl = q.key_levels;
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">关键价位</div><div class="card-body"><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;text-align:center">';
+    html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">支撑位</div><div style="font-weight:700;color:var(--color-success)">' + kl.support_price + '</div><div style="font-size:0.7rem;color:var(--color-text-muted)">' + (kl.support_desc||'') + '</div></div>';
+    html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">阻力位</div><div style="font-weight:700;color:var(--color-danger)">' + kl.resistance_price + '</div><div style="font-size:0.7rem;color:var(--color-text-muted)">' + (kl.resistance_desc||'') + '</div></div>';
+    html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">止损价</div><div style="font-weight:700;color:var(--color-danger)">' + kl.stop_loss_price + '</div></div>';
+    html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">止盈 T1</div><div style="font-weight:700;color:var(--color-success)">' + (kl.take_profit_price_1||'--') + '</div></div>';
+    html += '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">止盈 T2</div><div style="font-weight:700;color:var(--color-success)">' + (kl.take_profit_price_2||'--') + '</div></div>';
+    html += '</div></div></div>';
+  }
+
+  html += '<div class="card" style="margin-top:16px"><div class="card-header">K线图（日线 / 近60日）</div><div class="card-body"><div id="klineChart" style="width:100%;height:500px;"></div></div></div>';
+  result.innerHTML = html;
+
+  setTimeout(function() { renderKlineChart(r.data); }, 100);
+}
+
 function riskClass(risk) {
   if (!risk) return '';
   if (risk.indexOf('低')>=0) return 'risk-low';
@@ -155,6 +233,22 @@ function sigClass(s) {
   if (s.indexOf('超买')>=0||s.indexOf('死叉')>=0||s.indexOf('空头')>=0||s.indexOf('缩量')>=0) return 'signal-bearish';
   if (s.indexOf('金叉')>=0||s.indexOf('多头')>=0||s.indexOf('放量')>=0||s.indexOf('超卖')>=0) return 'signal-bullish';
   return 'signal-neutral';
+}
+
+// 信号 tooltip 说明文案
+var SIGNAL_DESC = {
+  volume: '成交量信号：监测放量突破 / 缩量回调等量价配合形态，辅助判断资金动向。',
+  trend: '均线趋势信号：基于 MA5/MA10/MA20 的多头排列、金叉死叉判断短期趋势方向。',
+  overbought_oversold: '超买超卖信号：通过 RSI / KDJ 等摆动指标识别极端区域，超买区预示回调风险，超卖区暗示反弹机会。',
+  bollinger: '布林带信号：价格触及上轨可能超买回调，触及下轨可能超卖反弹，中轨附近为震荡区间。'
+};
+
+function escHtml(v) { return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+function signalTag(group, text) {
+  var desc = SIGNAL_DESC[group] || '';
+  return '<span class="signal-tooltip-wrap"><span class="signal-tag ' + sigClass(text) + '">' + escHtml(text) +
+    '</span><span class="signal-tooltip">' + desc + '</span></span>';
 }
 
 function renderKlineChart(data) {

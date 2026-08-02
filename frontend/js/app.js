@@ -121,7 +121,23 @@ var Gate = {
   }
 };
 
-// 页面骨架渲染 — 注入 header / 免责横幅 / footer（所有带 data-chrome 的页面共用）
+// 股票代码标准化 — 纯数字自动补后缀，带后缀直接使用，过滤空格和特殊字符
+function normalizeStockCode(raw) {
+  if (!raw) return '';
+  var cleaned = raw.replace(/[\s\p{C}]+/gu, '').replace(/[^\w\.]/g, '').toUpperCase();
+  var dotIdx = cleaned.indexOf('.');
+  if (dotIdx >= 0) return cleaned;                     // 带后缀：直接返回
+  if (/^\d{6}$/.test(cleaned)) {
+    if (cleaned.startsWith('60') || cleaned.startsWith('68')) return cleaned + '.SH';
+    if (cleaned.startsWith('00') || cleaned.startsWith('30')) return cleaned + '.SZ';
+  }
+  return cleaned;
+}
+
+// 输入框实时过滤 — 只允许数字、字母、点号
+function filterStockInput(val) {
+  return val.replace(/[^\w\.]/g, '').replace(/\s/g, '');
+}
 function renderChrome() {
   var main = document.querySelector('.main-content[data-chrome]');
   if (!main) return;

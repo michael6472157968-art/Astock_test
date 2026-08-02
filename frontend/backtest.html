@@ -20,7 +20,7 @@
   <p class="page-desc">历史数据模拟回测，过往胜率不代表未来收益</p>
 
   <div class="card"><div class="card-header">回测参数</div><div class="card-body">
-    <div class="form-group"><label class="form-label">股票代码</label><input class="form-input" id="codeInput" value="000001.SZ" style="max-width:240px" /></div>
+    <div class="form-group"><label class="form-label">股票代码</label><input class="form-input" id="codeInput" value="000001.SZ" style="max-width:240px" oninput="this.value=filterStockInput(this.value)" /></div>
     <div class="form-group"><label class="form-label">策略</label><select class="form-input" id="strategy" style="max-width:240px"><option value="ma_cross">均线交叉</option><option value="volume_break">放量突破</option><option value="rsi_reversal">RSI反转</option></select></div>
     <button class="btn btn-primary" onclick="run()">开始回测</button>
     <p id="msg" style="margin-top:12px;color:var(--color-text-muted)"></p>
@@ -37,7 +37,7 @@
 })();
 
 function run() {
-  var code = document.getElementById('codeInput').value.trim();
+  var code = normalizeStockCode(document.getElementById('codeInput').value);
   var strategy = document.getElementById('strategy').value;
   var btn = document.querySelector('.btn-primary');
   var msg = document.getElementById('msg');
