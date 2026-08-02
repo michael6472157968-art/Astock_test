@@ -255,7 +255,7 @@ async def _db_sector_heat(trade_date: str) -> list[dict]:
 
 
 @sector_heat_router.get("/heat")
-async def sector_heat(user: dict = Depends(require_auth_optional)):
+async def sector_heat(limit: int = 0, user: dict = Depends(require_auth_optional)):
     now_ts = datetime.now().isoformat()
     trading = _is_trading_time()
 
@@ -263,6 +263,12 @@ async def sector_heat(user: dict = Depends(require_auth_optional)):
     cache_key = "sector:heat:v1"
     cached = await cache_get(cache_key)
     if cached is not None:
+        if limit and limit > 0 and len(cached.get("sectors", [])) > limit:
+            result = dict(cached)
+            result["total"] = len(result["sectors"])
+            result["sectors"] = sorted(result["sectors"], key=lambda s: abs(s["pct_chg"]), reverse=True)[:limit]
+            result["has_more"] = True
+            return APIResponse(data=result, timestamp=int(time.time()))
         return APIResponse(data=cached, timestamp=int(time.time()))
 
     sectors: list[dict] = []
@@ -305,6 +311,12 @@ async def sector_heat(user: dict = Depends(require_auth_optional)):
         "source": source,
         "date": date.today().strftime("%Y%m%d"),
     }
+
+    if limit and limit > 0 and len(sectors) > limit:
+        data["total"] = len(sectors)
+        data["sectors"] = sorted(sectors, key=lambda s: abs(s["pct_chg"]), reverse=True)[:limit]
+        data["has_more"] = True
+
     from app.core.cache import cache_set
     await cache_set(cache_key, data, ttl=cache_ttl)
     return APIResponse(data=data, timestamp=int(time.time()))

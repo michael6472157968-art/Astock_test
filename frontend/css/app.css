@@ -153,9 +153,9 @@ body {
 
 /* ── Main Content ── */
 .main-content {
-  max-width: 1280px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 48px;
   min-height: calc(100vh - 56px - 32px - 80px);
 }
 
@@ -543,7 +543,7 @@ body {
   }
   .header-nav .nav-right .nav-user-area { width: 100%; justify-content: flex-start; }
 
-  .main-content { padding: 12px; }
+  .main-content { padding: 16px; }
   .stat-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   .stat-card { padding: 14px 16px; }
   .stat-value { font-size: 1.2rem; }

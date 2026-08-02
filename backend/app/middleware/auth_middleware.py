@@ -1,6 +1,13 @@
+"""auth middleware — JWT 验证 + 访问日志记录。
+
+支持开发环境下的 .dev_token 永久 token 绕过 —— 仅在 debug=True 或 ENV=dev 时生效。
+"""
+
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 
 from fastapi import Depends, HTTPException, Request
 
@@ -10,12 +17,46 @@ from app.middleware.access_log import log_access
 logger = logging.getLogger("auth_middleware")
 
 
+def _is_dev_env() -> bool:
+    """开发环境检测：debug 模式 或 ENV=dev。"""
+    try:
+        from app.core.settings import get_settings
+        if get_settings().debug:
+            return True
+    except Exception:
+        pass
+    return os.getenv("ENV", "").lower() == "dev"
+
+
+def _load_dev_token() -> str | None:
+    """读取项目根目录的 .dev_token 文件内容。"""
+    try:
+        token_path = Path(__file__).resolve().parent.parent.parent.parent / ".dev_token"
+        if token_path.exists():
+            return token_path.read_text().strip()
+    except Exception:
+        pass
+    return None
+
+
 def _extract_user(request: Request) -> dict | None:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return None
+    raw_token = auth[7:]
+
+    # 开发环境：允许 .dev_token 永久 token 直接通过
+    if _is_dev_env():
+        dev_token = _load_dev_token()
+        if dev_token and raw_token == dev_token:
+            try:
+                payload = decode_token(raw_token)
+                return {"user_id": int(payload["sub"]), "tier": payload.get("tier", 0)}
+            except Exception:
+                pass
+
     try:
-        payload = decode_token(auth[7:])
+        payload = decode_token(raw_token)
         return {"user_id": int(payload["sub"]), "tier": payload.get("tier", 0)}
     except Exception as e:
         logger.debug(f"Token decode failed: {e}")

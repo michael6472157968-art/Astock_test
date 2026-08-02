@@ -42,3 +42,6 @@ Thumbs.db
 
 # Nested repos / worktrees
 Astock-test/
+
+# Dev auth token (never commit)
+.dev_token

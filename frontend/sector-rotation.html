@@ -7,9 +7,43 @@
 <link rel="stylesheet" href="/css/app.css?v=3" />
 <script src="/lib/echarts.js"></script>
 <style>
-#treemapChart { width: 100%; height: 560px; }
+/* ── 防闪烁：关键样式优先定义 ── */
+.main-content { max-width: 100% !important; }
+#barChart { width: 100% !important; height: 640px !important; }
+.page-title { font-size: 1.4rem !important; }
+.page-desc { font-size: 0.88rem !important; }
+
+/* ── SVG 加载环 ── */
+.loading-overlay {
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 18px;
+  padding: 60px 20px;
+}
+.loading-ring { position: relative; width: 90px; height: 90px; }
+.loading-ring svg { transform: rotate(-90deg); }
+.loading-ring .bg { fill: none; stroke: #1a1e2b; stroke-width: 4; }
+.loading-ring .progress { fill: none; stroke: #00d4aa; stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset 0.3s ease; }
+.loading-ring .pct-text {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.05rem; font-weight: 700; color: #00d4aa;
+}
+.loading-text { font-size: 0.85rem; color: var(--color-text-muted); }
+
+/* ── 图表区域 ── */
 .sector-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
-.sector-meta .source-tag { font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; background: var(--color-border); color: var(--color-text-muted); }
+.sector-meta .source-tag { font-size: 0.82rem; padding: 3px 10px; border-radius: 4px; background: var(--color-border); color: var(--color-text-muted); }
+
+/* ── 加载更多 ── */
+.load-more-wrap { text-align: center; margin-top: 14px; }
+.load-more-btn {
+  background: var(--color-card); color: #00d4aa; border: 1px solid #00d4aa;
+  padding: 8px 28px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+}
+.load-more-btn:hover { background: #00d4aa; color: #0a0e17; }
+.load-more-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── 模态框 ── */
 .modal-overlay {
   display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0,0,0,0.65); z-index: 500;
@@ -31,34 +65,82 @@
 .modal-pct { font-size: 1.3rem; font-weight: 700; margin-bottom: 16px; }
 .modal-pct.up { color: var(--color-up); }
 .modal-pct.down { color: var(--color-down); }
+
+/* ── 模态框内加载环 ── */
+.modal-ring-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 30px 0; }
+.modal-ring-wrap .loading-ring { width: 60px; height: 60px; }
+.modal-ring-wrap .loading-ring .pct-text { font-size: 0.8rem; }
+.modal-ring-wrap .loading-text { font-size: 0.78rem; }
+
 .leader-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
 .leader-table th {
-  text-align: left; padding: 8px 10px; font-size: 0.78rem;
+  text-align: left; padding: 10px 12px; font-size: 0.85rem;
   font-weight: 600; color: var(--color-text-muted); border-bottom: 2px solid var(--color-border);
 }
-.leader-table td { padding: 10px 10px; font-size: 0.85rem; border-bottom: 1px solid var(--color-border); }
+.leader-table td { padding: 12px 12px; font-size: 0.92rem; border-bottom: 1px solid var(--color-border); }
 .leader-table tr:hover { background: var(--color-bg); }
 .leader-table .stock-link { color: var(--color-primary); text-decoration: none; cursor: pointer; }
 .leader-table .stock-link:hover { text-decoration: underline; }
 .leader-table .pct.up { color: var(--color-up); }
 .leader-table .pct.down { color: var(--color-down); }
+.leader-table .pct.flat { color: var(--color-text-muted); }
 .modal-loading { text-align: center; padding: 30px; color: var(--color-text-muted); }
 .modal-error { text-align: center; padding: 30px; color: var(--color-danger); }
+
+/* ── 网格过渡动画 ── */
+.modal-fade-in { animation: mfadeIn 0.25s ease; }
+@keyframes mfadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── 移动端 ── */
+@media (max-width: 768px) {
+  #barChart { height: auto !important; min-height: 400px !important; }
+  .modal-box { width: 95vw; padding: 16px; }
+  .loading-ring { width: 70px; height: 70px; }
+  .loading-ring .pct-text { font-size: 0.9rem; }
+  .leader-table td, .leader-table th { padding: 6px; font-size: 0.78rem; }
+}
 </style>
 </head>
 <body>
+<!-- 预加载 div —— 强制浏览器提前解析样式，防止闪烁 -->
+<div style="position:absolute;opacity:0;pointer-events:none;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <h2 class="page-title">.</h2><span class="page-desc">.</span>
+  <div id="barChart" style="width:100%;height:1px"></div>
+</div>
+
 <main class="main-content" data-chrome>
   <h2 class="page-title">板块轮动热力图</h2>
   <div class="sector-meta">
-    <span class="page-desc" style="margin-bottom:0;">概念板块实时涨跌分布 · 点击矩形查看领涨股</span>
+    <span class="page-desc" style="margin-bottom:0;font-size:0.88rem;">概念板块实时涨跌排行 · 点击条形查看领涨股</span>
     <div style="display:flex;align-items:center;gap:10px;">
       <span class="source-tag" id="dataSource">--</span>
-      <span style="font-size:0.72rem;color:var(--color-text-muted);" id="updateTime"></span>
+      <span style="font-size:0.82rem;color:var(--color-text-muted);" id="updateTime"></span>
     </div>
   </div>
-  <div id="treemapChart"></div>
-  <div style="text-align:center;padding:12px;font-size:0.72rem;color:var(--color-text-muted);">
-    数据来源：<span id="sourceDetail">--</span> | 盘中 120s 刷新 | 红色=上涨，绿色=下跌
+
+  <!-- 加载环 -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-ring">
+      <svg width="90" height="90" viewBox="0 0 90 90">
+        <circle class="bg" cx="45" cy="45" r="40"/>
+        <circle class="progress" id="ringProgress" cx="45" cy="45" r="40"
+                stroke-dasharray="251.327" stroke-dashoffset="251.327"/>
+      </svg>
+      <div class="pct-text" id="ringPct">0%</div>
+    </div>
+    <div class="loading-text" id="loadingText">正在加载板块数据...</div>
+  </div>
+
+  <!-- 条形图 -->
+  <div id="barChart" style="display:none;"></div>
+
+  <!-- 加载更多 -->
+  <div class="load-more-wrap" id="loadMoreWrap" style="display:none;">
+    <button class="load-more-btn" id="loadMoreBtn" onclick="window._loadAllSectors()">加载全部板块</button>
+  </div>
+
+  <div style="text-align:center;padding:12px;font-size:0.82rem;color:var(--color-text-muted);">
+    数据来源：<span id="sourceDetail">--</span> | 盘中 120s 刷新 | 红涨绿跌
   </div>
   <div id="errorMsg" style="display:none;text-align:center;padding:60px 20px;color:var(--color-danger);"></div>
 </main>
@@ -77,10 +159,29 @@
 <script src="/js/app.js?v=5"></script>
 <script>
 (function() {
-  var chartDom = document.getElementById('treemapChart');
-  var chart = echarts.init(chartDom);
+  var R = 40;
+  var CIRCUMFERENCE = 2 * Math.PI * R;
+  var ringProgress = document.getElementById('ringProgress');
+  var ringPct = document.getElementById('ringPct');
+  var loadingText = document.getElementById('loadingText');
+  var loadingOverlay = document.getElementById('loadingOverlay');
+  var barDom = document.getElementById('barChart');
+  var loadMoreWrap = document.getElementById('loadMoreWrap');
+  var chart = echarts.init(barDom);
   var sectorsData = [];
   var refreshTimer = null;
+  var ALL_LOADED = false;
+  var INITIAL_LIMIT = 30;
+
+  // 立即渲染占位图表，避免 ECharts 容器空白闪烁
+  (function renderPlaceholder() {
+    chart.setOption({
+      grid: { left: '2%', right: '8%', top: 8, bottom: 30, containLabel: true },
+      xAxis: { type: 'value', axisLabel: { color: '#8892a4', fontSize: 13 }, splitLine: { lineStyle: { color: '#1a1e2b' } }, name: '涨跌幅(%)', nameTextStyle: { color: '#8892a4', fontSize: 13 } },
+      yAxis: { type: 'category', data: ['加载中...'], axisLabel: { color: '#ccc', fontSize: 14 }, axisLine: { lineStyle: { color: '#1a1e2b' } }, inverse: true },
+      series: [{ type: 'bar', data: [{ value: 0, itemStyle: { color: '#1a1e2b' } }], barMaxWidth: 34 }],
+    });
+  })();
 
   function fmtSign(v) { return v >= 0 ? '+' + v.toFixed(2) : v.toFixed(2); }
 
@@ -92,128 +193,359 @@
   }
 
   function getColor(pct) {
-    if (pct > 2) return '#cc2222';
-    if (pct > 0) return '#e87373';
-    if (pct > -2) return '#6fcf6f';
-    return '#1a8a1a';
+    if (pct > 2) return '#e74c3c';
+    if (pct > 0) return '#f39c12';
+    if (pct > -2) return '#2ecc71';
+    return '#27ae60';
   }
 
-  function renderTreemap(data) {
+  function setRingProgress(pct) {
+    var offset = CIRCUMFERENCE - (pct / 100) * CIRCUMFERENCE;
+    ringProgress.setAttribute('stroke-dashoffset', offset.toFixed(3));
+    ringPct.textContent = Math.round(pct) + '%';
+  }
+
+  function showLoading() {
+    loadingOverlay.style.display = 'flex';
+    barDom.style.display = 'none';
+    loadMoreWrap.style.display = 'none';
+    document.getElementById('errorMsg').style.display = 'none';
+  }
+
+  function hideLoading() {
+    loadingOverlay.style.display = 'none';
+    barDom.style.display = '';
+  }
+
+  function renderBarChart(data) {
+    var sorted = data.slice().sort(function(a, b) { return b.pct_chg - a.pct_chg; });
+    var names = sorted.map(function(s) { return s.name; });
+    var values = sorted.map(function(s) { return s.pct_chg; });
+    var colors = values.map(function(v) { return getColor(v); });
+
     chart.setOption({
       tooltip: {
-        formatter: function(p) {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: function(params) {
+          var p = params[0];
           return '<strong>' + p.name + '</strong><br/>涨跌幅: ' + fmtSign(p.value) + '%';
         }
       },
+      grid: { left: '2%', right: '8%', top: 8, bottom: 30, containLabel: true },
+      xAxis: {
+        type: 'value',
+        axisLabel: { formatter: '{value}%', color: '#8892a4', fontSize: 13 },
+        splitLine: { lineStyle: { color: '#1a1e2b' } },
+        name: '涨跌幅(%)',
+        nameTextStyle: { color: '#8892a4', fontSize: 13 },
+      },
+      yAxis: {
+        type: 'category',
+        data: names,
+        axisLabel: { color: '#ccc', fontSize: 14, width: 140, overflow: 'truncate' },
+        axisLine: { lineStyle: { color: '#1a1e2b' } },
+        inverse: true,
+      },
       series: [{
-        type: 'treemap',
-        width: '100%',
-        height: '100%',
-        roam: false,
-        nodeClick: false,
-        breadcrumb: { show: false },
+        type: 'bar',
+        data: values.map(function(v, i) {
+          return { value: v, itemStyle: { color: colors[i], borderRadius: [0, 3, 3, 0] } };
+        }),
         label: {
-          show: true,
-          formatter: function(p) {
-            return '{name|' + p.name + '}\n{val|' + fmtSign(p.value) + '%}';
-          },
-          rich: {
-            name: { fontSize: 13, color: '#fff', lineHeight: 20 },
-            val: { fontSize: 16, fontWeight: 'bold', color: '#fff', lineHeight: 24 }
-          }
+          show: true, position: 'right',
+          color: '#8892a4', fontSize: 13,
+          formatter: function(p) { return fmtSign(p.value) + '%'; }
         },
-        upperLabel: { show: true, height: 30, color: '#8892a4' },
-        itemStyle: { borderColor: '#0a0e17', borderWidth: 2 },
-        levels: [{
-          itemStyle: { borderColor: '#0a0e17', borderWidth: 2, gapWidth: 2 },
-          upperLabel: { show: false }
-        }, {
-          itemStyle: { borderColor: '#0a0e17', borderWidth: 2, gapWidth: 2 },
-          upperLabel: { show: false }
-        }],
-        data: data.map(function(s) {
-          return {
-            name: s.name,
-            value: Math.abs(s.pct_chg) + 0.5,
-            pct_chg: s.pct_chg,
-            code: s.code,
-            itemStyle: { color: getColor(s.pct_chg) }
-          };
-        })
-      }]
-    });
+        barMaxWidth: 34,
+        emphasis: {
+          itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,212,170,0.4)', shadowOffsetX: 0 },
+        },
+      }],
+      dataZoom: [
+        { type: 'slider', yAxisIndex: 0, start: 0, end: 100, width: 20, right: 2,
+          borderColor: '#1a1e2b', backgroundColor: '#0d1117',
+          fillerColor: 'rgba(0,212,170,0.15)', handleStyle: { color: '#00d4aa' },
+        },
+      ],
+    }, true);
   }
 
-  function loadHeat() {
-    API.get('/sector/heat').then(function(r) {
+  function animateLoadProgress(start, end, text, onDone) {
+    var startPct = start, targetPct = end;
+    loadingText.textContent = text;
+    function step() {
+      var diff = targetPct - startPct;
+      if (diff <= 0) { if (onDone) onDone(); return; }
+      startPct += Math.max(1, diff * 0.12);
+      if (startPct >= targetPct) {
+        startPct = targetPct;
+        setRingProgress(startPct);
+        if (onDone) onDone();
+        return;
+      }
+      setRingProgress(startPct);
+      requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function loadHeat(limit) {
+    var queryLimit = arguments.length > 0 ? limit : INITIAL_LIMIT;
+    var url = '/sector/heat?limit=' + queryLimit;
+
+    API.get(url).then(function(r) {
       var d = r.data;
       sectorsData = d.sectors || [];
+      ALL_LOADED = !d.has_more;
+
       var src = d.source || 'none';
-      var srcLabels = { 'akshare_realtime': 'AKShare 实时', 'db_industry': 'DB行业聚合', 'db_cache': '本地缓存', 'none': '无数据' };
+      var srcLabels = {
+        'akshare_realtime': 'AKShare 实时', 'db_industry': 'DB行业聚合',
+        'db_cache': '本地缓存', 'none': '无数据'
+      };
       document.getElementById('dataSource').textContent = srcLabels[src] || src;
       document.getElementById('sourceDetail').textContent = srcLabels[src] || src;
       var dt = d.date || '';
       if (dt.length === 8) dt = dt.substring(0,4) + '-' + dt.substring(4,6) + '-' + dt.substring(6,8);
       document.getElementById('updateTime').textContent = dt;
       document.getElementById('errorMsg').style.display = 'none';
-      chartDom.style.display = '';
 
       if (!sectorsData.length) {
+        hideLoading();
         document.getElementById('errorMsg').style.display = 'block';
         document.getElementById('errorMsg').textContent = '暂无板块数据，请稍后刷新或执行数据同步';
-        chartDom.style.display = 'none';
         return;
       }
-      renderTreemap(sectorsData);
+
+      renderBarChart(sectorsData);
+      hideLoading();
+
+      if (!ALL_LOADED && sectorsData.length > 0) {
+        loadMoreWrap.style.display = '';
+      } else {
+        loadMoreWrap.style.display = 'none';
+      }
     }).catch(function(e) {
+      hideLoading();
       document.getElementById('errorMsg').style.display = 'block';
       document.getElementById('errorMsg').textContent = '数据加载失败: ' + (e.message || '网络错误');
-      chartDom.style.display = 'none';
     });
   }
 
+  function initLoad() {
+    showLoading();
+    setRingProgress(0);
+    loadingText.textContent = '正在加载板块数据...';
+
+    var phase1Done = false;
+    var fetchDone = false;
+
+    function tryComplete() {
+      if (phase1Done && fetchDone) {
+        animateLoadProgress(50, 100, '加载完成', function() {
+          setTimeout(function() { hideLoading(); }, 150);
+        });
+      }
+    }
+
+    animateLoadProgress(0, 50, '正在加载板块列表...', function() {
+      phase1Done = true;
+      tryComplete();
+    });
+
+    API.get('/sector/heat?limit=' + INITIAL_LIMIT).then(function(r) {
+      var d = r.data;
+      sectorsData = d.sectors || [];
+      ALL_LOADED = !d.has_more;
+
+      var src = d.source || 'none';
+      var srcLabels = {
+        'akshare_realtime': 'AKShare 实时', 'db_industry': 'DB行业聚合',
+        'db_cache': '本地缓存', 'none': '无数据'
+      };
+      document.getElementById('dataSource').textContent = srcLabels[src] || src;
+      document.getElementById('sourceDetail').textContent = srcLabels[src] || src;
+      var dt = d.date || '';
+      if (dt.length === 8) dt = dt.substring(0,4) + '-' + dt.substring(4,6) + '-' + dt.substring(6,8);
+      document.getElementById('updateTime').textContent = dt;
+      document.getElementById('errorMsg').style.display = 'none';
+
+      if (!sectorsData.length) {
+        hideLoading();
+        document.getElementById('errorMsg').style.display = 'block';
+        document.getElementById('errorMsg').textContent = '暂无板块数据，请稍后刷新或执行数据同步';
+        return;
+      }
+
+      renderBarChart(sectorsData);
+
+      if (!ALL_LOADED && sectorsData.length > 0) {
+        loadMoreWrap.style.display = '';
+      } else {
+        loadMoreWrap.style.display = 'none';
+      }
+
+      fetchDone = true;
+      tryComplete();
+    }).catch(function(e) {
+      hideLoading();
+      document.getElementById('errorMsg').style.display = 'block';
+      document.getElementById('errorMsg').textContent = '数据加载失败: ' + (e.message || '网络错误');
+    });
+  }
+
+  window._loadAllSectors = function() {
+    var btn = document.getElementById('loadMoreBtn');
+    btn.disabled = true;
+    btn.textContent = '加载中...';
+    showLoading();
+    setRingProgress(0);
+
+    var phase1Done = false;
+    var fetchDone = false;
+    function tryComplete() {
+      if (phase1Done && fetchDone) {
+        animateLoadProgress(50, 100, '加载完成', function() {
+          setTimeout(hideLoading, 150);
+        });
+      }
+    }
+
+    animateLoadProgress(0, 50, '正在加载全部板块...', function() {
+      phase1Done = true;
+      tryComplete();
+    });
+
+    API.get('/sector/heat?limit=0').then(function(r) {
+      var d = r.data;
+      sectorsData = d.sectors || [];
+      ALL_LOADED = true;
+      loadMoreWrap.style.display = 'none';
+      renderBarChart(sectorsData);
+      fetchDone = true;
+      tryComplete();
+    }).catch(function(e) {
+      btn.disabled = false;
+      btn.textContent = '加载全部板块';
+      hideLoading();
+    });
+  };
+
   chart.on('click', function(params) {
-    if (!params.data || !params.data.name) return;
-    var name = params.data.name;
-    var code = params.data.code || name;
-    var pct = params.data.pct_chg || 0;
-    showSectorModal(name, code, pct);
+    if (!params.name || params.name === '加载中...') return;
+    var sector = sectorsData.find(function(s) { return s.name === params.name; });
+    if (!sector) return;
+    var code = sector.code || sector.name;
+    showSectorModal(sector.name, code, sector.pct_chg || 0);
   });
+
+  // ── 模态框 SVG 加载环 ──
+  function buildModalRing(text) {
+    text = text || '加载中...';
+    return '<div class="modal-ring-wrap modal-fade-in">'
+      + '<div class="loading-ring">'
+      + '<svg width="60" height="60" viewBox="0 0 60 60">'
+      + '<circle class="bg" cx="30" cy="30" r="26"/>'
+      + '<circle class="progress" id="modalRing" cx="30" cy="30" r="26"'
+      + '  stroke-dasharray="163.363" stroke-dashoffset="163.363"/>'
+      + '</svg>'
+      + '<div class="pct-text" id="modalRingPct">0%</div>'
+      + '</div>'
+      + '<div class="loading-text">' + text + '</div>'
+      + '</div>';
+  }
+
+  function buildModalError(text) {
+    return '<div class="modal-error modal-fade-in">' + (text || '加载失败，请重试') + '</div>';
+  }
+
+  var MODAL_R_26 = 26;
+  var MODAL_CIRC_26 = 2 * Math.PI * MODAL_R_26;
+
+  function animateModalRing(elProgress, elPct, start, end, intervalMs, onDone) {
+    var cur = start;
+    var target = end;
+    var stepMs = intervalMs || 30;
+    function tick() {
+      if (cur >= target) {
+        elProgress.setAttribute('stroke-dashoffset', (MODAL_CIRC_26 - (target / 100) * MODAL_CIRC_26).toFixed(3));
+        elPct.textContent = Math.round(target) + '%';
+        if (onDone) onDone();
+        return;
+      }
+      var inc = Math.max(1, (target - cur) * 0.15);
+      cur = Math.min(target, cur + inc);
+      var offset = MODAL_CIRC_26 - (cur / 100) * MODAL_CIRC_26;
+      elProgress.setAttribute('stroke-dashoffset', offset.toFixed(3));
+      elPct.textContent = Math.round(cur) + '%';
+      setTimeout(tick, stepMs);
+    }
+    setTimeout(tick, 50);
+  }
 
   function showSectorModal(name, code, pct) {
     document.getElementById('modalTitle').textContent = name;
     var pctEl = document.getElementById('modalPct');
     pctEl.textContent = fmtSign(pct) + '%';
     pctEl.className = 'modal-pct ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : '');
-    document.getElementById('modalBody').innerHTML = '<div class="modal-loading">加载中...</div>';
+    document.getElementById('modalBody').innerHTML = buildModalRing('正在加载 ' + name + ' 领涨股...');
     document.getElementById('modalOverlay').classList.add('show');
+
+    // 启动模态框内的圆环动画：0 → 70%
+    setTimeout(function() {
+      var mrp = document.getElementById('modalRing');
+      var mrpPct = document.getElementById('modalRingPct');
+      if (!mrp || !mrpPct) return;
+      animateModalRing(mrp, mrpPct, 0, 70, 30);
+    }, 80);
 
     API.get('/sector/' + encodeURIComponent(code) + '/leaders').then(function(r) {
       var stocks = r.data.stocks || [];
       var sname = r.data.sector_name || name;
       document.getElementById('modalTitle').textContent = sname;
 
-      if (!stocks.length) {
-        document.getElementById('modalBody').innerHTML = '<div class="modal-error">暂无该板块成分股数据</div>';
-        return;
+      // 完成动画：70% → 100%
+      var mrp = document.getElementById('modalRing');
+      var mrpPct = document.getElementById('modalRingPct');
+      if (mrp && mrpPct) {
+        animateModalRing(mrp, mrpPct, 70, 100, 25, function() {
+          showStockTable(stocks, sname, pct);
+        });
+      } else {
+        showStockTable(stocks, sname, pct);
       }
-
-      var html = '<table class="leader-table"><thead><tr><th>#</th><th>股票名称</th><th>最新价</th><th>涨跌幅</th></tr></thead><tbody>';
-      stocks.forEach(function(s, i) {
-        var pctCls = s.pct_chg > 0 ? 'up' : s.pct_chg < 0 ? 'down' : '';
-        var codeForLink = encodeURIComponent(s.ts_code || '');
-        html += '<tr>';
-        html += '<td style="color:var(--color-text-muted)">' + (i + 1) + '</td>';
-        html += '<td><a class="stock-link" href="diagnosis.html?code=' + codeForLink + '">' + (s.name || s.ts_code) + '</a></td>';
-        html += '<td>' + (s.close ? s.close.toFixed(2) : '--') + '</td>';
-        html += '<td class="pct ' + pctCls + '">' + fmtSign(s.pct_chg) + '%</td>';
-        html += '</tr>';
-      });
-      html += '</tbody></table>';
-      document.getElementById('modalBody').innerHTML = html;
     }).catch(function(e) {
-      document.getElementById('modalBody').innerHTML = '<div class="modal-error">加载失败: ' + (e.message || '') + '</div>';
+      // 失败：圆环变红
+      var mrp = document.getElementById('modalRing');
+      if (mrp) mrp.setAttribute('stroke', '#ef4444');
+      var mrpPct = document.getElementById('modalRingPct');
+      if (mrpPct) mrpPct.style.color = '#ef4444';
+      setTimeout(function() {
+        document.getElementById('modalBody').innerHTML = buildModalError('加载失败: ' + (e.message || '请重试'));
+      }, 400);
     });
+  }
+
+  function showStockTable(stocks, sname, pct) {
+    if (!stocks.length) {
+      document.getElementById('modalBody').innerHTML = '<div class="modal-error modal-fade-in">暂无该板块成分股数据</div>';
+      return;
+    }
+
+    var html = '<table class="leader-table modal-fade-in"><thead><tr><th>#</th><th>股票名称</th><th>最新价</th><th>涨跌幅</th></tr></thead><tbody>';
+    stocks.forEach(function(s, i) {
+      var pctCls = s.pct_chg > 0 ? 'up' : s.pct_chg < 0 ? 'down' : 'flat';
+      var codeForLink = encodeURIComponent(s.ts_code || '');
+      html += '<tr>';
+      html += '<td style="color:var(--color-text-muted)">' + (i + 1) + '</td>';
+      html += '<td><a class="stock-link" href="diagnosis.html?code=' + codeForLink + '">' + (s.name || s.ts_code) + '</a></td>';
+      html += '<td>' + (s.close ? s.close.toFixed(2) : '--') + '</td>';
+      html += '<td class="pct ' + pctCls + '">' + fmtSign(s.pct_chg) + '%</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('modalBody').innerHTML = html;
   }
 
   document.addEventListener('keydown', function(e) {
@@ -223,7 +555,7 @@
   });
 
   function autoRefresh() {
-    loadHeat();
+    initLoad();
     if (inTradingHours()) {
       refreshTimer = setInterval(function() {
         if (!inTradingHours()) { clearInterval(refreshTimer); return; }
