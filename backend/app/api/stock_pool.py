@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from app.core.settings import get_settings
 from app.middleware.auth_middleware import require_auth_optional
 from app.models.schemas.common import APIResponse
+from app.utils.trading_calendar import get_latest_trade_date, is_trade_date
 
 router = APIRouter(prefix="/api/v1/stock-pool", tags=["选股池"])
 _settings = get_settings()
@@ -21,6 +22,20 @@ POOL_TYPES = {
     "oversold_rebound": {"name": "超跌反弹池", "desc": "短期超跌、出现反转信号的博弈股"},
     "steady_swing": {"name": "稳健波段池", "desc": "趋势向上、量价健康的中短线标的"},
 }
+
+
+async def _resolve_trade_date() -> tuple[str, bool]:
+    """返回 (trade_date, is_trade_day)。"""
+    today_str = date.today().strftime("%Y%m%d")
+    try:
+        lt = await get_latest_trade_date()
+    except Exception:
+        lt = today_str
+    try:
+        is_td = await is_trade_date(today_str)
+    except Exception:
+        is_td = date.today().weekday() < 5
+    return lt, is_td
 
 
 @router.get("/categories")
@@ -40,15 +55,16 @@ async def list_pool(pool_type: str, page: int = 1, page_size: int = 20,
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"无效的选股池类型: {pool_type}")
 
-    from datetime import date, timedelta
     from sqlalchemy import text as _text
     from app.core.database import async_session as _sess
 
-    trade_date = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+    trade_date, is_td = await _resolve_trade_date()
+
+    # DB 中取最新日线日期兜底
     async with _sess() as _session:
         _r = await _session.execute(_text('SELECT MAX(trade_date) FROM stock_daily'))
         _max = _r.scalar()
-        if _max:
+        if _max and _max > trade_date:
             trade_date = _max
 
     from app.core.cache import cache_get
@@ -79,7 +95,11 @@ async def list_pool(pool_type: str, page: int = 1, page_size: int = 20,
     total = len(items)
 
     return APIResponse(
-        data={"pool_type": pool_type, "date": trade_date, "total": total, "items": items},
+        data={
+            "pool_type": pool_type, "date": trade_date,
+            "trade_date": trade_date, "is_trade_day": is_td,
+            "total": total, "items": items,
+        },
         timestamp=int(time.time()),
         ext_info={"cache_hit": cached is not None},
     )
