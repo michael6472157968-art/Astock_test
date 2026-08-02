@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -22,6 +22,20 @@ POOL_TYPES = {
     "oversold_rebound": {"name": "超跌反弹池", "desc": "短期超跌、出现反转信号的博弈股"},
     "steady_swing": {"name": "稳健波段池", "desc": "趋势向上、量价健康的中短线标的"},
 }
+
+
+async def _resolve_trade_date() -> tuple[str, bool]:
+    """返回 (trade_date, is_trade_day)。"""
+    today_str = date.today().strftime("%Y%m%d")
+    try:
+        lt = await get_latest_trade_date()
+    except Exception:
+        lt = today_str
+    try:
+        is_td_val = await is_trade_date(today_str)
+    except Exception:
+        is_td_val = date.today().weekday() < 5
+    return lt, is_td_val
 
 
 async def _resolve_trade_date() -> tuple[str, bool]:
