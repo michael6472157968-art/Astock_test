@@ -70,19 +70,36 @@ var GEN_PHASES = [
 ];
 
 (function() {
-  var dd = new Date();
-  for (var i = 0; i < 30; i++) {
-    var y = dd.getFullYear();
-    var m = String(dd.getMonth() + 1).padStart(2, '0');
-    var d = String(dd.getDate()).padStart(2, '0');
-    allDates.push(y + m + d);
-    dd.setDate(dd.getDate() - 1);
-  }
-  preloadStatuses(function() {
-    buildDateSelect();
-    loadReview(allDates[0]);
+  API.get('/review/dates').then(function(r) {
+    allDates = (r.data && r.data.dates) ? r.data.dates : [];
+    if (!allDates.length) {
+      document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">暂无交易数据，请先运行数据同步</p>';
+      buildDateSelect();
+      return;
+    }
+    preloadStatuses(function() {
+      buildDateSelect();
+      // 自动生成最近一个交易日的复盘简报
+      autoGenerateLatest();
+    });
+  }).catch(function() {
+    document.getElementById('reviewDetail').innerHTML = '<p class="state-empty">获取交易日列表失败</p>';
   });
 })();
+
+function autoGenerateLatest() {
+  var latestDate = allDates[0];
+  if (!latestDate) return;
+  var st = allStatuses[latestDate] || 'not_generated';
+  if (st === 'ready' || st === 'latest') {
+    // 已生成，直接加载
+    loadReview(latestDate);
+  } else {
+    // 未生成，自动调用一次生成
+    _autoGenHook = true;
+    generateReport(latestDate, true);
+  }
+}
 
 function preloadStatuses(cb) {
   var pending = allDates.length;
@@ -211,21 +228,24 @@ function showGeneratePrompt(td) {
   document.getElementById('reviewChart').style.display = 'none';
 }
 
-function generateReport(td) {
+function generateReport(td, autoMode) {
   stopGenProgress();
   var R = 36, CIRC = 2 * Math.PI * R;
   var html = '<div class="gen-progress">';
-  html += '<div class="ring-wrap"><svg width="80" height="80" viewBox="0 0 80 80"><circle class="ring-bg" cx="40" cy="40" r="' + R + '"/><circle class="ring-fg" id="genRing" cx="40" cy="40" r="' + R + '" stroke-dasharray="' + CIRC.toFixed(3) + '" stroke-dashoffset="' + CIRC.toFixed(3) + '"/></svg><div class="ring-pct" id="genPct">0%</div></div>';
-  html += '<div class="phase-text" id="genPhase">正在获取市场数据...</div>';
+  if (!autoMode) {
+    html += '<div class="ring-wrap"><svg width="80" height="80" viewBox="0 0 80 80"><circle class="ring-bg" cx="40" cy="40" r="' + R + '"/><circle class="ring-fg" id="genRing" cx="40" cy="40" r="' + R + '" stroke-dasharray="' + CIRC.toFixed(3) + '" stroke-dashoffset="' + CIRC.toFixed(3) + '"/></svg><div class="ring-pct" id="genPct">0%</div></div>';
+  }
+  html += '<div class="phase-text" id="genPhase">' + (autoMode ? '自动生成最近交易日复盘...' : '正在获取市场数据...') + '</div>';
   html += '</div>';
   document.getElementById('reviewDetail').innerHTML = html;
   document.getElementById('reviewChart').style.display = 'none';
 
   var phaseIdx = 0;
   var startedAt = Date.now();
-  var TOTAL_DURATION = 4000;
+  var TOTAL_DURATION = autoMode ? 0 : 4000;
 
   function tick() {
+    if (autoMode) return;
     var elapsed = Date.now() - startedAt;
     var progress = Math.min(98, (elapsed / TOTAL_DURATION) * 100);
     var phase = GEN_PHASES[phaseIdx];
@@ -239,12 +259,14 @@ function generateReport(td) {
       _genTimer = requestAnimationFrame(tick);
     }
   }
-  _genTimer = requestAnimationFrame(tick);
+  if (!autoMode) _genTimer = requestAnimationFrame(tick);
 
-  API.post('/review/generate', {}).then(function(r) {
+  API.post('/review/generate', { date: td }).then(function(r) {
     stopGenProgress();
-    setGenRing(100);
-    document.getElementById('genPhase').textContent = '完成!';
+    if (!autoMode) {
+      setGenRing(100);
+      document.getElementById('genPhase').textContent = '完成!';
+    }
     var d = r.data;
     if (d.content && d.content.total) {
       allReviews[td] = d;

@@ -8,7 +8,7 @@ import logging
 import time
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import text
 
@@ -529,6 +529,19 @@ async def latest_review(user: dict = Depends(require_auth_optional)):
                        ext_info={"note": "需要先运行数据同步"})
 
 
+@review_router.get("/dates")
+async def review_dates(user: dict = Depends(require_auth_optional)):
+    """Return dates that have trade data in stock_daily (descending, last 60 days)."""
+    from app.core.database import async_session
+
+    async with async_session() as sess:
+        r = await sess.execute(
+            text("SELECT DISTINCT trade_date FROM stock_daily ORDER BY trade_date DESC LIMIT 60")
+        )
+        dates = [row[0] for row in r]
+    return APIResponse(data={"dates": dates}, timestamp=int(time.time()))
+
+
 @review_router.get("/status/{date}")
 async def review_status(date: str, user: dict = Depends(require_auth_optional)):
     """Check if a review report exists and is still fresh."""
@@ -601,25 +614,25 @@ async def review_daily(date: str = "", user: dict = Depends(require_auth_optiona
 
 
 @review_router.post("/generate")
-async def review_generate(user: dict = Depends(require_auth_optional)):
+async def review_generate(request: Request, user: dict = Depends(require_auth_optional)):
     from app.services.market_review import MarketReviewEngine
-    from pydantic import BaseModel
-
-    class GenReq(BaseModel):
-        date: str = ""
-
-    try:
-        body = None
-        from fastapi import Request
-        import json as _json
-    except Exception:
-        pass
 
     await _ensure_review_table()
     await _purge_expired_reviews()
 
-    # Parse date from request body if available
-    trade_date, is_td = await _get_trade_context()
+    # Parse date from request body, fall back to latest trade date
+    trade_date = None
+    try:
+        body = await request.json()
+        trade_date = body.get("date", "") if body else ""
+    except Exception:
+        pass
+    if not trade_date:
+        trade_date, _ = await _get_trade_context()
+    else:
+        trade_date = str(trade_date).strip()
+
+    is_td = await is_trade_date(trade_date) if trade_date else False
 
     engine = MarketReviewEngine()
     review_data = await engine.compute(trade_date)
