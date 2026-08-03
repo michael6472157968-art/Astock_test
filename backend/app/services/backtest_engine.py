@@ -1,9 +1,12 @@
 """策略回测引擎。
 
-三种策略的逐日模拟交易：
+六种策略的逐日模拟交易：
 - ma_cross: 5/20日简单移动平均交叉
+- macd_cross: MACD 金叉/死叉 (DIF上穿/下穿DEA)
 - volume_break: 放量(>1.5x20日均量)突破20日收盘高点 + MA10止损
+- boll_break: 布林带下轨突破买入 + 中轨止损
 - rsi_reversal: 14日RSI超卖(<30)买入 / 超买(>70)卖出
+- momentum: 双动量(5日/20日) + 成交量确认
 """
 
 from __future__ import annotations
@@ -14,6 +17,26 @@ def sma(series: list[float], n: int) -> list[float | None]:
     for i in range(n - 1, len(series)):
         out[i] = sum(series[i - n + 1 : i + 1]) / n
     return out
+
+
+def ema(series: list[float], n: int) -> list[float]:
+    out: list[float] = []
+    k = 2 / (n + 1)
+    for i, v in enumerate(series):
+        if i == 0:
+            out.append(v)
+        else:
+            out.append(v * k + out[-1] * (1 - k))
+    return out
+
+
+def _macd_series(closes: list[float]) -> tuple[list[float | None], list[float | None], list[float | None]]:
+    ema12 = ema(closes, 12)
+    ema26 = ema(closes, 26)
+    dif = [a - b for a, b in zip(ema12, ema26)]
+    dea = ema(dif, 9)
+    bar = [(d - dea[i]) * 2 for i, d in enumerate(dif)]
+    return dif, dea, bar
 
 
 def rsi(closes: list[float], period: int = 14) -> list[float | None]:
@@ -80,10 +103,65 @@ def _signals_rsi_reversal(closes: list[float], _volumes: list[float]) -> list[tu
     return sigs
 
 
+def _signals_macd_cross(closes: list[float], _volumes: list[float]) -> list[tuple[int, str]]:
+    dif, dea, _bar = _macd_series(closes)
+    sigs: list[tuple[int, str]] = []
+    for i in range(1, len(closes)):
+        if dif[i] is None or dea[i] is None or dif[i - 1] is None or dea[i - 1] is None:
+            continue
+        if dif[i - 1] <= dea[i - 1] and dif[i] > dea[i]:
+            sigs.append((i, "buy"))
+        elif dif[i - 1] >= dea[i - 1] and dif[i] < dea[i]:
+            sigs.append((i, "sell"))
+    return sigs
+
+
+def _signals_boll_break(closes: list[float], _volumes: list[float]) -> list[tuple[int, str]]:
+    n = 20
+    ma = sma(closes, n)
+    sigs: list[tuple[int, str]] = []
+    in_pos = False
+    for i in range(n, len(closes)):
+        if ma[i] is None or ma[i - 1] is None:
+            continue
+        window = closes[i - n + 1 : i + 1]
+        mean = sum(window) / n
+        std = (sum((v - mean) ** 2 for v in window) / (n - 1)) ** 0.5
+        lower = mean - 2 * std
+        mid = mean
+        if not in_pos and closes[i] < lower and closes[i - 1] >= lower:
+            sigs.append((i, "buy"))
+            in_pos = True
+        elif in_pos and closes[i] > mid:
+            sigs.append((i, "sell"))
+            in_pos = False
+    return sigs
+
+
+def _signals_momentum(closes: list[float], volumes: list[float]) -> list[tuple[int, str]]:
+    n = len(closes)
+    sigs: list[tuple[int, str]] = []
+    in_pos = False
+    for i in range(20, n):
+        roc5 = (closes[i] - closes[i - 5]) / closes[i - 5] if closes[i - 5] > 0 else 0
+        roc20 = (closes[i] - closes[i - 20]) / closes[i - 20] if closes[i - 20] > 0 else 0
+        vol_ratio = volumes[i] / (sum(volumes[i - 20 : i]) / 20) if sum(volumes[i - 20 : i]) > 0 else 1
+        if not in_pos and roc5 > 0.03 and roc20 > roc5 and vol_ratio > 1.2:
+            sigs.append((i, "buy"))
+            in_pos = True
+        elif in_pos and roc5 < -0.02:
+            sigs.append((i, "sell"))
+            in_pos = False
+    return sigs
+
+
 _SIGNAL_FNS = {
     "ma_cross": _signals_ma_cross,
+    "macd_cross": _signals_macd_cross,
     "volume_break": _signals_volume_break,
+    "boll_break": _signals_boll_break,
     "rsi_reversal": _signals_rsi_reversal,
+    "momentum": _signals_momentum,
 }
 
 
@@ -153,14 +231,47 @@ def run(daily_data: list[dict], strategy: str = "ma_cross", initial_cash: float 
         "metrics": _metrics(equity, trades, initial_cash),
         "buy_signals": buy_sigs,
         "sell_signals": sell_sigs,
+        "drawdown_curve": _drawdown(equity),
+        "monthly_returns": _monthly_returns(equity),
     }
+
+
+def _drawdown(equity: list[list]) -> list[list]:
+    """回撤曲线：每日回撤百分比"""
+    dd = []
+    peak = 0.0
+    for dt, v in equity:
+        peak = max(peak, v)
+        dd_pct = round((peak - v) / peak * 100, 2) if peak > 0 else 0
+        dd.append([dt, dd_pct])
+    return dd
+
+
+def _monthly_returns(equity: list[list]) -> list[list]:
+    """月度收益热力图数据：[[yyyymm, return_pct], ...]"""
+    by_month: dict[str, list[float]] = {}
+    for i, (dt, v) in enumerate(equity):
+        ym = dt[:6]
+        if ym not in by_month:
+            by_month[ym] = [v]
+        else:
+            by_month[ym].append(v)
+    months = []
+    for ym, vals in sorted(by_month.items()):
+        first, last = vals[0], vals[-1]
+        ret = round((last - first) / first * 100, 2) if first > 0 else 0
+        months.append([ym, ret, f"{ret:+.2f}%"])
+    return months
 
 
 def _reason(strategy: str, action: str) -> str:
     m = {
         "ma_cross": {"buy": "金叉买入", "sell": "死叉卖出"},
+        "macd_cross": {"buy": "MACD金叉", "sell": "MACD死叉"},
         "volume_break": {"buy": "放量突破买入", "sell": "跌破MA10卖出"},
+        "boll_break": {"buy": "布林下轨突破", "sell": "回归中轨"},
         "rsi_reversal": {"buy": "RSI超卖买入", "sell": "RSI超买卖出"},
+        "momentum": {"buy": "动量突破", "sell": "动量衰减"},
     }
     return m.get(strategy, {}).get(action, action)
 

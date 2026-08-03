@@ -323,6 +323,49 @@ def _build_kline_data(df) -> dict:
     return {"columns": ["trade_date", "open", "close", "low", "high", "volume"], "rows": kline}
 
 
+def _build_indicator_series(closes, highs, lows) -> dict:
+    """返回完整指标时间序列，供前端多副图渲染。"""
+    n = len(closes)
+
+    ma5 = _sma(closes, 5)
+    ma10 = _sma(closes, 10)
+    ma20 = _sma(closes, 20)
+    ma60 = _sma(closes, 60) if n >= 60 else [None] * n
+    boll = _bollinger(closes)
+    macd = _macd(closes)
+    kdj = _kdj(highs, lows, closes)
+    rsi_vals = _rsi(closes)
+
+    # 各指标起始偏移（前面多少天为 None）
+    kdj_offset = n - len(kdj["k"])
+    rsi_offset = n - len(rsi_vals)
+
+    def _r(v, idx):
+        return None if v is None else round(v, 2)
+
+    series = []
+    for i in range(n):
+        item = {
+            "ma5": _r(ma5[i], i),
+            "ma10": _r(ma10[i], i),
+            "ma20": _r(ma20[i], i),
+            "ma60": _r(ma60[i], i),
+            "boll_upper": _r(boll["upper"][i], i),
+            "boll_mid": _r(boll["mid"][i], i),
+            "boll_lower": _r(boll["lower"][i], i),
+            "macd_dif": _r(macd["dif"][i], i),
+            "macd_dea": _r(macd["dea"][i], i),
+            "macd_bar": _r(macd["bar"][i], i),
+            "kdj_k": _r(kdj["k"][i - kdj_offset], i) if i >= kdj_offset else None,
+            "kdj_d": _r(kdj["d"][i - kdj_offset], i) if i >= kdj_offset else None,
+            "kdj_j": _r(kdj["j"][i - kdj_offset], i) if i >= kdj_offset else None,
+            "rsi": _r(rsi_vals[i - rsi_offset], i) if i >= rsi_offset else None,
+        }
+        series.append(item)
+
+    return {"length": n, "series": series}
+
+
 # ── API ──
 
 @router.get("/quota")
@@ -530,6 +573,7 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
 
         quant = _quant_signal(closes, highs, lows, vols)
         kline = _build_kline_data(df)
+        indicators = _build_indicator_series(closes, highs, lows)
 
         # 获取股票名称
         stock_name = stock_code
@@ -548,6 +592,7 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
             "stock_name": stock_name,
             "quant": quant,
             "kline": kline,
+            "indicators": indicators,
         }
     except Exception:
         return None
@@ -559,6 +604,7 @@ def _build_response(report: dict, tier: int, cache_hit: bool, cache_date: str = 
         "stock_name": report["stock_name"],
         "quant": report["quant"],
         "kline": report.get("kline"),
+        "indicators": report.get("indicators"),
     }
 
     ext = {"cache_hit": cache_hit}

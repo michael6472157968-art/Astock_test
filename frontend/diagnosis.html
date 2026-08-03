@@ -234,11 +234,10 @@ function renderDiagnosis(r, code) {
     html += '</div></div></div>';
   }
 
-  html += '<div class="card" style="margin-top:16px"><div class="card-header">K线图（日线 / 近60日）</div><div class="card-body"><div id="klineChart" style="width:100%;height:500px;"></div></div></div>';
+  html += '<div class="card" style="margin-top:16px"><div class="card-header">K线图（日线 / 近60日）+ 技术指标</div><div class="card-body"><div id="klineChart" style="width:100%;height:720px;"></div></div></div>';
   html += '<div class="card" style="margin-top:16px"><div class="card-header">资金流向 · 近30日</div><div class="card-body"><div id="mfSummary" style="margin-bottom:14px;"></div><div id="mfChart" style="width:100%;height:360px;"></div></div></div>';
   result.innerHTML = html;
 
-  // AI分析入口卡片
   renderAiCard(code, stockName);
 
   setTimeout(function() { renderKlineChart(r.data); }, 100);
@@ -283,7 +282,6 @@ function runAiAnalysis(code) {
       .replace(/^- (.+)$/gm, '<li style="margin-left:16px;font-size:0.85rem;line-height:1.7;">$1</li>');
     aiResult.innerHTML = '<div style="line-height:1.8;font-size:0.85rem;color:var(--color-text);">' + html + '</div>';
     btn.style.display = 'none';
-    // Update local credits
     var u = Session.get();
     if (u && !d.cache_hit) {
       u.credits = Math.max(0, (u.credits || 0) - 2);
@@ -327,7 +325,6 @@ function sigClass(s) {
   return 'signal-neutral';
 }
 
-// 信号 tooltip 说明文案
 var SIGNAL_DESC = {
   volume: '成交量信号：监测放量突破 / 缩量回调等量价配合形态，辅助判断资金动向。',
   trend: '均线趋势信号：基于 MA5/MA10/MA20 的多头排列、金叉死叉判断短期趋势方向。',
@@ -348,18 +345,36 @@ function renderKlineChart(data) {
   if (!el) return;
   var kline = data && data.kline;
   if (!kline || !kline.rows || !kline.rows.length) { el.innerHTML = '<p class="state-empty">K线数据暂不可用</p>'; return; }
+  var ind = data && data.indicators;
   var rows = kline.rows;
-  var dates = [], ohlc = [], vols = [], ma5 = [], ma10 = [], ma20 = [];
+  var dates = [];
+  var ohlc = [], vols = [];
+  var macdDif = [], macdDea = [], macdBar = [];
+  var kdjK = [], kdjD = [], kdjJ = [];
+  var rsiArr = [];
+  var ma5 = [], ma10 = [], ma20 = [], ma60 = [];
+  var bollUp = [], bollMid = [], bollLow = [];
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     dates.push(String(r[0]));
     ohlc.push([r[1], r[2], r[3], r[4]]);
     vols.push(r[5]);
-  }
-  for (var i = 0; i < ohlc.length; i++) {
-    ma5.push(calcMA(ohlc, i, 5));
-    ma10.push(calcMA(ohlc, i, 10));
-    ma20.push(calcMA(ohlc, i, 20));
+    if (ind && ind.series) {
+      var s = ind.series[i];
+      ma5.push(s.ma5); ma10.push(s.ma10); ma20.push(s.ma20); ma60.push(s.ma60);
+      bollUp.push(s.boll_upper); bollMid.push(s.boll_mid); bollLow.push(s.boll_lower);
+      macdDif.push(s.macd_dif); macdDea.push(s.macd_dea);
+      macdBar.push(s.macd_bar != null ? s.macd_bar : null);
+      kdjK.push(s.kdj_k); kdjD.push(s.kdj_d); kdjJ.push(s.kdj_j);
+      rsiArr.push(s.rsi);
+    } else {
+      ma5.push(calcMA(ohlc, i, 5)); ma10.push(calcMA(ohlc, i, 10));
+      ma20.push(calcMA(ohlc, i, 20)); ma60.push(null);
+      bollUp.push(null); bollMid.push(null); bollLow.push(null);
+      macdDif.push(null); macdDea.push(null); macdBar.push(null);
+      kdjK.push(null); kdjD.push(null); kdjJ.push(null);
+      rsiArr.push(null);
+    }
   }
   if (window._chartInstance) { window._chartInstance.dispose(); }
   if (window._chartResizeHandler) { window.removeEventListener('resize', window._chartResizeHandler); }
@@ -372,31 +387,59 @@ function renderKlineChart(data) {
   chart.setOption({
     toolbox: { feature: { dataZoom: { yAxisIndex: false }, restore: {} }, right: 10 },
     dataZoom: [
-      { type: 'slider', xAxisIndex: [0, 1], start: 50, end: 100, height: 24, bottom: 0 },
-      { type: 'inside', xAxisIndex: [0, 1], start: 50, end: 100, zoomOnMouseWheel: true, moveOnMouseWheel: true, moveOnMouseMove: true }
+      { type: 'slider', xAxisIndex: [0,1,2,3,4], start: 50, end: 100, height: 20, bottom: 0 },
+      { type: 'inside', xAxisIndex: [0,1,2,3,4], start: 50, end: 100, zoomOnMouseWheel: true, moveOnMouseWheel: true, moveOnMouseMove: true }
     ],
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
     grid: [
-      { left: '8%', right: '1%', top: 20, height: '60%' },
-      { left: '8%', right: '1%', top: '75%', height: '18%' }
+      { left: '8%', right: '1%', top: '4%', height: '38%' },
+      { left: '8%', right: '1%', top: '45%', height: '8%' },
+      { left: '8%', right: '1%', top: '56%', height: '10%' },
+      { left: '8%', right: '1%', top: '69%', height: '10%' },
+      { left: '8%', right: '1%', top: '82%', height: '12%' }
     ],
     xAxis: [
-      { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#8392A5' } } },
-      { type: 'category', data: dates, gridIndex: 1, axisLabel: { fontSize: 9, color: '#8392A5' }, axisLine: { lineStyle: { color: '#8392A5' } } }
+      { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#8392A5' } }, axisTick: { show: false } },
+      { type: 'category', data: dates, gridIndex: 1, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#8392A5' } }, axisTick: { show: false } },
+      { type: 'category', data: dates, gridIndex: 2, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#8392A5' } }, axisTick: { show: false } },
+      { type: 'category', data: dates, gridIndex: 3, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#8392A5' } }, axisTick: { show: false } },
+      { type: 'category', data: dates, gridIndex: 4, axisLabel: { fontSize: 9, color: '#8392A5' }, axisLine: { lineStyle: { color: '#8392A5' } } }
     ],
     yAxis: [
-      { type: 'value', gridIndex: 0, scale: true, splitLine: { lineStyle: { color: '#8392A520' } }, axisLabel: { color: '#8392A5' } },
-      { type: 'value', gridIndex: 1, axisLabel: { color: '#8392A5', formatter: function(v){ return v >= 10000 ? (v/10000).toFixed(0)+'万' : v; } }, splitLine: { show: false } }
+      { type: 'value', gridIndex: 0, scale: true, splitLine: { lineStyle: { color: '#8392A520' } }, axisLabel: { color: '#8392A5', fontSize: 10 } },
+      { type: 'value', gridIndex: 1, axisLabel: { color: '#8392A5', fontSize: 9, formatter: function(v){ return v>=1e4?(v/1e4).toFixed(0)+'万':v; } }, splitLine: { show: false } },
+      { type: 'value', gridIndex: 2, axisLabel: { color: '#8392A5', fontSize: 9 }, splitLine: { lineStyle: { color: '#8392A520' } } },
+      { type: 'value', gridIndex: 3, axisLabel: { color: '#8392A5', fontSize: 9 }, splitLine: { lineStyle: { color: '#8392A520' } }, min: 0, max: 100 },
+      { type: 'value', gridIndex: 4, axisLabel: { color: '#8392A5', fontSize: 9 }, splitLine: { lineStyle: { color: '#8392A520' } }, min: 0, max: 100 }
     ],
     series: [
-      { name: 'K线', type: 'candlestick', data: ohlc, xAxisIndex: 0, yAxisIndex: 0, itemStyle: { color: upColor, color0: downColor, borderColor: upColor, borderColor0: downColor } },
-      { name: 'MA5', type: 'line', data: ma5, xAxisIndex: 0, yAxisIndex: 0, smooth: true, lineStyle: { width: 1, color: '#ff9600' }, symbol: 'none' },
-      { name: 'MA10', type: 'line', data: ma10, xAxisIndex: 0, yAxisIndex: 0, smooth: true, lineStyle: { width: 1, color: '#4878ff' }, symbol: 'none' },
-      { name: 'MA20', type: 'line', data: ma20, xAxisIndex: 0, yAxisIndex: 0, smooth: true, lineStyle: { width: 1, color: '#cc33ff' }, symbol: 'none' },
-      { name: '成交量', type: 'bar', data: vols, xAxisIndex: 1, yAxisIndex: 1, itemStyle: { color: function(p) { var d = ohlc[p.dataIndex]; return d && d[1] > d[0] ? upColor : downColor; } } }
+      { name: 'K线', type: 'candlestick', data: ohlc, xAxisIndex: 0, yAxisIndex: 0,
+        itemStyle: { color: upColor, color0: downColor, borderColor: upColor, borderColor0: downColor } },
+      { name: 'MA5',  type: 'line', data: ma5,  xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#ff9600' }, symbol: 'none' },
+      { name: 'MA10', type: 'line', data: ma10, xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#4878ff' }, symbol: 'none' },
+      { name: 'MA20', type: 'line', data: ma20, xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#cc33ff' }, symbol: 'none' },
+      { name: 'MA60', type: 'line', data: ma60, xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#00bcd4', type: 'dashed' }, symbol: 'none' },
+      { name: 'BOLL上', type: 'line', data: bollUp,  xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#9e9e9e' }, symbol: 'none' },
+      { name: 'BOLL中', type: 'line', data: bollMid, xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#9e9e9e', type: 'dashed' }, symbol: 'none' },
+      { name: 'BOLL下', type: 'line', data: bollLow, xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#9e9e9e' }, symbol: 'none',
+        areaStyle: { color: 'rgba(158,158,158,0.05)' } },
+      { name: '成交量', type: 'bar', data: vols, xAxisIndex: 1, yAxisIndex: 1,
+        itemStyle: { color: function(p) { var d = ohlc[p.dataIndex]; return d && d[1] > d[0] ? upColor : downColor; } } },
+      { name: 'DIF', type: 'line', data: macdDif, xAxisIndex: 2, yAxisIndex: 2, smooth: false, lineStyle: { width: 1, color: '#ff9600' }, symbol: 'none' },
+      { name: 'DEA', type: 'line', data: macdDea, xAxisIndex: 2, yAxisIndex: 2, smooth: false, lineStyle: { width: 1, color: '#4878ff' }, symbol: 'none' },
+      { name: 'BAR', type: 'bar',  data: macdBar, xAxisIndex: 2, yAxisIndex: 2,
+        itemStyle: { color: function(p) { return p.value >= 0 ? upColor : downColor; } } },
+      { name: 'K', type: 'line', data: kdjK, xAxisIndex: 3, yAxisIndex: 3, smooth: false, lineStyle: { width: 1, color: '#ff9600' }, symbol: 'none' },
+      { name: 'D', type: 'line', data: kdjD, xAxisIndex: 3, yAxisIndex: 3, smooth: false, lineStyle: { width: 1, color: '#4878ff' }, symbol: 'none' },
+      { name: 'J', type: 'line', data: kdjJ, xAxisIndex: 3, yAxisIndex: 3, smooth: false, lineStyle: { width: 1, color: '#cc33ff' }, symbol: 'none' },
+      { name: 'RSI(14)', type: 'line', data: rsiArr, xAxisIndex: 4, yAxisIndex: 4, smooth: false,
+        lineStyle: { width: 1.5, color: '#e040fb' }, symbol: 'none',
+        markLine: { silent: true, symbol: 'none', lineStyle: { color: '#8392A550', type: 'dashed' },
+          data: [{ yAxis: 70, label: { formatter: '70', fontSize: 9, color: '#8392A5' } },
+                 { yAxis: 30, label: { formatter: '30', fontSize: 9, color: '#8392A5' } }] } }
     ]
   });
-  window.addEventListener('resize', function() { chart.resize(); });
 }
 
 function calcMA(data, i, n) {

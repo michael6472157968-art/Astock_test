@@ -11,7 +11,10 @@
 .metric-card .val { font-size: 1.3rem; font-weight: 700; }
 .metric-card .label { font-size: 0.75rem; color: var(--color-text-muted); margin-top: 2px; }
 .val.pos { color: var(--color-danger); }  .val.neg { color: var(--color-success); }
-#chartContainer { width: 100%; height: 440px; margin-bottom: 12px; }
+#eqChart { width: 100%; height: 400px; margin-bottom: 12px; }
+#ddChart { width: 100%; height: 200px; margin-bottom: 12px; }
+#heatChart { width: 100%; height: 280px; margin-bottom: 12px; }
+.heat-cell { fill: var(--color-bg); stroke: var(--color-border); }
 </style>
 </head>
 <body>
@@ -21,7 +24,14 @@
 
   <div class="card"><div class="card-header">回测参数</div><div class="card-body">
     <div class="form-group"><label class="form-label">股票代码</label><input class="form-input" id="codeInput" value="000001.SZ" style="max-width:240px" oninput="this.value=filterStockInput(this.value)" /></div>
-    <div class="form-group"><label class="form-label">策略</label><select class="form-input" id="strategy" style="max-width:240px"><option value="ma_cross">均线交叉</option><option value="volume_break">放量突破</option><option value="rsi_reversal">RSI反转</option></select></div>
+    <div class="form-group"><label class="form-label">策略</label><select class="form-input" id="strategy" style="max-width:240px">
+      <option value="ma_cross">均线交叉 (MA5/MA20)</option>
+      <option value="macd_cross">MACD 金叉死叉</option>
+      <option value="volume_break">放量突破</option>
+      <option value="boll_break">布林带突破</option>
+      <option value="rsi_reversal">RSI 反转</option>
+      <option value="momentum">双动量</option>
+    </select></div>
     <button class="btn btn-primary" onclick="run()">开始回测</button>
     <p id="msg" style="margin-top:12px;color:var(--color-text-muted)"></p>
   </div></div>
@@ -74,7 +84,11 @@ function render(d) {
   html += card('盈利/亏损', m.winning_trades+'/'+m.losing_trades, 'pos');
   html += '</div>';
 
-  html += '<div class="card"><div class="card-header">权益曲线 & 买卖信号</div><div class="card-body"><div id="chartContainer"></div></div></div>';
+  html += '<div class="card" style="margin-bottom:12px"><div class="card-header">权益曲线 & 买卖信号</div><div class="card-body"><div id="eqChart"></div></div></div>';
+  html += '<div class="card" style="margin-bottom:12px"><div class="card-header">回撤曲线</div><div class="card-body"><div id="ddChart"></div></div></div>';
+  if (d.monthly_returns && d.monthly_returns.length) {
+    html += '<div class="card" style="margin-bottom:12px"><div class="card-header">月度收益热力图</div><div class="card-body"><div id="heatChart"></div></div></div>';
+  }
 
   html += '<div class="card" style="margin-top:16px"><div class="card-header">交易明细 (' + t.length + '笔)</div><div class="card-body"><table class="data-table"><thead><tr><th>日期</th><th>方向</th><th>价格</th><th>股数</th><th>金额</th><th>原因</th></tr></thead><tbody>';
   for (var i = 0; i < t.length; i++) {
@@ -85,16 +99,21 @@ function render(d) {
   html += '</tbody></table></div></div>';
 
   document.getElementById('result').innerHTML = html;
-  initChart(d);
+  setTimeout(function() { initCharts(d); }, 50);
 }
 
-function initChart(d) {
-  var el = document.getElementById('chartContainer');
-  if (!el) return;
-  if (window._bc) { window._bc.dispose(); }
+function initCharts(d) {
+  initEquityChart(d);
+  initDrawdownChart(d);
+  if (d.monthly_returns && d.monthly_returns.length) initHeatChart(d);
+}
 
+function initEquityChart(d) {
+  var el = document.getElementById('eqChart');
+  if (!el) return;
+  if (window._ec) { window._ec.dispose(); }
   var chart = echarts.init(el);
-  window._bc = chart;
+  window._ec = chart;
 
   var dates = d.equity_curve.map(function(e){return e[0];});
   var eq = d.equity_curve.map(function(e){return e[1];});
@@ -117,6 +136,94 @@ function initChart(d) {
   });
 
   window.addEventListener('resize', function(){ chart.resize(); });
+}
+
+function initDrawdownChart(d) {
+  var el = document.getElementById('ddChart');
+  if (!el) return;
+  if (window._dd) { window._dd.dispose(); }
+
+  var dd = d.drawdown_curve || [];
+  if (!dd.length) {
+    var eq = d.equity_curve;
+    var peak = 0;
+    dd = [];
+    for (var i = 0; i < eq.length; i++) {
+      peak = Math.max(peak, eq[i][1]);
+      dd.push([eq[i][0], peak > 0 ? +((peak - eq[i][1]) / peak * 100).toFixed(2) : 0]);
+    }
+  }
+
+  var chart = echarts.init(el);
+  window._dd = chart;
+  var dates = dd.map(function(e){return e[0];});
+  var vals = dd.map(function(e){return e[1];});
+
+  chart.setOption({
+    tooltip: {trigger:'axis', axisPointer:{type:'shadow'}},
+    grid: {left:'8%', right:'4%', top:8, bottom:20},
+    xAxis: {type:'category', data:dates, axisLabel:{fontSize:8, color:'#8392A5', interval:'auto'}},
+    yAxis: {type:'value', axisLabel:{color:'#8392A5', formatter:'{value}%'}, inverse:true, splitLine:{lineStyle:{color:'#8392A520'}}},
+    series: [{
+      name:'回撤', type:'line', data:vals, smooth:false,
+      lineStyle:{color:'#f87171', width:1.5},
+      areaStyle:{color:'rgba(248,113,113,0.12)'},
+      symbol:'none'
+    }]
+  });
+}
+
+function initHeatChart(d) {
+  var el = document.getElementById('heatChart');
+  if (!el) return;
+  if (window._hm) { window._hm.dispose(); }
+
+  var mr = d.monthly_returns;
+  var ymData = mr.map(function(e){return e[0];});
+  var retData = mr.map(function(e){return e[1];});
+
+  // Group by year
+  var years = [], yearMap = {};
+  ymData.forEach(function(ym, i) {
+    var y = ym.substring(0,4);
+    if (!yearMap[y]) { yearMap[y] = []; years.push(y); }
+    yearMap[y].push({m: +ym.substring(4,6), r: retData[i]});
+  });
+
+  var months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  var data = [];
+  var xAxisData = years;
+  var yAxisData = months;
+
+  years.forEach(function(y, xi) {
+    var byMon = {};
+    (yearMap[y]||[]).forEach(function(v){ byMon[v.m] = v.r; });
+    for (var mi = 0; mi < 12; mi++) {
+      var r = byMon[mi+1];
+      data.push([xi, mi, r !== undefined ? r : '-']);
+    }
+  });
+
+  var chart = echarts.init(el);
+  window._hm = chart;
+
+  var maxV = Math.max.apply(null, retData.filter(function(v){return v>0;}).concat([1]));
+  var minV = Math.min.apply(null, retData.filter(function(v){return v<0;}).concat([-1]));
+
+  chart.setOption({
+    tooltip: {formatter: function(p){return p.value[2] !== '-' ? p.value[2]+'%' : '无数据';}},
+    grid: {left:'10%', right:'6%', top:8, bottom:20},
+    xAxis: {type:'category', data:years, axisLabel:{fontSize:10, color:'#8392A5'}, axisTick:{show:false}},
+    yAxis: {type:'category', data:months, axisLabel:{fontSize:10, color:'#8392A5'}},
+    visualMap: {min:minV, max:maxV, calculable:true, orient:'vertical', right:4, top:'center', itemWidth:10, itemHeight:80,
+      inRange:{color:['#14b143', '#1e293b', '#ef232a']},
+      text:['+'+maxV.toFixed(1)+'%', minV.toFixed(1)+'%'], textStyle:{color:'#8392A5',fontSize:9}},
+    series: [{
+      type:'heatmap', data:data, label:{show:true, fontSize:9, color:'#8392A5',
+        formatter:function(p){var v=p.value[2];return v!=='-'?(v>=0?'+':'')+v+'%':'';}},
+      emphasis:{itemStyle:{shadowBlur:8,shadowColor:'rgba(0,0,0,0.5)'}}
+    }]
+  });
 }
 </script>
 </body>

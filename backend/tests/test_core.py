@@ -1,5 +1,6 @@
 """后端核心功能测试——API响应格式、限流、缓存。"""
 
+import asyncio
 import pytest
 import time
 
@@ -59,6 +60,69 @@ class TestCache:
         assert stats["with_ttl"] == 1
         await cache_clear()
         assert (await cache_stats())["total_keys"] == 0
+
+    @pytest.mark.asyncio
+    async def test_cached_or_compute_basic(self):
+        from app.core.cache import cached_or_compute, cache_clear
+        await cache_clear()
+        call_count = 0
+
+        async def compute():
+            nonlocal call_count
+            call_count += 1
+            return f"result_{call_count}"
+
+        r1 = await cached_or_compute("k1", ttl=60, compute_fn=compute)
+        assert r1 == "result_1"
+        assert call_count == 1
+
+        r2 = await cached_or_compute("k1", ttl=60, compute_fn=compute)
+        assert r2 == "result_1"
+        assert call_count == 1  # cached
+
+    @pytest.mark.asyncio
+    async def test_cached_or_compute_mutex(self):
+        from app.core.cache import cached_or_compute, cache_clear
+        await cache_clear()
+        call_count = 0
+
+        async def compute():
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(0.05)
+            return f"result_{call_count}"
+
+        results = await asyncio.gather(*[
+            cached_or_compute("k2", ttl=60, compute_fn=compute) for _ in range(5)
+        ])
+        assert all(r == "result_1" for r in results)
+        assert call_count == 1  # only one compute ran
+
+    @pytest.mark.asyncio
+    async def test_cached_or_compute_soft_expiry(self):
+        from app.core.cache import cached_or_compute, cache_clear
+        await cache_clear()
+        call_count = 0
+
+        async def compute():
+            nonlocal call_count
+            call_count += 1
+            return f"v{call_count}"
+
+        r1 = await cached_or_compute("k3", ttl=60, compute_fn=compute, soft_ttl=0)
+        assert r1 == "v1"
+
+        # soft_ttl=0 means immediately soft-expired → returns stale, bg refresh
+        r2 = await cached_or_compute("k3", ttl=60, compute_fn=compute, soft_ttl=0)
+        assert r2 == "v1"
+
+        # Yield to let bg refresh start and finish
+        await asyncio.sleep(0.05)
+        assert call_count == 2
+
+        r3 = await cached_or_compute("k3", ttl=60, compute_fn=compute, soft_ttl=0)
+        # bg refresh already ran, got fresh value on next read
+        assert call_count >= 2
 
 
 class TestSecurity:
