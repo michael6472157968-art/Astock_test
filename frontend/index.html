@@ -390,9 +390,8 @@
     }
     API.get('/credits/guess/status').then(function(r) {
       var d = r.data;
-      if (!d.is_trade_day) {
-        body.innerHTML = '<div style="text-align:center;color:var(--color-text-muted);padding:8px;">今日非交易日</div>';
-        subtitle.textContent = '休市';
+      if (!d.target_date) {
+        body.innerHTML = '<div style="text-align:center;color:var(--color-text-muted);padding:8px;">暂无交易日可竞猜</div>';
         return;
       }
       if (d.has_guessed) {
@@ -406,20 +405,14 @@
           settledText = ' <span style="color:var(--color-text-muted);">待结算</span>';
         }
         body.innerHTML = '<div style="text-align:center;padding:8px;">' + dirLabel + settledText + '</div>';
-        subtitle.textContent = '已提交';
+        subtitle.textContent = '目标日 ' + d.target_date;
       } else {
-        var now = new Date();
-        if (now.getHours() >= 9) {
-          body.innerHTML = '<div style="text-align:center;color:var(--color-warning);padding:8px;">竞猜已截止（每日9:00前）</div>';
-          subtitle.textContent = '已截止';
-        } else {
-          body.innerHTML =
-            '<div style="display:flex;gap:12px;justify-content:center;padding:8px;">' +
-            '<button class="btn btn-sm" style="background:#ef444420;color:#ef4444;border:1px solid #ef4444;font-weight:700;" onclick="submitGuess(\'up\')">📈 看涨</button>' +
-            '<button class="btn btn-sm" style="background:#22c55e20;color:#22c55e;border:1px solid #22c55e;font-weight:700;" onclick="submitGuess(\'down\')">📉 看跌</button>' +
-            '</div>';
-          subtitle.textContent = '猜对+5 · 参与+1';
-        }
+        body.innerHTML =
+          '<div style="display:flex;gap:12px;justify-content:center;padding:8px;">' +
+          '<button class="btn btn-sm" style="background:#ef444420;color:#ef4444;border:1px solid #ef4444;font-weight:700;" onclick="submitGuess(\'up\')">📈 看涨</button>' +
+          '<button class="btn btn-sm" style="background:#22c55e20;color:#22c55e;border:1px solid #22c55e;font-weight:700;" onclick="submitGuess(\'down\')">📉 看跌</button>' +
+          '</div>';
+        subtitle.textContent = '猜下一交易日 (' + d.target_date + ') · 猜对+5 · 参与+1';
       }
     }).catch(function() {
       body.innerHTML = '<div style="text-align:center;color:var(--color-text-muted);">竞猜暂不可用</div>';
@@ -427,15 +420,39 @@
   }
 
   function submitGuess(dir) {
-    var btn = document.querySelectorAll('#guessBody button');
-    btn.forEach(function(b) { b.disabled = true; });
+    var btns = document.querySelectorAll('#guessBody button');
+    var label = dir === 'up' ? '📈 看涨' : '📉 看跌';
+    btns.forEach(function(b) {
+      b.disabled = true;
+      b.style.opacity = '0.5';
+      b.style.transition = 'all 0.2s';
+    });
+    // 点击的按钮高亮闪烁
+    var active = dir === 'up' ? btns[0] : btns[1];
+    active.style.opacity = '1';
+    active.style.transform = 'scale(1.08)';
+    active.textContent = '⏳ 提交中...';
     API.post('/credits/guess?direction=' + dir).then(function() {
-      loadMarketGuess();
+      // 成功弹跳动画
+      active.textContent = '✅ 已提交';
+      active.style.transform = 'scale(1.15)';
+      active.style.background = dir === 'up' ? '#ef4444' : '#22c55e';
+      active.style.color = '#fff';
+      setTimeout(function() {
+        loadMarketGuess();
+      }, 600);
     }).catch(function(e) {
+      btns.forEach(function(b) {
+        b.disabled = false;
+        b.style.opacity = '1';
+        b.style.transform = 'scale(1)';
+      });
+      active.textContent = label;
       showToast(e.message || '提交失败');
-      btn.forEach(function(b) { b.disabled = false; });
     });
   }
+
+  window.submitGuess = submitGuess;
 })();
 </script>
 </body>

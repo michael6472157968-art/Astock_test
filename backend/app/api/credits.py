@@ -198,37 +198,43 @@ async def checkin_status(user: dict = Depends(require_auth)):
 _settings = get_settings()
 GUESS_REWARD_CORRECT = 5
 GUESS_REWARD_PARTICIPATE = 1
-GUESS_DEADLINE_HOUR = 9  # 交易日9:00前提交
+GUESS_DEADLINE_HOUR = 9  # 竞猜目标日当天9:00截止提交
+
+
+async def _resolve_guess_target(now: datetime) -> tuple[str, str]:
+    """返回下一个交易日作为竞猜目标。
+
+    返回 (target_date_iso, flag): flag="open"|"none"
+    """
+    from app.utils.trading_calendar import get_next_trade_date
+
+    tomorrow = (now.date() + timedelta(days=1)).strftime("%Y%m%d")
+    try:
+        next_td = await get_next_trade_date(tomorrow)
+        d = datetime.strptime(next_td, "%Y%m%d")
+        return d.date().isoformat(), "open"
+    except RuntimeError:
+        return "", "none"
 
 
 @router.post("/guess")
 async def submit_guess(direction: str = Query(..., pattern="^(up|down)$"), user: dict = Depends(require_auth)):
-    """竞猜大盘涨跌——交易日9:00前提交，每人每天一次。"""
+    """竞猜大盘涨跌——猜下一交易日涨跌，目标日当天9:00截止，每人每天一次。"""
     user_id = user["user_id"]
-    today = date.today()
-    today_str = today.strftime("%Y%m%d")
-
-    # 检查是否交易日
-    from app.utils.trading_calendar import is_trade_date
-    if not await is_trade_date(today_str):
-        raise HTTPException(status_code=400, detail="今日非交易日，无法竞猜")
-
-    # 检查是否在截止时间前
     now = datetime.now()
-    if now.hour >= GUESS_DEADLINE_HOUR:
-        raise HTTPException(status_code=400, detail=f"竞猜已截止（每日{GUESS_DEADLINE_HOUR}:00前提交）")
+    guess_date, flag = await _resolve_guess_target(now)
 
-    guess_date = today.isoformat()
+    if flag == "none":
+        raise HTTPException(status_code=400, detail="暂无交易日可竞猜")
 
     async with async_session() as session:
-        # 检查是否已提交
         existing = await session.execute(
             select(MarketGuess).where(
                 MarketGuess.user_id == user_id, MarketGuess.guess_date == guess_date
             )
         )
         if existing.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="今日已竞猜")
+            raise HTTPException(status_code=400, detail="该交易日已竞猜")
 
         guess = MarketGuess(
             user_id=user_id,
@@ -246,30 +252,39 @@ async def submit_guess(direction: str = Query(..., pattern="^(up|down)$"), user:
 
 @router.get("/guess/status")
 async def guess_status(user: dict = Depends(require_auth)):
-    """今日竞猜状态：是否已猜、方向、结果。"""
+    """当前竞猜状态：目标日、是否已猜、方向、结果。"""
     user_id = user["user_id"]
-    today = date.today().isoformat()
+    now = datetime.now()
+    guess_date, flag = await _resolve_guess_target(now)
+
+    if flag == "none":
+        return APIResponse(
+            data={"has_guessed": False, "is_trade_day": False, "target_date": None},
+            timestamp=int(time.time()),
+        )
 
     async with async_session() as session:
         result = await session.execute(
             select(MarketGuess).where(
-                MarketGuess.user_id == user_id, MarketGuess.guess_date == today
+                MarketGuess.user_id == user_id, MarketGuess.guess_date == guess_date
             )
         )
         guess = result.scalar_one_or_none()
 
     if not guess:
-        # 检查是否交易日
-        from app.utils.trading_calendar import is_trade_date
-        is_td = await is_trade_date(date.today().strftime("%Y%m%d"))
         return APIResponse(
-            data={"has_guessed": False, "is_trade_day": is_td},
+            data={
+                "has_guessed": False,
+                "is_trade_day": True,
+                "target_date": guess_date,
+            },
             timestamp=int(time.time()),
         )
 
     return APIResponse(
         data={
             "has_guessed": True,
+            "target_date": guess_date,
             "direction": guess.direction,
             "score_change": guess.score_change,
             "settled": guess.score_change is not None,
@@ -282,29 +297,24 @@ async def guess_status(user: dict = Depends(require_auth)):
 
 
 async def settle_market_guesses():
-    """结算当日竞猜——比较当日收盘涨跌，猜对+5，参与+1。"""
-    today = date.today()
-    guess_date = today.isoformat()
+    """结算竞猜——取最近一个交易日收盘数据，结算该日所有未结算竞猜。"""
+    from app.utils.trading_calendar import get_latest_trade_date
 
-    # 检查是否交易日
-    from app.utils.trading_calendar import is_trade_date
-    if not await is_trade_date(today.strftime("%Y%m%d")):
-        logger.info("Guess settlement skipped: not a trade day")
-        return
+    latest_td = await get_latest_trade_date()
+    guess_date = datetime.strptime(latest_td, "%Y%m%d").date().isoformat()
+    end = latest_td
+    start = (datetime.strptime(latest_td, "%Y%m%d") - timedelta(days=5)).strftime("%Y%m%d")
 
     # 获取大盘涨跌方向（用上证指数）
     try:
         from app.services.tushare_client import get_pro
         pro = get_pro()
-        end = today.strftime("%Y%m%d")
-        start = (today - timedelta(days=5)).strftime("%Y%m%d")
         df = pro.index_daily(ts_code="000001.SH", start_date=start, end_date=end)
         if df is None or df.empty:
-            logger.warning("Guess settlement: no index data for today")
+            logger.warning("Guess settlement: no index data")
             return
         today_row = df[df["trade_date"] == end]
         if today_row.empty:
-            # 取最近交易日
             today_row = df.head(1)
         pct = float(today_row.iloc[0]["pct_chg"])
         actual_direction = "up" if pct > 0 else "down" if pct < 0 else "flat"
