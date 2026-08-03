@@ -1,102 +1,106 @@
-/* ── CSS Variables (Dark Finance Terminal) ── */
+/* ── CSS Variables (QuantDinger Ant-Design Dark Tech) ──
+   Token 来源: QuantDinger-Vue + Ant Design Vue + UI 验收报告 + 架构 SVG + email/pdf 服务 */
 :root {
-  /* Background */
-  --color-bg: #0a0e17;
-  --color-surface: #111827;
-  --color-card: #1a1f2e;
+  /* 背景层级: 深黑 → 表面 → 卡片 */
+  --color-bg: #080808;
+  --color-surface: #111111;
+  --color-card: #0d0d0d;
 
-  /* Text */
-  --color-text: #e8ecf1;
-  --color-text-muted: #8892a4;
+  /* 文字 */
+  --color-text: rgba(255, 255, 255, 0.88);
+  --color-text-muted: rgba(255, 255, 255, 0.45);
 
-  /* Brand / Accent */
-  --color-primary: #00d4aa;
-  --color-primary-hover: #00e8bb;
+  /* 品牌渐变: #155eef → #0ea5e9；主色取中间值 */
+  --color-primary: #1677ff;
+  --color-primary-hover: #4096ff;
 
-  /* Borders */
-  --color-border: #1f2937;
+  /* 边框 */
+  --color-border: rgba(253, 253, 253, 0.12);
 
-  /* Semantic */
-  --color-success: #22c55e;
-  --color-danger: #ef4444;
-  --color-warning: #f59e0b;
-  --color-gold: #f0b90b;
+  /* 语义色 */
+  --color-success: #49aa19;
+  --color-danger: #dc4446;
+  --color-warning: #d89614;
+  --color-gold: #d89614;
 
-  /* Chinese market convention: red = up (涨), green = down (跌) */
-  --color-up: #ef4444;
-  --color-down: #22c55e;
+  /* A股惯例: 红涨绿跌 (QuantDinger 看涨/看跌色系) */
+  --color-up: #dc4446;
+  --color-down: #49aa19;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  /* 阴影 — 来源 quantdinger SVG: y5 blur8 #102a56@10% */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 5px 8px rgba(16, 42, 86, 0.10);
+  --shadow-lg: 0 8px 16px rgba(16, 42, 86, 0.12);
 
-  /* Radii */
-  --radius-sm: 4px;
+  /* 圆角 — Ant Design 默认 */
+  --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
 
-  /* Chart palette */
-  --chart-line: #00d4aa;
-  --chart-fill: rgba(0, 212, 170, 0.12);
-  --chart-grid: #1f2937;
+  /* 图表 */
+  --chart-line: #1677ff;
+  --chart-fill: rgba(22, 119, 255, 0.12);
+  --chart-grid: rgba(253, 253, 253, 0.08);
 }
 
 [data-theme="dark"] {
-  --color-bg: #0a0e17;
-  --color-surface: #111827;
-  --color-card: #1a1f2e;
-  --color-text: #e8ecf1;
-  --color-text-muted: #8892a4;
-  --color-primary: #00d4aa;
-  --color-primary-hover: #00e8bb;
-  --color-border: #1f2937;
-  --color-success: #22c55e;
-  --color-danger: #ef4444;
-  --color-warning: #f59e0b;
-  --color-gold: #f0b90b;
-  --color-up: #ef4444;
-  --color-down: #22c55e;
+  --color-bg: #080808;
+  --color-surface: #111111;
+  --color-card: #0d0d0d;
+  --color-text: rgba(255, 255, 255, 0.88);
+  --color-text-muted: rgba(255, 255, 255, 0.45);
+  --color-primary: #1677ff;
+  --color-primary-hover: #4096ff;
+  --color-border: rgba(253, 253, 253, 0.12);
+  --color-success: #49aa19;
+  --color-danger: #dc4446;
+  --color-warning: #d89614;
+  --color-gold: #d89614;
+  --color-up: #dc4446;
+  --color-down: #49aa19;
 }
 
 [data-theme="light"] {
-  --color-bg: #f8fafc;
+  --color-bg: #f5f5f5;
   --color-surface: #ffffff;
   --color-card: #ffffff;
-  --color-text: #1e293b;
-  --color-text-muted: #64748b;
-  --color-primary: #0ea5e9;
-  --color-primary-hover: #0284c7;
-  --color-border: #e2e8f0;
-  --color-success: #16a34a;
-  --color-danger: #dc2626;
-  --color-warning: #f59e0b;
-  --color-gold: #d97706;
-  --color-up: #dc2626;
-  --color-down: #16a34a;
+  --color-text: rgba(0, 0, 0, 0.88);
+  --color-text-muted: rgba(0, 0, 0, 0.45);
+  --color-primary: #1677ff;
+  --color-primary-hover: #4096ff;
+  --color-border: rgba(0, 0, 0, 0.08);
+  --color-success: #49aa19;
+  --color-danger: #dc4446;
+  --color-warning: #d89614;
+  --color-gold: #d89614;
+  --color-up: #dc4446;
+  --color-down: #49aa19;
 }
 
 [data-theme="warm"] {
-  --color-bg: #1a1d2e;
-  --color-surface: #222640;
-  --color-card: #2a2f4a;
-  --color-text: #e8e6e3;
-  --color-text-muted: #a09c93;
-  --color-primary: #f0a500;
-  --color-primary-hover: #d49500;
-  --color-border: #3d405b;
-  --color-success: #81b29a;
-  --color-danger: #e07a5f;
-  --color-warning: #f2cc8f;
-  --color-gold: #f0a500;
-  --color-up: #e07a5f;
-  --color-down: #81b29a;
+  --color-bg: #1a1410;
+  --color-surface: #221d18;
+  --color-card: #2a2420;
+  --color-text: rgba(255, 255, 255, 0.86);
+  --color-text-muted: rgba(255, 255, 255, 0.42);
+  --color-primary: #d48806;
+  --color-primary-hover: #e8a820;
+  --color-border: rgba(253, 253, 253, 0.10);
+  --color-success: #5b9e3a;
+  --color-danger: #d8734a;
+  --color-warning: #d89614;
+  --color-gold: #d48806;
+  --color-up: #d8734a;
+  --color-down: #5b9e3a;
 }
+
+/* ── Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 /* ── Reset & Base ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
   line-height: 1.6;
@@ -464,7 +468,7 @@ body {
 .mood-bar { height:100%; border-radius:5px; transition:width 0.4s; }
 .mood-bar.up { background:var(--color-danger); }
 .mood-bar.down { background:var(--color-success); }
-.mood-bar.flat { background:#64748b; }
+.mood-bar.flat { background:#424242; }
 .mood-count { width:52px; font-size:0.78rem; color:var(--color-text); text-align:left; }
 .mood-right { display:flex; flex-direction:column; gap:12px; padding-left:24px; border-left:1px solid var(--color-border); min-width:90px; }
 .mood-limit-item { text-align:center; }
