@@ -154,7 +154,7 @@ async def market_dashboard(user: dict = Depends(require_auth_optional)):
     trading = _is_trading_time()
     trade_date, is_td = await _get_trade_context()
 
-    ck = f"market:dashboard:{trade_date}"
+    ck = f"market:dashboard:v2:{trade_date}"
     cached = await cache_get(ck)
     if cached is not None:
         return APIResponse(data=cached, timestamp=int(time.time()))
@@ -218,16 +218,18 @@ async def market_dashboard(user: dict = Depends(require_auth_optional)):
         if nf:
             nf_sorted = sorted(nf, key=lambda x: x.get("trade_date", ""), reverse=True)
             latest = nf_sorted[0]
+            north_val = float(latest.get("north_money", 0) or 0)
             result["northbound"] = {
                 "date": latest.get("trade_date", ""),
-                "net_in": round(float(latest.get("north_net", 0) or 0), 2),
+                "net_in": round(float(north_val), 2),
                 "ggt_ss": round(float(latest.get("ggt_ss", 0) or 0), 2),
                 "ggt_sz": round(float(latest.get("ggt_sz", 0) or 0), 2),
-                "sgt_net": round(float(latest.get("north_sgt", 0) or 0), 2),
+                "hgt": round(float(latest.get("hgt", 0) or 0), 2),
+                "sgt": round(float(latest.get("sgt", 0) or 0), 2),
             }
             # 近期5日趋势
             result["northbound"]["recent"] = [
-                {"date": x.get("trade_date", ""), "net_in": round(float(x.get("north_net", 0) or 0), 2)}
+                {"date": x.get("trade_date", ""), "net_in": round(float(x.get("north_money", 0) or 0), 2)}
                 for x in nf_sorted[:5]
             ][::-1]  # oldest first
     except Exception as e:

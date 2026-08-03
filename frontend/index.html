@@ -121,6 +121,7 @@
 
   function fmtAmount(v) {
     if (v === undefined || v === null) return '--';
+    if (Math.abs(v) >= 1e12) return (v / 1e12).toFixed(2) + ' 万亿';
     if (Math.abs(v) >= 1e8) return (v / 1e8).toFixed(2) + ' 亿';
     if (Math.abs(v) >= 1e4) return (v / 1e4).toFixed(1) + ' 万';
     return v.toFixed(0);
@@ -147,8 +148,8 @@
       var nb = d.northbound;
       var nbEl = document.getElementById('kpiNorthbound');
       var nbDateEl = document.getElementById('kpiNorthboundDate');
-      if (nb && nb.net_in !== undefined) {
-        var v = nb.net_in;
+      if (nb) {
+        var v = nb.net_in || 0;
         nbEl.textContent = (v >= 0 ? '+' : '') + fmtAmount(v);
         nbEl.className = 'kpi-value ' + (v >= 0 ? 'up' : 'down');
         nbDateEl.textContent = fmtDate8(nb.date);
