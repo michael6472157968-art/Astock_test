@@ -238,8 +238,69 @@ function renderDiagnosis(r, code) {
   html += '<div class="card" style="margin-top:16px"><div class="card-header">资金流向 · 近30日</div><div class="card-body"><div id="mfSummary" style="margin-bottom:14px;"></div><div id="mfChart" style="width:100%;height:360px;"></div></div></div>';
   result.innerHTML = html;
 
+  // AI分析入口卡片
+  renderAiCard(code, stockName);
+
   setTimeout(function() { renderKlineChart(r.data); }, 100);
   setTimeout(function() { loadMoneyflow(code); }, 150);
+}
+
+function renderAiCard(code, stockName) {
+  var result = document.getElementById('result');
+  var div = document.createElement('div');
+  div.id = 'aiCard';
+  div.className = 'card';
+  div.style.marginTop = '16px';
+  div.innerHTML =
+    '<div class="card-header">AI 智能解读 <span style="font-size:0.75rem;color:var(--color-text-muted);font-weight:400;">消耗2积分 · 基于DeepSeek</span></div>' +
+    '<div class="card-body" id="aiCardBody">' +
+      '<p style="font-size:0.85rem;color:var(--color-text-muted);margin-bottom:10px;">' +
+        'AI将解读技术指标、多空因素，并给出T+3~T+7短线建议。同股同日仅扣一次积分。</p>' +
+      '<button class="btn btn-primary" id="aiBtn" onclick="runAiAnalysis(\'' + escAttr(code) + '\')">开始AI解读</button>' +
+      '<div id="aiResult" style="margin-top:12px;"></div>' +
+    '</div>';
+  result.appendChild(div);
+}
+
+function runAiAnalysis(code) {
+  var btn = document.getElementById('aiBtn');
+  var aiResult = document.getElementById('aiResult');
+  if (!btn || !aiResult) return;
+  btn.disabled = true;
+  btn.textContent = '分析中...（约5-10秒）';
+  aiResult.innerHTML = '<div style="text-align:center;padding:16px;color:var(--color-text-muted);"><div class="spinner" style="margin:0 auto 8px;"></div>分析中...</div>';
+
+  API.post('/diagnosis/' + encodeURIComponent(code) + '/ai-analysis').then(function(r) {
+    var d = r.data;
+    var html = d.analysis || '';
+    if (!html && typeof d === 'string') html = d;
+    if (d.cache_hit) {
+      html = '<div style="font-size:0.75rem;color:var(--color-text-muted);margin-bottom:8px;padding:4px 8px;background:var(--color-bg-secondary);border-radius:4px;">缓存命中 · 同股同日已分析过，未重复扣积分</div>' + html;
+    }
+    html = html
+      .replace(/^### (.+)$/gm, '<h4 style="margin-top:14px;margin-bottom:6px;font-size:0.92rem;">$1</h4>')
+      .replace(/^## (.+)$/gm, '<h3 style="margin-top:16px;margin-bottom:8px;font-size:1rem;">$1</h3>')
+      .replace(/^- (.+)$/gm, '<li style="margin-left:16px;font-size:0.85rem;line-height:1.7;">$1</li>');
+    aiResult.innerHTML = '<div style="line-height:1.8;font-size:0.85rem;color:var(--color-text);">' + html + '</div>';
+    btn.style.display = 'none';
+    // Update local credits
+    var u = Session.get();
+    if (u && !d.cache_hit) {
+      u.credits = Math.max(0, (u.credits || 0) - 2);
+      Session.save({ access_token: localStorage.getItem('access_token'), refresh_token: localStorage.getItem('refresh_token'), user_id: u.id, phone: u.phone, tier: u.tier, member_type: u.member_type, member_expire: u.member_expire, credits: u.credits });
+    }
+    loadQuota();
+  }).catch(function(e) {
+    if (e.code === 401) {
+      aiResult.innerHTML = '<p style="color:var(--color-warning);text-align:center;padding:16px;">请先<a href="login.html">登录</a>后使用AI解读</p>';
+    } else if (e.code === 403 && e.data && e.data.credits !== undefined) {
+      aiResult.innerHTML = '<p style="color:var(--color-warning);text-align:center;padding:16px;">积分不足，需要' + e.data.cost + '积分，当前余额: ' + e.data.credits + '。<a href="profile.html">去签到</a></p>';
+    } else {
+      aiResult.innerHTML = '<p style="color:var(--color-danger);text-align:center;padding:16px;">AI服务暂不可用: ' + (e.message || '请重试') + '</p>';
+    }
+    btn.disabled = false;
+    btn.textContent = '重新尝试AI解读';
+  });
 }
 
 function showCacheBanner(r) {

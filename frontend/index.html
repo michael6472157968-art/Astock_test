@@ -86,6 +86,14 @@
       </div>
     </div>
 
+    <!-- 大盘竞猜 -->
+    <div class="mood-panel" id="guessPanel" style="margin-bottom:16px;">
+      <div class="mood-header"><span class="mood-title">大盘竞猜</span><span class="mood-date" id="guessSubtitle">猜今日涨跌</span></div>
+      <div class="mood-body" style="flex-direction:column;align-items:center;padding:16px 20px;" id="guessBody">
+        <div style="text-align:center;color:var(--color-text-muted);">加载中...</div>
+      </div>
+    </div>
+
     <!-- 热门股票 -->
     <div>
       <h3 style="font-size:0.95rem;font-weight:600;margin-bottom:12px;">热门股票</h3>
@@ -369,8 +377,65 @@
     }
   }
 
-  loadIndices(); loadMood(); loadHotStocks(); autoRefresh();
+  loadIndices(); loadMood(); loadHotStocks(); loadMarketGuess(); autoRefresh();
   setInterval(function() { updateHealth(); }, 30000);
+
+  // ── 大盘竞猜 ──
+  function loadMarketGuess() {
+    var body = document.getElementById('guessBody');
+    var subtitle = document.getElementById('guessSubtitle');
+    if (!Session.loggedIn()) {
+      body.innerHTML = '<div style="text-align:center;color:var(--color-text-muted);padding:8px;"><a href="login.html">登录</a>后参与竞猜，猜对+5积分</div>';
+      return;
+    }
+    API.get('/credits/guess/status').then(function(r) {
+      var d = r.data;
+      if (!d.is_trade_day) {
+        body.innerHTML = '<div style="text-align:center;color:var(--color-text-muted);padding:8px;">今日非交易日</div>';
+        subtitle.textContent = '休市';
+        return;
+      }
+      if (d.has_guessed) {
+        var dirLabel = d.direction === 'up' ? '📈 看涨' : '📉 看跌';
+        var settledText = '';
+        if (d.settled) {
+          settledText = d.score_change >= 5
+            ? ' <span style="color:var(--color-success);">猜对+5!</span>'
+            : ' <span style="color:var(--color-text-muted);">参与+1</span>';
+        } else {
+          settledText = ' <span style="color:var(--color-text-muted);">待结算</span>';
+        }
+        body.innerHTML = '<div style="text-align:center;padding:8px;">' + dirLabel + settledText + '</div>';
+        subtitle.textContent = '已提交';
+      } else {
+        var now = new Date();
+        if (now.getHours() >= 9) {
+          body.innerHTML = '<div style="text-align:center;color:var(--color-warning);padding:8px;">竞猜已截止（每日9:00前）</div>';
+          subtitle.textContent = '已截止';
+        } else {
+          body.innerHTML =
+            '<div style="display:flex;gap:12px;justify-content:center;padding:8px;">' +
+            '<button class="btn btn-sm" style="background:#ef444420;color:#ef4444;border:1px solid #ef4444;font-weight:700;" onclick="submitGuess(\'up\')">📈 看涨</button>' +
+            '<button class="btn btn-sm" style="background:#22c55e20;color:#22c55e;border:1px solid #22c55e;font-weight:700;" onclick="submitGuess(\'down\')">📉 看跌</button>' +
+            '</div>';
+          subtitle.textContent = '猜对+5 · 参与+1';
+        }
+      }
+    }).catch(function() {
+      body.innerHTML = '<div style="text-align:center;color:var(--color-text-muted);">竞猜暂不可用</div>';
+    });
+  }
+
+  function submitGuess(dir) {
+    var btn = document.querySelectorAll('#guessBody button');
+    btn.forEach(function(b) { b.disabled = true; });
+    API.post('/credits/guess?direction=' + dir).then(function() {
+      loadMarketGuess();
+    }).catch(function(e) {
+      showToast(e.message || '提交失败');
+      btn.forEach(function(b) { b.disabled = false; });
+    });
+  }
 })();
 </script>
 </body>

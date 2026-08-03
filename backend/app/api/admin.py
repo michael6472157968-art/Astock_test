@@ -1,4 +1,4 @@
-"""管理 API——手动触发数据同步、查看缓存状态、会员激活码管理。
+"""管理 API——手动触发数据同步、查看缓存状态、会员激活码管理、用户管理。
 需要管理员权限 (tier=99)。
 """
 
@@ -8,18 +8,22 @@ import logging
 import random
 import string
 import time
+from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.cache import cache_clear, cache_delete, cache_stats
 from app.core.database import async_session
 from app.core.scheduler import get_scheduler
-from app.core.security import require_tier
+from app.core.security import require_tier, hash_password, get_current_user
 from app.core.settings import get_settings
-from app.models.orm.models import MembershipCode
+from app.models.orm.models import (
+    CheckinRecord, CreditLedger, MarketGuess,
+    MembershipCode, User,
+)
 from app.models.schemas.common import APIResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func, desc, text
 
 router = APIRouter(prefix="/api/v1/admin", tags=["管理"], dependencies=[Depends(require_tier(99))])
 logger = logging.getLogger("admin")
@@ -196,16 +200,13 @@ class GenCodesRequest(BaseModel):
 
 
 @router.post("/membership/codes")
-async def admin_gen_codes(req: GenCodesRequest):
+async def admin_gen_codes(req: GenCodesRequest, user: dict = Depends(get_current_user)):
     """生成会员激活码，返回码列表。"""
+    admin_id = user["user_id"]
     codes = []
     async with async_session() as session:
-        # 获取当前管理员 ID（虽然 router 级别有 Depends，但这里需要具体 user_id）
-        pass
-    # 批量生成唯一码
-    async with async_session() as session:
         for _ in range(req.count):
-            for _ in range(100):  # 最多重试100次防重复
+            for _ in range(100):
                 code = _gen_code()
                 existing = await session.execute(select(MembershipCode).where(MembershipCode.code == code))
                 if not existing.scalar_one_or_none():
@@ -213,7 +214,7 @@ async def admin_gen_codes(req: GenCodesRequest):
             session.add(MembershipCode(
                 code=code,
                 code_type=req.code_type,
-                created_by=0,  # system generated
+                created_by=admin_id,
             ))
             codes.append(code)
         await session.commit()
@@ -245,3 +246,290 @@ async def admin_list_codes():
             })
 
     return APIResponse(data={"total": len(codes), "items": codes}, timestamp=int(time.time()))
+
+
+# ── 用户管理 ──
+
+
+class AdjustCreditsRequest(BaseModel):
+    amount: int  # 正数增加，负数减少
+    note: str = Field(..., min_length=1, max_length=200)
+
+
+class AdjustTierRequest(BaseModel):
+    tier: int = Field(..., ge=0, le=99)
+    member_expire: str | None = None  # ISO date or null
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=6, max_length=32)
+
+
+@router.get("/users/stats")
+async def admin_user_stats():
+    """统计概览：总用户/今日新增/本周新增/等级分布/今日诊股次数。"""
+    today_str = date.today().isoformat()
+    week_ago = (date.today() - timedelta(days=7)).isoformat()
+
+    async with async_session() as session:
+        total = (await session.execute(select(func.count()).select_from(User))).scalar() or 0
+        today_new = (await session.execute(
+            select(func.count()).select_from(User).where(func.date(User.created_at) == today_str)
+        )).scalar() or 0
+        week_new = (await session.execute(
+            select(func.count()).select_from(User).where(func.date(User.created_at) >= week_ago)
+        )).scalar() or 0
+        tier_dist = {}
+        for tier_val in [0, 1, 2, 3, 99]:
+            cnt = (await session.execute(
+                select(func.count()).select_from(User).where(User.tier == tier_val)
+            )).scalar() or 0
+            if cnt > 0:
+                tier_dist[str(tier_val)] = cnt
+        today_diag = (await session.execute(
+            select(func.count()).select_from(CreditLedger).where(
+                CreditLedger.type == "diagnosis",
+                func.date(CreditLedger.created_at) == today_str,
+            )
+        )).scalar() or 0
+
+    return APIResponse(
+        data={
+            "total_users": total,
+            "today_new": today_new,
+            "week_new": week_new,
+            "tier_distribution": tier_dist,
+            "today_diagnosis_count": today_diag,
+        },
+        timestamp=int(time.time()),
+    )
+
+
+@router.get("/users")
+async def admin_list_users(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: str = Query("", max_length=50),
+    tier_filter: int | None = Query(None),
+):
+    """用户列表——支持手机号搜索、等级筛选、分页。"""
+    async with async_session() as session:
+        base_q = select(User)
+        count_q = select(func.count()).select_from(User)
+
+        if search:
+            base_q = base_q.where(User.phone.contains(search))
+            count_q = count_q.where(User.phone.contains(search))
+        if tier_filter is not None:
+            base_q = base_q.where(User.tier == tier_filter)
+            count_q = count_q.where(User.tier == tier_filter)
+
+        total = (await session.execute(count_q)).scalar() or 0
+        rows = (await session.execute(
+            base_q.order_by(desc(User.id)).offset((page - 1) * page_size).limit(page_size)
+        )).scalars().all()
+
+        items = []
+        for u in rows:
+            phone = u.phone
+            masked = phone[:3] + "****" + phone[-4:] if len(phone) >= 7 else phone
+            items.append({
+                "id": u.id,
+                "phone_masked": masked,
+                "tier": u.tier,
+                "credits": u.credits or 0,
+                "is_active": bool(u.is_active),
+                "member_expire": u.member_expire.isoformat() if u.member_expire else None,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+            })
+
+    return APIResponse(
+        data={"total": total, "page": page, "page_size": page_size, "items": items},
+        timestamp=int(time.time()),
+    )
+
+
+@router.get("/users/{user_id}")
+async def admin_user_detail(user_id: int):
+    """用户详情——基本信息+积分流水+签到记录+诊股统计+会员历史。"""
+    async with async_session() as session:
+        u = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="用户不存在")
+
+        phone = u.phone
+        masked = phone[:3] + "****" + phone[-4:] if len(phone) >= 7 else phone
+
+        user_info = {
+            "id": u.id,
+            "phone_masked": masked,
+            "tier": u.tier,
+            "credits": u.credits or 0,
+            "is_active": bool(u.is_active),
+            "member_expire": u.member_expire.isoformat() if u.member_expire else None,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+            "updated_at": u.updated_at.isoformat() if u.updated_at else None,
+        }
+
+    # 积分流水（最近50条）
+    async with async_session() as session:
+        ledger_rows = (await session.execute(
+            select(CreditLedger).where(CreditLedger.user_id == user_id)
+            .order_by(desc(CreditLedger.id)).limit(50)
+        )).scalars().all()
+        ledger = [{
+            "id": r.id,
+            "amount": r.amount,
+            "type": r.type,
+            "ref_id": r.ref_id,
+            "balance_after": r.balance_after,
+            "note": r.note,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        } for r in ledger_rows]
+
+    # 签到日历（最近30天）
+    async with async_session() as session:
+        month_ago = (date.today() - timedelta(days=29)).isoformat()
+        checkin_rows = (await session.execute(
+            select(CheckinRecord.date, CheckinRecord.credits)
+            .where(CheckinRecord.user_id == user_id, CheckinRecord.date >= month_ago)
+            .order_by(CheckinRecord.date)
+        )).all()
+        checkin_dates = [{"date": r[0], "credits": r[1]} for r in checkin_rows]
+
+    # 诊股统计
+    async with async_session() as session:
+        diag_count = (await session.execute(
+            select(func.count()).select_from(CreditLedger).where(
+                CreditLedger.user_id == user_id, CreditLedger.type == "diagnosis"
+            )
+        )).scalar() or 0
+        ai_count = (await session.execute(
+            select(func.count()).select_from(CreditLedger).where(
+                CreditLedger.user_id == user_id, CreditLedger.type == "ai_analysis"
+            )
+        )).scalar() or 0
+
+    # 竞猜统计
+    async with async_session() as session:
+        guess_total = (await session.execute(
+            select(func.count()).select_from(MarketGuess).where(MarketGuess.user_id == user_id)
+        )).scalar() or 0
+        guess_correct = (await session.execute(
+            select(func.count()).select_from(MarketGuess).where(
+                MarketGuess.user_id == user_id, MarketGuess.score_change >= 5
+            )
+        )).scalar() or 0
+
+    # 会员历史（从流水查激活记录）
+    async with async_session() as session:
+        member_rows = (await session.execute(
+            select(CreditLedger).where(
+                CreditLedger.user_id == user_id, CreditLedger.type == "activation"
+            ).order_by(desc(CreditLedger.id)).limit(10)
+        )).scalars().all()
+        member_history = [{
+            "amount": r.amount,
+            "note": r.note,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        } for r in member_rows]
+
+    return APIResponse(
+        data={
+            "user": user_info,
+            "ledger": ledger,
+            "checkin_dates": checkin_dates,
+            "diagnosis_stats": {"total": diag_count, "ai_analysis": ai_count},
+            "guess_stats": {"total": guess_total, "correct": guess_correct},
+            "member_history": member_history,
+        },
+        timestamp=int(time.time()),
+    )
+
+
+@router.post("/users/{user_id}/credits")
+async def admin_adjust_credits(user_id: int, req: AdjustCreditsRequest):
+    """调整积分——正数增加，负数减少，必填备注。"""
+    async with async_session() as session:
+        u = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="用户不存在")
+
+        u.credits = (u.credits or 0) + req.amount
+        session.add(CreditLedger(
+            user_id=user_id,
+            amount=req.amount,
+            type="admin",
+            ref_id=str(user_id),
+            balance_after=u.credits,
+            note=req.note,
+        ))
+        await session.commit()
+
+        return APIResponse(
+            data={"user_id": user_id, "credits": u.credits, "change": req.amount},
+            timestamp=int(time.time()),
+        )
+
+
+@router.post("/users/{user_id}/tier")
+async def admin_adjust_tier(user_id: int, req: AdjustTierRequest):
+    """调整等级——含可选到期日。"""
+    async with async_session() as session:
+        u = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="用户不存在")
+
+        u.tier = req.tier
+        if req.member_expire:
+            try:
+                u.member_expire = datetime.fromisoformat(req.member_expire)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="member_expire 格式无效，应为 ISO 日期")
+        else:
+            u.member_expire = None
+
+        await session.commit()
+
+        return APIResponse(
+            data={
+                "user_id": user_id,
+                "tier": u.tier,
+                "member_expire": u.member_expire.isoformat() if u.member_expire else None,
+            },
+            timestamp=int(time.time()),
+        )
+
+
+@router.post("/users/{user_id}/reset-password")
+async def admin_reset_password(user_id: int, req: ResetPasswordRequest):
+    """重置密码。"""
+    async with async_session() as session:
+        u = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="用户不存在")
+
+        u.password_hash = hash_password(req.new_password)
+        await session.commit()
+
+        return APIResponse(
+            data={"user_id": user_id, "message": "密码已重置"},
+            timestamp=int(time.time()),
+        )
+
+
+@router.post("/users/{user_id}/toggle-active")
+async def admin_toggle_active(user_id: int):
+    """禁用/启用账号。"""
+    async with async_session() as session:
+        u = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="用户不存在")
+
+        u.is_active = 1 if u.is_active == 0 else 0
+        await session.commit()
+
+        return APIResponse(
+            data={"user_id": user_id, "is_active": bool(u.is_active)},
+            timestamp=int(time.time()),
+        )

@@ -93,6 +93,8 @@ async def login(req: LoginRequest):
         user = result.scalar_one_or_none()
         if not user or not verify_password(req.password, user.password_hash):
             raise HTTPException(status_code=401, detail="手机号或密码错误")
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="账号已被禁用，请联系管理员")
 
         access = create_access_token(user.id, user.tier)
         refresh = create_refresh_token(user.id, user.tier)
@@ -134,6 +136,13 @@ async def refresh_token(req: RefreshRequest):
         tier = payload.get("tier", 0)
     except Exception:
         raise HTTPException(status_code=401, detail="Token无效或已过期")
+
+    # Check if user is still active
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        u = result.scalar_one_or_none()
+        if not u or not u.is_active:
+            raise HTTPException(status_code=403, detail="账号已被禁用")
 
     access = create_access_token(user_id, tier)
     return APIResponse(

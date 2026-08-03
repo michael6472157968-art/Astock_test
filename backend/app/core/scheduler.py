@@ -39,6 +39,13 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
     _scheduler.add_job(
+        _settle_guesses_wrapper,
+        CronTrigger(hour=15, minute=45, timezone=TZ),
+        id="settle_guesses",
+        name="竞猜结算",
+        replace_existing=True,
+    )
+    _scheduler.add_job(
         _sync_sector_wrapper,
         CronTrigger(hour=11, minute=35, timezone=TZ),
         id="sync_sector_am",
@@ -115,3 +122,9 @@ async def _run_all_engines():
     await MarketReviewEngine().compute()
     scanner = RiskScanner()
     await scanner.scan_risk_list()
+
+
+def _settle_guesses_wrapper():
+    from app.api.credits import settle_market_guesses
+    logger.info("Scheduled: settle_market_guesses")
+    _run_async(settle_market_guesses())

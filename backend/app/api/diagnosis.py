@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.core.cache import cache_get, cache_set
 from app.core.database import async_session
 from app.core.settings import get_settings
-from app.middleware.auth_middleware import require_auth_optional
+from app.middleware.auth_middleware import require_auth_optional, require_auth
 from app.models.orm.models import CreditLedger, User
 from app.models.schemas.common import APIResponse
 from sqlalchemy import select
@@ -570,4 +570,93 @@ def _build_response(report: dict, tier: int, cache_hit: bool, cache_date: str = 
         data=data,
         timestamp=int(time.time()),
         ext_info=ext,
+    )
+
+
+# ── AI 分析 ──
+
+
+@router.post("/{stock_code}/ai-analysis")
+async def ai_analysis(stock_code: str, user: dict = Depends(require_auth)):
+    """AI 辅助解读——调用 DeepSeek 分析技术指标，扣2积分/次，同股同日缓存命中不扣。"""
+    user_id = user["user_id"]
+    today = date.today().isoformat()
+    ai_cache_key = f"ai:{stock_code}:{today}"
+
+    cached = await cache_get(ai_cache_key)
+    cache_hit = cached is not None
+
+    if not cache_hit:
+        # 先做诊股计算获取指标数据
+        diag_cache_key = f"diag_v2:{stock_code}"
+        diag_cached = await cache_get(diag_cache_key)
+        if diag_cached:
+            report = diag_cached
+        else:
+            report = await _compute_diagnosis(stock_code)
+            if report is None:
+                raise HTTPException(status_code=404, detail=f"股票 {stock_code} 暂无数据，请先诊股")
+
+        indicators = report.get("quant", {})
+
+        # 扣积分 (2分/次，全用户统一)
+        async with async_session() as session:
+            u_result = await session.execute(select(User).where(User.id == user_id))
+            u = u_result.scalar_one_or_none()
+            if not u:
+                raise HTTPException(status_code=404, detail="用户不存在")
+            if (u.credits or 0) < _settings.ai_analysis_cost:
+                return APIResponse(
+                    code=403,
+                    message=f"积分不足，AI分析消耗{_settings.ai_analysis_cost}积分，当前余额：{u.credits}",
+                    data={"credits": u.credits, "cost": _settings.ai_analysis_cost},
+                    timestamp=int(time.time()),
+                ).model_dump()
+
+            u.credits = u.credits - _settings.ai_analysis_cost
+            session.add(CreditLedger(
+                user_id=user_id,
+                amount=-_settings.ai_analysis_cost,
+                type="ai_analysis",
+                ref_id=stock_code,
+                balance_after=u.credits,
+                note=f"AI分析 {stock_code}",
+            ))
+            await session.commit()
+
+        # 调用 LLM
+        from app.services.ai_analysis import analyze_stock
+        try:
+            text = await analyze_stock(
+                stock_code=stock_code,
+                stock_name=report.get("stock_name", stock_code),
+                indicators_json=indicators,
+            )
+        except Exception as e:
+            # LLM 调用失败，退还积分
+            async with async_session() as session:
+                u_result2 = await session.execute(select(User).where(User.id == user_id))
+                u2 = u_result2.scalar_one_or_none()
+                if u2:
+                    u2.credits = (u2.credits or 0) + _settings.ai_analysis_cost
+                    session.add(CreditLedger(
+                        user_id=user_id,
+                        amount=_settings.ai_analysis_cost,
+                        type="admin",
+                        ref_id=stock_code,
+                        balance_after=u2.credits,
+                        note=f"AI分析失败退分 {stock_code}",
+                    ))
+                    await session.commit()
+            raise HTTPException(status_code=502, detail=f"AI服务暂不可用: {e}")
+    else:
+        text = cached
+
+    return APIResponse(
+        data={
+            "stock_code": stock_code,
+            "analysis": text,
+            "cache_hit": cache_hit,
+        },
+        timestamp=int(time.time()),
     )

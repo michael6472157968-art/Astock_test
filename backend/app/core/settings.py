@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
+    # ── DeepSeek AI ──
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-chat"  # DeepSeek-V4-Flash via deepseek-chat endpoint
+    ai_analysis_cost: int = 2  # 每次AI分析扣2积分
+
     # ── CORS ──
     cors_origins: str = "*"
 

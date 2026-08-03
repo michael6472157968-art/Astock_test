@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import date, datetime, timedelta
 
@@ -9,11 +10,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, desc
 
 from app.core.database import async_session
+from app.core.settings import get_settings
 from app.middleware.auth_middleware import require_auth
-from app.models.orm.models import CheckinRecord, CreditLedger, User
+from app.models.orm.models import CheckinRecord, CreditLedger, MarketGuess, User
 from app.models.schemas.common import APIResponse
 
 router = APIRouter(prefix="/api/v1/credits", tags=["积分"])
+logger = logging.getLogger("credits")
 SIGNIN_REWARD_FREE = 3
 SIGNIN_REWARD_VIP = 5
 SIGNIN_STREAK_BONUS = 5  # 连续7天额外奖励
@@ -188,3 +191,163 @@ async def checkin_status(user: dict = Depends(require_auth)):
         },
         timestamp=int(time.time()),
     )
+
+
+# ── 竞猜大盘涨跌 ──
+
+_settings = get_settings()
+GUESS_REWARD_CORRECT = 5
+GUESS_REWARD_PARTICIPATE = 1
+GUESS_DEADLINE_HOUR = 9  # 交易日9:00前提交
+
+
+@router.post("/guess")
+async def submit_guess(direction: str = Query(..., pattern="^(up|down)$"), user: dict = Depends(require_auth)):
+    """竞猜大盘涨跌——交易日9:00前提交，每人每天一次。"""
+    user_id = user["user_id"]
+    today = date.today()
+    today_str = today.strftime("%Y%m%d")
+
+    # 检查是否交易日
+    from app.utils.trading_calendar import is_trade_date
+    if not await is_trade_date(today_str):
+        raise HTTPException(status_code=400, detail="今日非交易日，无法竞猜")
+
+    # 检查是否在截止时间前
+    now = datetime.now()
+    if now.hour >= GUESS_DEADLINE_HOUR:
+        raise HTTPException(status_code=400, detail=f"竞猜已截止（每日{GUESS_DEADLINE_HOUR}:00前提交）")
+
+    guess_date = today.isoformat()
+
+    async with async_session() as session:
+        # 检查是否已提交
+        existing = await session.execute(
+            select(MarketGuess).where(
+                MarketGuess.user_id == user_id, MarketGuess.guess_date == guess_date
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="今日已竞猜")
+
+        guess = MarketGuess(
+            user_id=user_id,
+            guess_date=guess_date,
+            direction=direction,
+        )
+        session.add(guess)
+        await session.commit()
+
+    return APIResponse(
+        data={"guess_date": guess_date, "direction": direction, "message": "竞猜已提交，收盘后结算"},
+        timestamp=int(time.time()),
+    )
+
+
+@router.get("/guess/status")
+async def guess_status(user: dict = Depends(require_auth)):
+    """今日竞猜状态：是否已猜、方向、结果。"""
+    user_id = user["user_id"]
+    today = date.today().isoformat()
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(MarketGuess).where(
+                MarketGuess.user_id == user_id, MarketGuess.guess_date == today
+            )
+        )
+        guess = result.scalar_one_or_none()
+
+    if not guess:
+        # 检查是否交易日
+        from app.utils.trading_calendar import is_trade_date
+        is_td = await is_trade_date(date.today().strftime("%Y%m%d"))
+        return APIResponse(
+            data={"has_guessed": False, "is_trade_day": is_td},
+            timestamp=int(time.time()),
+        )
+
+    return APIResponse(
+        data={
+            "has_guessed": True,
+            "direction": guess.direction,
+            "score_change": guess.score_change,
+            "settled": guess.score_change is not None,
+        },
+        timestamp=int(time.time()),
+    )
+
+
+# ── 竞猜结算（由 scheduler 在收盘后调用）──
+
+
+async def settle_market_guesses():
+    """结算当日竞猜——比较当日收盘涨跌，猜对+5，参与+1。"""
+    today = date.today()
+    guess_date = today.isoformat()
+
+    # 检查是否交易日
+    from app.utils.trading_calendar import is_trade_date
+    if not await is_trade_date(today.strftime("%Y%m%d")):
+        logger.info("Guess settlement skipped: not a trade day")
+        return
+
+    # 获取大盘涨跌方向（用上证指数）
+    try:
+        from app.services.tushare_client import get_pro
+        pro = get_pro()
+        end = today.strftime("%Y%m%d")
+        start = (today - timedelta(days=5)).strftime("%Y%m%d")
+        df = pro.index_daily(ts_code="000001.SH", start_date=start, end_date=end)
+        if df is None or df.empty:
+            logger.warning("Guess settlement: no index data for today")
+            return
+        today_row = df[df["trade_date"] == end]
+        if today_row.empty:
+            # 取最近交易日
+            today_row = df.head(1)
+        pct = float(today_row.iloc[0]["pct_chg"])
+        actual_direction = "up" if pct > 0 else "down" if pct < 0 else "flat"
+    except Exception as e:
+        logger.exception(f"Guess settlement: failed to get index data: {e}")
+        return
+
+    async with async_session() as session:
+        # 获取今日所有未结算竞猜
+        result = await session.execute(
+            select(MarketGuess).where(
+                MarketGuess.guess_date == guess_date, MarketGuess.score_change.is_(None)
+            )
+        )
+        guesses = result.scalars().all()
+
+        logger.info(f"Settling {len(guesses)} market guesses, actual={actual_direction}")
+
+        for g in guesses:
+            # If market is flat (rare), everyone gets participate points only
+            if actual_direction == "flat":
+                score = GUESS_REWARD_PARTICIPATE
+            elif g.direction == actual_direction:
+                score = GUESS_REWARD_CORRECT
+            else:
+                score = GUESS_REWARD_PARTICIPATE
+
+            g.score_change = score
+
+            # Update user credits
+            u_result = await session.execute(select(User).where(User.id == g.user_id))
+            u = u_result.scalar_one_or_none()
+            if u:
+                u.credits = (u.credits or 0) + score
+                session.add(CreditLedger(
+                    user_id=g.user_id,
+                    amount=score,
+                    type="guess",
+                    ref_id=guess_date,
+                    balance_after=u.credits,
+                    note=f"竞猜{'猜对+5' if score == GUESS_REWARD_CORRECT else '参与+1'} ({guess_date})",
+                ))
+
+        await session.commit()
+
+    logger.info(f"Guess settlement complete: {len(guesses)} guesses settled")
