@@ -9,9 +9,12 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.cache import cache_get, cache_set
+from app.core.database import async_session
 from app.core.settings import get_settings
 from app.middleware.auth_middleware import require_auth_optional
+from app.models.orm.models import CreditLedger, User
 from app.models.schemas.common import APIResponse
+from sqlalchemy import select
 
 router = APIRouter(prefix="/api/v1/diagnosis", tags=["诊股"])
 _settings = get_settings()
@@ -324,7 +327,7 @@ def _build_kline_data(df) -> dict:
 
 @router.get("/quota")
 async def get_quota(request: Request, user: dict = Depends(require_auth_optional)):
-    """返回当前用户每日诊股配额信息。GUEST 必须在 /{stock_code} 之前注册。"""
+    """返回当前用户积分余额和诊股消耗规则。"""
     if user:
         tier = user["tier"]
         user_id = user["user_id"]
@@ -332,21 +335,37 @@ async def get_quota(request: Request, user: dict = Depends(require_auth_optional
         tier = 0
         user_id = 0
 
-    today = date.today().isoformat()
-
-    if tier >= 2:
+    # 游客必须先登录
+    if tier == 0:
         return APIResponse(
-            data={"daily_limit": -1, "used": 0, "remaining": -1, "tier": tier},
+            data={"cost": 1, "tier": tier, "require_login": True},
             timestamp=int(time.time()),
         )
 
-    limit = 2 if tier == 0 else 3
-    count_key = f"diag_count:{user_id}:{today}"
-    count = (await cache_get(count_key)) or 0
-    remaining = max(0, limit - count)
+    if tier >= 2:
+        return APIResponse(
+            data={
+                "cost": 0,
+                "tier": tier,
+                "require_login": False,
+                "rule": "VIP免费诊股",
+            },
+            timestamp=int(time.time()),
+        )
+
+    # tier=1 注册用户：1积分/次
+    async with async_session() as session:
+        result = await session.execute(select(User.credits).where(User.id == user_id))
+        credits = result.scalar() or 0
 
     return APIResponse(
-        data={"daily_limit": limit, "used": count, "remaining": remaining, "tier": tier},
+        data={
+            "cost": 1,
+            "tier": tier,
+            "credits": credits,
+            "require_login": False,
+            "rule": "1积分/次诊股",
+        },
         timestamp=int(time.time()),
     )
 
@@ -431,32 +450,53 @@ async def get_diagnosis(stock_code: str, request: Request, user: dict = Depends(
         tier = 0
         user_id = 0
 
-    # 免费用户每日诊股次数限制（游客2次，注册用户3次）
-    if tier <= 1:
-        today = date.today().isoformat()
-        count_key = f"diag_count:{user_id}:{today}"
-        count = (await cache_get(count_key)) or 0
-        limit = 2 if tier == 0 else 3
-        if count >= limit:
-            return APIResponse(
-                code=403,
-                message=f"每日免费诊股 {limit} 次已达上限，请升级会员解锁无限次",
-                data={"daily_limit": limit, "used": count, "tier": tier},
-                timestamp=int(time.time()),
-            ).model_dump()
-        await cache_set(count_key, count + 1, ttl=86400)
+    # 游客必须先登录
+    if tier == 0:
+        return APIResponse(
+            code=403,
+            message="请先登录后再使用诊股功能",
+            data={"require_login": True},
+            timestamp=int(time.time()),
+        ).model_dump()
 
+    today = date.today().isoformat()
     cache_key = f"diag_v2:{stock_code}"
     cached = await cache_get(cache_key)
     if cached:
-        return _build_response(cached, tier, cache_hit=True)
+        return _build_response(cached, tier, cache_hit=True, cache_date=today)
+
+    # 积分扣减：VIP免费，注册用户扣1分
+    if tier < 2:
+        async with async_session() as session:
+            u_result = await session.execute(select(User).where(User.id == user_id))
+            u = u_result.scalar_one_or_none()
+            if not u:
+                raise HTTPException(status_code=404, detail="用户不存在")
+            if (u.credits or 0) < 1:
+                return APIResponse(
+                    code=403,
+                    message="积分不足，每次诊股消耗1积分。请签到或升级VIP获取免费诊股",
+                    data={"credits": u.credits, "cost": 1},
+                    timestamp=int(time.time()),
+                ).model_dump()
+
+            u.credits = u.credits - 1
+            session.add(CreditLedger(
+                user_id=user_id,
+                amount=-1,
+                type="diagnosis",
+                ref_id=stock_code,
+                balance_after=u.credits,
+                note=f"诊股 {stock_code}",
+            ))
+            await session.commit()
 
     report = await _compute_diagnosis(stock_code)
     if report is None:
         raise HTTPException(status_code=404, detail=f"股票 {stock_code} 暂无数据")
 
     await cache_set(cache_key, report, ttl=_settings.cache_diagnosis_ttl)
-    return _build_response(report, tier, cache_hit=False)
+    return _build_response(report, tier, cache_hit=False, cache_date=today)
 
 
 async def _compute_diagnosis(stock_code: str) -> dict | None:
@@ -513,7 +553,7 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
         return None
 
 
-def _build_response(report: dict, tier: int, cache_hit: bool) -> APIResponse:
+def _build_response(report: dict, tier: int, cache_hit: bool, cache_date: str = "") -> APIResponse:
     data = {
         "stock_code": report["stock_code"],
         "stock_name": report["stock_name"],
@@ -521,8 +561,13 @@ def _build_response(report: dict, tier: int, cache_hit: bool) -> APIResponse:
         "kline": report.get("kline"),
     }
 
+    ext = {"cache_hit": cache_hit}
+    if cache_hit and cache_date:
+        ext["cache_date"] = cache_date
+        ext["cache_note"] = "数据缓存于交易日，24小时内有效，建议下载报告保存"
+
     return APIResponse(
         data=data,
         timestamp=int(time.time()),
-        ext_info={"cache_hit": cache_hit},
+        ext_info=ext,
     )

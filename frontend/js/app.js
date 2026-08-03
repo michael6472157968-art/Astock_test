@@ -24,11 +24,18 @@ var API = {
                 localStorage.setItem('access_token', rj.data.access_token);
                 return self._fetch(method, path, data);
               }
-              localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); localStorage.removeItem('user');
-              window.location.href = '/login.html';
-              throw { message: '请重新登录' };
+              Session.clearAndRefresh();
+              throw { code: 401, message: '登录已过期，请重新登录' };
+            })
+            .catch(function(refreshErr) {
+              if (refreshErr && refreshErr.code) throw refreshErr;
+              Session.clearAndRefresh();
+              throw { code: 401, message: '请重新登录' };
             });
         }
+        // 无 refresh_token 或已失效，清除状态
+        Session.clearAndRefresh();
+        throw { code: 401, message: '请重新登录' };
       }
       if (json.code === 403) {
         showToast(json.message || '当前用户等级无权限访问此功能');
@@ -65,16 +72,44 @@ var Session = {
       phone: data.phone,
       tier: data.tier,
       member_type: data.member_type || 'free',
-      member_expire: data.member_expire || null
+      member_expire: data.member_expire || null,
+      credits: data.credits || 0
     }));
   },
   clear: function() {
     localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); localStorage.removeItem('user');
   },
+  clearAndRefresh: function() {
+    this.clear();
+    var page = window.location.pathname.split('/').pop() || 'index.html';
+    var needAuth = ['alerts.html', 'admin-trigger.html', 'stock-pool.html', 'sector.html', 'sector-rotation.html', 'backtest.html'];
+    if (needAuth.indexOf(page) === -1) {
+      renderNav();
+      return;
+    }
+    window.location.href = 'login.html?redirect=' + encodeURIComponent(page);
+  },
+  checkToken: function() {
+    var access = localStorage.getItem('access_token');
+    if (!access) return;
+    var rt = localStorage.getItem('refresh_token');
+    if (!rt) { this.clearAndRefresh(); return; }
+    try {
+      var payload = JSON.parse(atob(access.split('.')[1]));
+      var exp = payload.exp * 1000;
+      if (Date.now() > exp) return; // 过期了，等 API 调用时自动 refresh
+    } catch(e) {
+      this.clearAndRefresh();
+    }
+  },
   loggedIn: function() { return !!this.get(); },
   tier: function() { var u = this.get(); return u ? u.tier : 0; },
   isVip: function() { var t = this.tier(); return t >= 2 || t === 99; },
   isAdmin: function() { return this.tier() === 99; },
+  credits: function() {
+    var u = this.get();
+    return u ? u.credits || 0 : 0;
+  },
   memberLabel: function() {
     var t = this.tier();
     if (t === 99) return '<span class="vip-badge admin">管理员</span>';
@@ -260,8 +295,11 @@ function doLogout() {
 document.addEventListener('DOMContentLoaded', function() {
   var page = window.location.pathname.split('/').pop() || 'index.html';
 
+  // 主动校验 token 有效性
+  Session.checkToken();
+
   // 需要登录的页面
-  var needAuth = ['alerts.html', 'admin-trigger.html', 'stock-pool.html', 'diagnosis.html', 'sector.html', 'sector-rotation.html', 'backtest.html'];
+  var needAuth = ['alerts.html', 'admin-trigger.html', 'stock-pool.html', 'sector.html', 'sector-rotation.html', 'backtest.html'];
   if (needAuth.indexOf(page) >= 0 && !Session.loggedIn()) {
     window.location.href = 'login.html?redirect=' + encodeURIComponent(page);
   }
@@ -276,4 +314,23 @@ document.addEventListener('DOMContentLoaded', function() {
   } else {
     renderNav();
   }
+
+  // 定时检查 token 是否有效，过期后刷新导航栏
+  setInterval(function() {
+    var access = localStorage.getItem('access_token');
+    if (!access && Session.get()) {
+      Session.clearAndRefresh();
+      return;
+    }
+    if (access) {
+      try {
+        var payload = JSON.parse(atob(access.split('.')[1]));
+        if (Date.now() > payload.exp * 1000 && Session.get()) {
+          // access_token 过期但 user 还在，尝试静默刷新
+          var rt = localStorage.getItem('refresh_token');
+          if (!rt) { Session.clearAndRefresh(); }
+        }
+      } catch(e) {}
+    }
+  }, 30000); // 每30秒检查一次
 });

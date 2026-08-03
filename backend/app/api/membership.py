@@ -14,7 +14,7 @@ from app.core.database import async_session
 from app.core.security import create_access_token, create_refresh_token
 from app.core.settings import get_settings
 from app.middleware.auth_middleware import require_auth
-from app.models.orm.models import MembershipCode, User
+from app.models.orm.models import CreditLedger, MembershipCode, User
 from app.models.schemas.common import APIResponse
 
 router = APIRouter(prefix="/api/v1/membership", tags=["会员"])
@@ -117,6 +117,18 @@ async def membership_activate(req: ActivateRequest, user: dict = Depends(require
         mcode.used_by = user_id
         mcode.used_at = now
 
+        # 激活赠送积分
+        credit_bonus = 100 if mcode.code_type == "monthly" else 500
+        u.credits = (u.credits or 0) + credit_bonus
+        session.add(CreditLedger(
+            user_id=user_id,
+            amount=credit_bonus,
+            type="activation",
+            ref_id=code,
+            balance_after=u.credits,
+            note=f"{'月度' if mcode.code_type == 'monthly' else '年度'}会员激活赠送",
+        ))
+
         await session.commit()
 
         # 签发含新 tier 的 token
@@ -133,6 +145,8 @@ async def membership_activate(req: ActivateRequest, user: dict = Depends(require
                 "member_name": _label_name(u.tier),
                 "remain_days": remain,
                 "member_expire": new_expire.isoformat(),
+                "credits": u.credits,
+                "credit_bonus": credit_bonus,
                 "access_token": access,
                 "refresh_token": refresh,
             },

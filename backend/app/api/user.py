@@ -64,6 +64,7 @@ async def user_profile(user: dict = Depends(require_auth)):
                 "member_name": _label_name(u.tier),
                 "remain_days": _calc_remain(u.member_expire),
                 "member_expire": u.member_expire.isoformat() if u.member_expire else None,
+                "credits": u.credits or 0,
                 "created_at": u.created_at.isoformat() if u.created_at else None,
                 "is_admin": u.tier == 99,
             },

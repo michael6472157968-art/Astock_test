@@ -14,7 +14,7 @@ from app.core.security import (create_access_token, create_refresh_token,
                                 decode_token, hash_password, verify_password)
 from app.core.settings import get_settings
 from app.middleware.auth_middleware import require_auth, require_auth_optional
-from app.models.orm.models import User
+from app.models.orm.models import CreditLedger, User
 from app.models.schemas.common import APIResponse
 
 router = APIRouter(prefix="/api/v1/auth", tags=["认证"])
@@ -49,10 +49,22 @@ async def register(req: RegisterRequest):
             phone=req.phone,
             password_hash=hash_password(req.password),
             tier=1,  # 注册用户默认 tier=1
+            credits=10,  # 注册赠送10积分
         )
         session.add(user)
         await session.commit()
         await session.refresh(user)
+
+        # 注册积分流水
+        session.add(CreditLedger(
+            user_id=user.id,
+            amount=10,
+            type="register",
+            ref_id="",
+            balance_after=10,
+            note="注册赠送",
+        ))
+        await session.commit()
 
         access = create_access_token(user.id, user.tier)
         refresh = create_refresh_token(user.id, user.tier)
@@ -103,6 +115,7 @@ async def login(req: LoginRequest):
                 "member_name": _label_name(user.tier),
                 "remain_days": remain,
                 "member_expire": user.member_expire.isoformat() if user.member_expire else None,
+                "credits": user.credits or 0,
                 "access_token": access,
                 "refresh_token": refresh,
             },
@@ -156,6 +169,7 @@ async def profile(user: dict = Depends(require_auth)):
                 "member_name": _label_name(user.tier),
                 "remain_days": remain,
                 "member_expire": user.member_expire.isoformat() if user.member_expire else None,
+                "credits": user.credits or 0,
                 "created_at": user.created_at.isoformat() if user.created_at else None,
             },
             timestamp=int(time.time()),

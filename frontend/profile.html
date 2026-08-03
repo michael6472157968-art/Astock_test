@@ -17,8 +17,18 @@
   <p class="page-desc" id="welcomeMsg">加载中...</p>
 
   <div class="profile-grid">
-    <!-- 用户信息 -->
+    <!-- 用户信息 + 积分 -->
     <div class="card"><div class="card-header">账户信息</div><div class="card-body" id="userInfoCard">
+      <div class="state-loading">加载中...</div>
+    </div></div>
+
+    <!-- 积分信息 -->
+    <div class="card"><div class="card-header">积分中心</div><div class="card-body" id="creditsCard">
+      <div class="state-loading">加载中...</div>
+    </div></div>
+
+    <!-- 签到 -->
+    <div class="card"><div class="card-header">每日签到</div><div class="card-body" id="checkinCard">
       <div class="state-loading">加载中...</div>
     </div></div>
 
@@ -119,6 +129,12 @@
         '<div style="font-size:0.8rem;color:var(--color-text-muted)">注册于 ' + (d.created_at || '--').slice(0,10) + '</div></div>' +
         '</div>';
 
+      // 积分卡片
+      loadCredits(d.credits || 0);
+
+      // 签到卡片
+      loadCheckin();
+
       // 会员卡片
       var mcType = isAdmin ? 'admin' : d.member_type;
       var mcLabel = d.member_name;
@@ -137,6 +153,128 @@
         '</div>';
     }).catch(function(e) {
       document.getElementById('welcomeMsg').textContent = '加载失败';
+    });
+  }
+
+  // 积分余额 + 最近流水
+  function loadCredits(currentCredits) {
+    var card = document.getElementById('creditsCard');
+    card.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">' +
+        '<div><div style="font-size:0.8rem;color:var(--color-text-muted)">积分余额</div>' +
+        '<div style="font-size:2rem;font-weight:700;color:var(--color-primary)">' + currentCredits + '</div></div>' +
+        '<a href="javascript:void(0)" onclick="loadLedger()" class="btn btn-sm btn-outline">查看流水</a>' +
+      '</div>' +
+      '<div id="ledgerArea"></div>';
+  }
+
+  function loadLedger() {
+    var area = document.getElementById('ledgerArea');
+    area.innerHTML = '<div class="state-loading" style="font-size:0.82rem">加载中...</div>';
+    API.get('/credits/ledger?page=1&page_size=10').then(function(r) {
+      var items = r.data.items || [];
+      if (items.length === 0) {
+        area.innerHTML = '<p class="state-empty">暂无积分变动记录</p>';
+        return;
+      }
+      var html = '<table style="width:100%;font-size:0.78rem;border-collapse:collapse">' +
+        '<thead><tr style="color:var(--color-text-muted);text-align:left">' +
+        '<th>时间</th><th>说明</th><th style="text-align:right">金额</th><th style="text-align:right">余额</th>' +
+        '</tr></thead><tbody>';
+      items.forEach(function(item) {
+        var cls = item.amount >= 0 ? 'color:var(--color-success)' : 'color:var(--color-danger)';
+        var sign = item.amount >= 0 ? '+' : '';
+        var ts = (item.created_at || '').replace('T', ' ').slice(0, 19);
+        html += '<tr style="border-bottom:1px solid var(--color-border)">' +
+          '<td style="padding:4px 0">' + ts + '</td>' +
+          '<td>' + item.type_label + (item.note ? ' <span style="color:var(--color-text-muted)">' + escHtml2(item.note) + '</span>' : '') + '</td>' +
+          '<td style="text-align:right;' + cls + '">' + sign + item.amount + '</td>' +
+          '<td style="text-align:right">' + item.balance_after + '</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table>';
+      area.innerHTML = html;
+    }).catch(function(e) {
+      area.innerHTML = '<p class="state-error">加载失败</p>';
+    });
+  }
+
+  function escHtml2(v) {
+    if (!v) return '';
+    return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // 签到
+  function loadCheckin() {
+    var card = document.getElementById('checkinCard');
+    API.get('/credits/checkin/status').then(function(r) {
+      var d = r.data;
+      var streak = d.streak || 0;
+      var dates = d.checkin_dates || [];
+      var checkedIn = d.checked_in_today;
+
+      var cal = renderCheckinCalendar(dates, checkedIn, streak);
+      var btnHtml = '';
+      if (checkedIn) {
+        var v = Session.isVip() ? 5 : 3;
+        btnHtml = '<button class="btn btn-outline" disabled style="width:100%">✓ 今日已签到 (+' + d.today_credits + ')</button>';
+        if (streak > 1) {
+          btnHtml += '<p style="text-align:center;margin-top:4px;font-size:0.78rem;color:var(--color-text-muted)">连续签到 ' + streak + ' 天</p>';
+        }
+      } else {
+        var label = '签到 +' + (Session.isVip() ? 5 : 3);
+        btnHtml = '<button class="btn btn-primary" onclick="doCheckin()" style="width:100%">' + label + '</button>';
+      }
+      card.innerHTML = cal + btnHtml;
+    }).catch(function() {
+      card.innerHTML = '<p class="state-loading">加载失败</p>';
+    });
+  }
+
+  function renderCheckinCalendar(dates, checkedIn, streak) {
+    var today = new Date();
+    var html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center;margin-bottom:12px;font-size:0.75rem">';
+    var days = ['一', '二', '三', '四', '五', '六', '日'];
+    days.forEach(function(d) {
+      html += '<span style="color:var(--color-text-muted)">' + d + '</span>';
+    });
+    // 最近28天日历
+    var dateSet = {};
+    dates.forEach(function(d) { dateSet[d] = true; });
+    var start = new Date(today);
+    start.setDate(start.getDate() - start.getDay() + 1 - 28); // 从4周前的周一开始
+    var end = new Date(today);
+    for (var d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      var ds = d.toISOString().slice(0, 10);
+      var isToday = ds === today.toISOString().slice(0, 10);
+      var has = dateSet[ds];
+      var bg = has ? 'background:var(--color-primary);color:#fff;border-radius:4px;' : '';
+      if (isToday && !has) bg = 'border:1px solid var(--color-primary);border-radius:4px;';
+      html += '<span style="padding:2px 0;' + bg + '">' + d.getDate() + '</span>';
+    }
+    html += '</div>';
+    // 下周连续奖励预告
+    var nextStreak = streak + 1;
+    if (checkedIn && nextStreak <= 7) {
+      var bonusDays = 7 - nextStreak;
+      var bonus = (Session.isVip() ? 10 : 8);
+      html += '<p style="font-size:0.75rem;color:var(--color-text-muted);text-align:center">再签到 <strong>' +
+        bonusDays + '</strong> 天可得额外 +5 积分 (共 +' + bonus + ')</p>';
+    }
+    return html;
+  }
+
+  function doCheckin() {
+    var btn = document.querySelector('#checkinCard button');
+    if (btn) { btn.disabled = true; btn.textContent = '签到中...'; }
+    API.post('/credits/checkin').then(function(r) {
+      var d = r.data;
+      showToast('签到成功！+' + d.credits + ' 积分，连续 ' + d.streak + ' 天', 'success');
+      loadCheckin();
+      loadCredits(d.balance);
+    }).catch(function(e) {
+      showToast(e.message || '签到失败');
+      if (e.message && e.message.indexOf('今日已签到') >= 0) loadCheckin();
     });
   }
 })();

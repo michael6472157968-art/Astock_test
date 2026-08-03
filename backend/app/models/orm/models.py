@@ -45,7 +45,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     phone = Column(String(20), unique=True, nullable=False, index=True)
     password_hash = Column(String(128), nullable=False)
-    tier = Column(Integer, default=0)  # 0=游客 1=注册 2=会员
+    tier = Column(Integer, default=0)  # 0=游客 1=注册 2=月会员 3=年会员 99=管理员
+    credits = Column(Integer, default=0)  # 积分余额
+    is_active = Column(Integer, default=1)  # 1=正常 0=禁用
     member_expire = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_now)
     updated_at = Column(DateTime, default=_now, onupdate=_now)
@@ -253,3 +255,46 @@ class AccessLog(Base):
     ip_address = Column(String(45), default="")
     user_agent = Column(Text, default="")
     created_at = Column(DateTime, default=_now)
+
+
+class CreditLedger(Base):
+    __tablename__ = "credit_ledger"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    amount = Column(Integer, nullable=False)  # 正=获得, 负=消耗
+    type = Column(String(20), nullable=False)  # register/checkin/activation/guess/diagnosis/ai_analysis/admin
+    ref_id = Column(String(64), default="")    # 关联业务ID(stock_code/guess_date)
+    balance_after = Column(Integer, nullable=False)
+    note = Column(String(200), default="")
+    created_at = Column(DateTime, default=_now)
+
+
+class CheckinRecord(Base):
+    __tablename__ = "checkin_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    date = Column(String(10), nullable=False)  # YYYY-MM-DD
+    streak = Column(Integer, default=1)  # 连续签到天数
+    credits = Column(Integer, default=0)  # 本次获得积分
+    created_at = Column(DateTime, default=_now)
+
+    __table_args__ = (
+        Index("ix_checkin_user_date_unique", "user_id", "date", unique=True),
+    )
+
+
+class MarketGuess(Base):
+    __tablename__ = "market_guesses"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    guess_date = Column(String(10), nullable=False)  # 竞猜目标交易日
+    direction = Column(String(5), nullable=False)  # up / down
+    score_change = Column(Integer, nullable=True)  # null=待结算, 值=结算积分 (±5/±1)
+    created_at = Column(DateTime, default=_now)
+
+    __table_args__ = (
+        Index("ix_guess_user_date_unique", "user_id", "guess_date", unique=True),
+    )

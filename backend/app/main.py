@@ -133,6 +133,7 @@ def create_app() -> FastAPI:
     from app.api.backtest import router as backtest_router
     from app.api.admin import router as admin_router
     from app.api.membership import router as membership_router
+    from app.api.credits import router as credits_router
     from app.api.user import router as user_router
 
     app.include_router(auth_router)
@@ -147,6 +148,7 @@ def create_app() -> FastAPI:
     app.include_router(backtest_router)
     app.include_router(admin_router)
     app.include_router(membership_router)
+    app.include_router(credits_router)
     app.include_router(user_router)
 
     @app.get("/api/v1/health")
