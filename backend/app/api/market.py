@@ -218,10 +218,10 @@ async def market_dashboard(user: dict = Depends(require_auth_optional)):
         if nf:
             nf_sorted = sorted(nf, key=lambda x: x.get("trade_date", ""), reverse=True)
             latest = nf_sorted[0]
-            north_val = float(latest.get("north_money", 0) or 0)
+            north_val = float(latest.get("north_money", 0) or 0) * 1e4  # Tushare万元→元
             result["northbound"] = {
                 "date": latest.get("trade_date", ""),
-                "net_in": round(float(north_val), 2),
+                "net_in": round(north_val, 2),
                 "ggt_ss": round(float(latest.get("ggt_ss", 0) or 0), 2),
                 "ggt_sz": round(float(latest.get("ggt_sz", 0) or 0), 2),
                 "hgt": round(float(latest.get("hgt", 0) or 0), 2),
@@ -229,7 +229,7 @@ async def market_dashboard(user: dict = Depends(require_auth_optional)):
             }
             # 近期5日趋势
             result["northbound"]["recent"] = [
-                {"date": x.get("trade_date", ""), "net_in": round(float(x.get("north_money", 0) or 0), 2)}
+                {"date": x.get("trade_date", ""), "net_in": round(float(x.get("north_money", 0) or 0) * 1e4, 2)}
                 for x in nf_sorted[:5]
             ][::-1]  # oldest first
     except Exception as e:
