@@ -41,17 +41,16 @@ async def lifespan(app: FastAPI):
 
     start_scheduler()
 
-    # 启动时自动同步数据并运行离线计算（后台异步，不阻塞应用启动）
+    # 启动时轻量同步：仅股票列表 + 单日日线。其余由 scheduler 定时执行
     async def _auto_sync():
         try:
-            from app.services.data_sync import sync_daily_data, sync_stock_basic
+            from app.services.data_sync import sync_stock_basic, sync_daily_data
 
             logger.info("Auto-sync: stock basic...")
             await sync_stock_basic()
             logger.info("Auto-sync: daily data...")
             await sync_daily_data()
 
-            # 首次安装时预同步历史日线（行数 < 5万 才执行，已有数据跳过）
             from app.core.database import async_session
             from sqlalchemy import text
             async with async_session() as sess:
@@ -62,39 +61,10 @@ async def lifespan(app: FastAPI):
                 from app.services.data_sync import sync_historical_daily
                 hist_result = await sync_historical_daily(days=120)
                 logger.info(f"Historical sync complete: {hist_result}")
-
-            from app.services.stock_pool_engine import StockPoolEngine
-            from app.services.sector_analysis import SectorAnalysisEngine
-            from app.services.market_review import MarketReviewEngine
-            from app.services.risk_scanner import RiskScanner
-            from app.api.market import _ensure_review_table, _set_latest_flag, _save_review_meta, _purge_expired_reviews, cache_delete as _m_cache_delete
-            from app.utils.trading_calendar import get_latest_trade_date
-            from datetime import datetime as _dt, timezone as _tz
-
-            logger.info("Auto-sync: stock basic...")
-            await sync_stock_basic()
-            logger.info("Auto-sync: daily data...")
-            await sync_daily_data()
-            logger.info("Auto-sync: computing engines...")
-            await StockPoolEngine().compute_all()
-            await SectorAnalysisEngine().compute_all()
-            await _ensure_review_table()
-            await _purge_expired_reviews()
-            review_result = await MarketReviewEngine().compute()
-            trade_date = review_result.get("date", "")
-            if trade_date and review_result.get("content", {}).get("total"):
-                latest = await get_latest_trade_date()
-                gen_at = _dt.now(_tz.utc).isoformat()
-                is_latest_flag = 1 if trade_date == latest else 0
-                if is_latest_flag:
-                    await _set_latest_flag(trade_date)
-                await _save_review_meta(trade_date, gen_at, is_latest_flag)
-                await _m_cache_delete(f"review:{trade_date}")
-            scanner = RiskScanner()
-            await scanner.scan_risk_list()
-            logger.info("Auto-sync: all engines complete")
+            else:
+                logger.info(f"Stock daily rows: {daily_count} (>= 50000), skip historical sync")
         except Exception as e:
-            logger.warning(f"Auto-sync skipped (Tushare may be unavailable): {e}")
+            logger.warning(f"Auto-sync skipped: {e}")
 
     import asyncio
     asyncio.create_task(_auto_sync())

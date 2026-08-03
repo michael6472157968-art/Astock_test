@@ -32,4 +32,11 @@ if [ -f alembic.ini ]; then
     alembic upgrade head || echo "Migration warning (non-fatal)"
 fi
 
+# Pre-flight: check if app can be imported before starting uvicorn
+echo "Testing app import..."
+python -c "from app.main import app; print('App import OK')" || {
+    echo "APP IMPORT FAILED — see traceback above"
+    exit 3
+}
+
 exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
