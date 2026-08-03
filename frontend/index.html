@@ -12,9 +12,34 @@
 
     <!-- 非交易日提示 -->
     <div id="holidayBanner" style="display:none;text-align:center;padding:8px 16px;margin-bottom:12px;background:var(--color-card);border:1px solid var(--color-border);border-radius:8px;font-size:0.82rem;color:var(--color-text-muted);">
-      📌 今日休市 · 数据截止 <span id="holidayDate">--</span>
+      今日休市 · 数据截止 <span id="holidayDate">--</span>
     </div>
 
+    <!-- KPI 指标行 -->
+    <div class="kpi-row" id="kpiRow">
+      <div class="kpi-card">
+        <div class="kpi-label">北向资金净流入</div>
+        <div class="kpi-value" id="kpiNorthbound">--</div>
+        <div class="kpi-sub" id="kpiNorthboundDate">--</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">全市场成交额</div>
+        <div class="kpi-value" id="kpiTurnover">--</div>
+        <div class="kpi-sub" id="kpiTurnoverSub">--</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">市场宽度</div>
+        <div class="kpi-value" id="kpiBreadth">--</div>
+        <div class="kpi-sub" id="kpiBreadthSub">--</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">行业宽度</div>
+        <div class="kpi-value" id="kpiIndustryBreadth">--</div>
+        <div class="kpi-sub" id="kpiIndustryBreadthSub">--</div>
+      </div>
+    </div>
+
+    <!-- 指数行情 -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
       <h3 style="font-size:0.95rem;font-weight:600;">指数行情</h3>
       <span style="font-size:0.7rem;padding:2px 8px;border-radius:4px;background:var(--color-border);color:var(--color-text-muted);" id="indexSource">--</span>
@@ -26,33 +51,42 @@
       <div class="index-card"><div class="ic-name">科创50</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
     </div>
 
-    <div class="mood-panel" id="moodPanel">
-      <div class="mood-header"><span class="mood-title">市场情绪</span><span class="mood-date" id="moodDate">加载中...</span></div>
-      <div class="mood-body">
-        <div class="mood-left">
-          <div class="mood-row">
-            <span class="mood-label">上涨</span>
-            <div class="mood-bar-wrap"><div class="mood-bar up" id="moodUpBar" style="width:0%"></div></div>
-            <span class="mood-count" id="moodUpCount">--</span>
+    <!-- 市场情绪 + 板块热力预览 双栏 -->
+    <div class="mid-row">
+      <div class="mood-panel" id="moodPanel">
+        <div class="mood-header"><span class="mood-title">市场情绪</span><span class="mood-date" id="moodDate">加载中...</span></div>
+        <div class="mood-body">
+          <div class="mood-left">
+            <div class="mood-row">
+              <span class="mood-label">上涨</span>
+              <div class="mood-bar-wrap"><div class="mood-bar up" id="moodUpBar" style="width:0%"></div></div>
+              <span class="mood-count" id="moodUpCount">--</span>
+            </div>
+            <div class="mood-row">
+              <span class="mood-label">下跌</span>
+              <div class="mood-bar-wrap"><div class="mood-bar down" id="moodDownBar" style="width:0%"></div></div>
+              <span class="mood-count" id="moodDownCount">--</span>
+            </div>
+            <div class="mood-row">
+              <span class="mood-label">平盘</span>
+              <div class="mood-bar-wrap"><div class="mood-bar flat" id="moodFlatBar" style="width:0%"></div></div>
+              <span class="mood-count" id="moodFlatCount">--</span>
+            </div>
           </div>
-          <div class="mood-row">
-            <span class="mood-label">下跌</span>
-            <div class="mood-bar-wrap"><div class="mood-bar down" id="moodDownBar" style="width:0%"></div></div>
-            <span class="mood-count" id="moodDownCount">--</span>
-          </div>
-          <div class="mood-row">
-            <span class="mood-label">平盘</span>
-            <div class="mood-bar-wrap"><div class="mood-bar flat" id="moodFlatBar" style="width:0%"></div></div>
-            <span class="mood-count" id="moodFlatCount">--</span>
+          <div class="mood-right">
+            <div class="mood-limit-item"><div class="ml-num up" id="limitUpCount">--</div><div class="ml-label">涨停</div></div>
+            <div class="mood-limit-item"><div class="ml-num down" id="limitDownCount">--</div><div class="ml-label">跌停</div></div>
           </div>
         </div>
-        <div class="mood-right">
-          <div class="mood-limit-item"><div class="ml-num up" id="limitUpCount">--</div><div class="ml-label">涨停</div></div>
-          <div class="mood-limit-item"><div class="ml-num down" id="limitDownCount">--</div><div class="ml-label">跌停</div></div>
-        </div>
+      </div>
+
+      <div class="sector-heat-mini" id="sectorHeatMini">
+        <div class="mood-header"><span class="mood-title">板块热力</span><a href="sector-rotation.html" class="shm-link">查看全部 →</a></div>
+        <div class="shm-grid" id="shmGrid"></div>
       </div>
     </div>
 
+    <!-- 热门股票 -->
     <div>
       <h3 style="font-size:0.95rem;font-weight:600;margin-bottom:12px;">热门股票</h3>
       <div class="hot-stock-list" id="hotStocks">
@@ -60,6 +94,7 @@
       </div>
     </div>
 
+    <!-- 状态栏 -->
     <div class="status-bar" id="statusBar">
       <span><span class="status-dot" id="statusDot"></span><span id="statusText">检查中...</span></span>
       <span class="sep">|</span>
@@ -82,8 +117,14 @@
      var d = new Date(); if (d.getDay() === 0 || d.getDay() === 6) return false;
      var m = d.getHours() * 60 + d.getMinutes(); return m >= 540 && m <= 930;
   }
-
   function fmtDate8(d) { if (!d || d.length !== 8) return d || ''; return d.substring(0,4) + '-' + d.substring(4,6) + '-' + d.substring(6,8); }
+
+  function fmtAmount(v) {
+    if (v === undefined || v === null) return '--';
+    if (Math.abs(v) >= 1e8) return (v / 1e8).toFixed(2) + ' 亿';
+    if (Math.abs(v) >= 1e4) return (v / 1e4).toFixed(1) + ' 万';
+    return v.toFixed(0);
+  }
 
   function checkHolidayBanner(data) {
     var banner = document.getElementById('holidayBanner');
@@ -94,6 +135,66 @@
     } else {
       banner.style.display = 'none';
     }
+  }
+
+  // ── Dashboard 聚合数据 ──
+  function loadDashboard() {
+    API.get('/market/dashboard').then(function(r) {
+      var d = r.data;
+      checkHolidayBanner(d);
+
+      // 北向资金
+      var nb = d.northbound;
+      var nbEl = document.getElementById('kpiNorthbound');
+      var nbDateEl = document.getElementById('kpiNorthboundDate');
+      if (nb && nb.net_in !== undefined) {
+        var v = nb.net_in;
+        nbEl.textContent = (v >= 0 ? '+' : '') + fmtAmount(v);
+        nbEl.className = 'kpi-value ' + (v >= 0 ? 'up' : 'down');
+        nbDateEl.textContent = fmtDate8(nb.date);
+      } else {
+        nbEl.textContent = '--'; nbEl.className = 'kpi-value';
+        nbDateEl.textContent = '未获取';
+      }
+
+      // 成交额
+      if (d.turnover !== undefined) {
+        document.getElementById('kpiTurnover').textContent = fmtAmount(d.turnover);
+        document.getElementById('kpiTurnoverSub').textContent = d.stock_count + ' 只股票';
+      }
+
+      // 市场宽度
+      if (d.breath !== undefined) {
+        var bEl = document.getElementById('kpiBreadth');
+        bEl.textContent = d.breath + '%';
+        bEl.className = 'kpi-value ' + (d.breath >= 50 ? 'up' : 'down');
+        document.getElementById('kpiBreadthSub').textContent = '涨 ' + d.up_stocks + ' / 跌 ' + d.down_stocks;
+      }
+
+      // 行业宽度
+      if (d.industry_breadth !== undefined) {
+        var iEl = document.getElementById('kpiIndustryBreadth');
+        iEl.textContent = d.industry_breadth + '%';
+        iEl.className = 'kpi-value ' + (d.industry_breadth >= 50 ? 'up' : 'down');
+        document.getElementById('kpiIndustryBreadthSub').textContent = '涨 ' + d.industry_up + ' / 跌 ' + (d.industry_down || '0');
+      }
+
+      // 板块热力迷你
+      var sectors = d.top_sectors || [];
+      var grid = document.getElementById('shmGrid');
+      if (sectors.length) {
+        var maxAbs = Math.max.apply(null, sectors.map(function(s) { return Math.abs(s.pct_chg); })) || 1;
+        grid.innerHTML = sectors.map(function(s) {
+          var w = Math.round(Math.abs(s.pct_chg) / maxAbs * 100);
+          var cls = s.pct_chg >= 0 ? 'shm-cell up' : 'shm-cell down';
+          return '<a class="' + cls + '" href="sector.html?industry=' + encodeURIComponent(s.name) + '" title="' + s.name + ' ' + fmtSign(s.pct_chg) + '%">' +
+            '<span class="shm-name">' + s.name + '</span>' +
+            '<span class="shm-pct">' + fmtSign(s.pct_chg) + '%</span>' +
+            '<span class="shm-bar" style="width:' + w + '%"></span>' +
+            '</a>';
+        }).join('');
+      }
+    }).catch(function() {});
   }
 
   function loadIndices() {
@@ -203,12 +304,13 @@
   var indexTimer = null;
   function autoRefresh() {
     updateHealth(); loadStockCount();
+    loadDashboard();
     if (inTradingHours()) {
       loadIndices(); loadMood();
       document.getElementById('refreshHint').textContent = '交易时段 | 60s 刷新';
       indexTimer = setInterval(function() {
         if (!inTradingHours()) { clearInterval(indexTimer); document.getElementById('refreshHint').textContent = '非交易时段'; return; }
-        loadIndices(); loadMood();
+        loadIndices(); loadMood(); loadDashboard();
       }, 60000);
     } else {
       document.getElementById('refreshHint').textContent = '非交易时段';

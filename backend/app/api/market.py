@@ -147,6 +147,98 @@ async def market_index(user: dict = Depends(require_auth_optional)):
     }, timestamp=int(time.time()), ext_info={"note": "暂无指数数据，请执行数据同步"})
 
 
+@market_router.get("/dashboard")
+async def market_dashboard(user: dict = Depends(require_auth_optional)):
+    """首页仪表盘聚合数据——北向资金、成交额、行业宽度、板块热力预览。"""
+    now_ts = datetime.now().isoformat()
+    trading = _is_trading_time()
+    trade_date, is_td = await _get_trade_context()
+
+    ck = f"market:dashboard:{trade_date}"
+    cached = await cache_get(ck)
+    if cached is not None:
+        return APIResponse(data=cached, timestamp=int(time.time()))
+
+    from app.core.database import async_session
+
+    result: dict = {
+        "trade_date": trade_date,
+        "is_trade_day": is_td,
+        "update_time": now_ts,
+    }
+
+    async with async_session() as sess:
+        # 1. 全市场成交额 & 行业宽度
+        r = await sess.execute(text("""
+            SELECT SUM(d.amount) as turnover,
+                   SUM(d.volume) as volume,
+                   COUNT(*) as cnt,
+                   COUNT(*) FILTER (WHERE d.pct_chg > 0) as up_cnt,
+                   COUNT(*) FILTER (WHERE d.pct_chg < 0) as down_cnt
+            FROM stock_daily d
+            WHERE d.trade_date = :td
+        """), {"td": trade_date})
+        row = r.first()
+        if row and row[0]:
+            total = row[2] or 1
+            result["turnover"] = round(float(row[0]), 2)
+            result["volume"] = round(float(row[1]), 2)
+            result["stock_count"] = total
+            result["up_stocks"] = row[3] or 0
+            result["down_stocks"] = row[4] or 0
+            result["breath"] = round((row[3] or 0) / total * 100, 1)
+
+        # 2. 行业宽度——行业维度涨跌
+        r2 = await sess.execute(text("""
+            SELECT s.industry,
+                   ROUND(AVG(d.pct_chg), 2) as avg_pct,
+                   COUNT(*) as cnt
+            FROM stock_daily d
+            JOIN stocks s ON s.ts_code = d.ts_code
+            WHERE d.trade_date = :td AND s.industry != ''
+            GROUP BY s.industry
+            HAVING COUNT(*) >= 5
+        """), {"td": trade_date})
+        industries = [(row2[0], float(row2[1]), row2[2]) for row2 in r2]
+        if industries:
+            result["industry_up"] = sum(1 for _, pct, _ in industries if pct > 0)
+            result["industry_down"] = sum(1 for _, pct, _ in industries if pct < 0)
+            result["industry_flat"] = len(industries) - result["industry_up"] - result["industry_down"]
+            result["industry_breadth"] = round(result["industry_up"] / len(industries) * 100, 1)
+            # Top 8 by abs(pct_chg) for mini heatmap
+            top8 = sorted(industries, key=lambda x: abs(x[1]), reverse=True)[:8]
+            result["top_sectors"] = [{"name": n, "pct_chg": pct, "cnt": c} for n, pct, c in top8]
+
+    # 3. 北向资金
+    try:
+        from app.services.tushare_client import get_moneyflow_hsgt
+        end_d = trade_date
+        start_d = (date.today() - timedelta(days=10)).strftime("%Y%m%d")
+        nf = await get_moneyflow_hsgt(start_d, end_d)
+        if nf:
+            nf_sorted = sorted(nf, key=lambda x: x.get("trade_date", ""), reverse=True)
+            latest = nf_sorted[0]
+            result["northbound"] = {
+                "date": latest.get("trade_date", ""),
+                "net_in": round(float(latest.get("north_net", 0) or 0), 2),
+                "ggt_ss": round(float(latest.get("ggt_ss", 0) or 0), 2),
+                "ggt_sz": round(float(latest.get("ggt_sz", 0) or 0), 2),
+                "sgt_net": round(float(latest.get("north_sgt", 0) or 0), 2),
+            }
+            # 近期5日趋势
+            result["northbound"]["recent"] = [
+                {"date": x.get("trade_date", ""), "net_in": round(float(x.get("north_net", 0) or 0), 2)}
+                for x in nf_sorted[:5]
+            ][::-1]  # oldest first
+    except Exception as e:
+        logger.warning(f"北向资金获取失败: {e}")
+        result["northbound"] = None
+
+    ttl = 300 if trading else 3600
+    await cache_set(ck, result, ttl=ttl)
+    return APIResponse(data=result, timestamp=int(time.time()))
+
+
 @market_router.get("/mood")
 async def market_mood(user: dict = Depends(require_auth_optional)):
     now_ts = datetime.now().isoformat()
