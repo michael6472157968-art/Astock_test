@@ -25,31 +25,33 @@ POOL_TYPES = {
 
 
 async def _resolve_trade_date() -> tuple[str, bool]:
-    """返回 (trade_date, is_trade_day)。"""
+    """返回 (trade_date, is_trade_day) — DB MAX 优先。"""
+    from sqlalchemy import text as _text
+    from app.core.database import async_session as _sess
+
     today_str = date.today().strftime("%Y%m%d")
+    trade_date = today_str
+
     try:
-        lt = await get_latest_trade_date()
+        async with _sess() as s:
+            r = await s.execute(_text("SELECT MAX(trade_date) FROM stock_daily"))
+            max_td = r.scalar()
+            if max_td:
+                trade_date = max_td
     except Exception:
-        lt = today_str
+        pass
+
+    if trade_date == today_str:
+        try:
+            trade_date = await get_latest_trade_date()
+        except Exception:
+            pass
+
     try:
         is_td_val = await is_trade_date(today_str)
     except Exception:
         is_td_val = date.today().weekday() < 5
-    return lt, is_td_val
-
-
-async def _resolve_trade_date() -> tuple[str, bool]:
-    """返回 (trade_date, is_trade_day)。"""
-    today_str = date.today().strftime("%Y%m%d")
-    try:
-        lt = await get_latest_trade_date()
-    except Exception:
-        lt = today_str
-    try:
-        is_td = await is_trade_date(today_str)
-    except Exception:
-        is_td = date.today().weekday() < 5
-    return lt, is_td
+    return trade_date, is_td_val
 
 
 @router.get("/categories")
@@ -73,13 +75,6 @@ async def list_pool(pool_type: str, page: int = 1, page_size: int = 20,
     from app.core.database import async_session as _sess
 
     trade_date, is_td = await _resolve_trade_date()
-
-    # DB 中取最新日线日期兜底
-    async with _sess() as _session:
-        _r = await _session.execute(_text('SELECT MAX(trade_date) FROM stock_daily'))
-        _max = _r.scalar()
-        if _max and _max > trade_date:
-            trade_date = _max
 
     from app.core.cache import cache_get
     cached = await cache_get(f"pool:{pool_type}:{trade_date}")

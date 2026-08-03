@@ -49,8 +49,8 @@ async def sync_stock_basic() -> int:
 async def sync_daily_data(trade_date: str = "") -> int:
     """同步指定交易日全市场日线。默认最近交易日。"""
     if not trade_date:
-        from datetime import date, timedelta
-        trade_date = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+        from app.utils.trading_calendar import get_latest_trade_date
+        trade_date = await get_latest_trade_date()
 
     rows = await get_all_daily(trade_date)
     if not rows:

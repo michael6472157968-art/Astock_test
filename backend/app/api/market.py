@@ -42,17 +42,39 @@ def _is_trading_time() -> bool:
 
 
 async def _get_trade_context() -> tuple[str, bool]:
-    """返回 (trade_date, is_trade_day)。"""
+    """返回 (trade_date, is_trade_day) — 统一入口，所有端点共用。
+
+    优先级：stock_daily MAX(trade_date) → get_latest_trade_date() → date.today()
+    """
+    from app.core.database import async_session
+    from sqlalchemy import text
+
     today_str = date.today().strftime("%Y%m%d")
+    trade_date = today_str
+
+    # 1. DB MAX 优先——stock_daily 里的最新日期就是数据截止日
     try:
-        lt = await get_latest_trade_date()
+        async with async_session() as sess:
+            r = await sess.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
+            max_td = r.scalar()
+            if max_td:
+                trade_date = max_td
     except Exception:
-        lt = today_str
+        pass
+
+    # 2. DB 无数据时回退到交易日历
+    if trade_date == today_str:
+        try:
+            trade_date = await get_latest_trade_date()
+        except Exception:
+            pass
+
     try:
         is_td_val = await is_trade_date(today_str)
     except Exception:
         is_td_val = date.today().weekday() < 5
-    return lt, is_td_val
+
+    return trade_date, is_td_val
 
 
 @market_router.get("/stock_count")
@@ -93,10 +115,6 @@ async def market_index(user: dict = Depends(require_auth_optional)):
 
     results = []
     async with async_session() as sess:
-        r = await sess.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
-        latest_td = r.scalar()
-        if latest_td and latest_td > trade_date:
-            trade_date = latest_td
         for code, name in INDEX_CODES:
             r = await sess.execute(
                 text("SELECT close, pct_chg, change FROM stock_daily WHERE ts_code=:code AND trade_date=:td ORDER BY trade_date DESC LIMIT 1"),
@@ -220,7 +238,7 @@ async def market_dashboard(user: dict = Depends(require_auth_optional)):
             latest = nf_sorted[0]
             north_val = float(latest.get("north_money", 0) or 0) * 1e4  # Tushare万元→元
             result["northbound"] = {
-                "date": latest.get("trade_date", ""),
+                "date": trade_date,
                 "net_in": round(north_val, 2),
                 "ggt_ss": round(float(latest.get("ggt_ss", 0) or 0), 2),
                 "ggt_sz": round(float(latest.get("ggt_sz", 0) or 0), 2),
