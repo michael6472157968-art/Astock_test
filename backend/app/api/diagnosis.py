@@ -16,9 +16,6 @@ from app.models.schemas.common import APIResponse
 router = APIRouter(prefix="/api/v1/diagnosis", tags=["诊股"])
 _settings = get_settings()
 
-router = APIRouter(prefix="/api/v1/diagnosis", tags=["诊股"])
-_settings = get_settings()
-
 # ── 技术指标计算 ──
 
 def _sma(values: list[float], n: int) -> list[float]:
@@ -352,6 +349,77 @@ async def get_quota(request: Request, user: dict = Depends(require_auth_optional
         data={"daily_limit": limit, "used": count, "remaining": remaining, "tier": tier},
         timestamp=int(time.time()),
     )
+
+
+@router.get("/moneyflow")
+async def get_stock_moneyflow(stock_code: str, user: dict = Depends(require_auth_optional)):
+    """个股资金流向——主力净流入趋势 + 四单分布。"""
+    cache_key = f"diag_mf:{stock_code}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return APIResponse(data=cached, timestamp=int(time.time()))
+
+    from app.services.tushare_client import get_moneyflow
+
+    code = stock_code
+    if "." not in code:
+        for suffix in [".SZ", ".SH"]:
+            code = stock_code + suffix
+            break
+
+    end = date.today().strftime("%Y%m%d")
+    start = (date.today() - timedelta(days=30)).strftime("%Y%m%d")
+    try:
+        rows = await get_moneyflow(code, start, end)
+    except Exception as e:
+        return APIResponse(
+            data={"stock_code": stock_code, "trend": [], "summary": None},
+            timestamp=int(time.time()),
+            ext_info={"note": f"Tushare 调用失败: {e}"}
+        )
+
+    if not rows:
+        return APIResponse(
+            data={"stock_code": stock_code, "trend": [], "summary": None},
+            timestamp=int(time.time()),
+            ext_info={"note": "暂无资金流向数据"}
+        )
+
+    sorted_rows = sorted(rows, key=lambda r: r.get("trade_date", ""))
+    trend = []
+    for r in sorted_rows:
+        # Tushare moneyflow 返回万元，转为元
+        trend.append({
+            "date": r.get("trade_date", ""),
+            "net_mf_amount": round(float(r.get("net_mf_amount", 0) or 0) * 1e4, 2),
+            "buy_elg_amount": round(float(r.get("buy_elg_amount", 0) or 0) * 1e4, 2),
+            "sell_elg_amount": round(float(r.get("sell_elg_amount", 0) or 0) * 1e4, 2),
+            "buy_lg_amount": round(float(r.get("buy_lg_amount", 0) or 0) * 1e4, 2),
+            "sell_lg_amount": round(float(r.get("sell_lg_amount", 0) or 0) * 1e4, 2),
+            "buy_md_amount": round(float(r.get("buy_md_amount", 0) or 0) * 1e4, 2),
+            "sell_md_amount": round(float(r.get("sell_md_amount", 0) or 0) * 1e4, 2),
+            "buy_sm_amount": round(float(r.get("buy_sm_amount", 0) or 0) * 1e4, 2),
+            "sell_sm_amount": round(float(r.get("sell_sm_amount", 0) or 0) * 1e4, 2),
+        })
+
+    total_net_mf = sum(t["net_mf_amount"] for t in trend)
+    total_elg = sum(t["buy_elg_amount"] - t["sell_elg_amount"] for t in trend)
+    total_lg = sum(t["buy_lg_amount"] - t["sell_lg_amount"] for t in trend)
+    total_md = sum(t["buy_md_amount"] - t["sell_md_amount"] for t in trend)
+    total_sm = sum(t["buy_sm_amount"] - t["sell_sm_amount"] for t in trend)
+
+    summary = {
+        "net_mf_amount": round(total_net_mf, 2),
+        "net_elg_amount": round(total_elg, 2),
+        "net_lg_amount": round(total_lg, 2),
+        "net_md_amount": round(total_md, 2),
+        "net_sm_amount": round(total_sm, 2),
+        "days": len(trend),
+    }
+
+    data = {"stock_code": stock_code, "trend": trend, "summary": summary}
+    await cache_set(cache_key, data, ttl=_settings.cache_diagnosis_ttl)
+    return APIResponse(data=data, timestamp=int(time.time()))
 
 
 @router.get("/{stock_code}")

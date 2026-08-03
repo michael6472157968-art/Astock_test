@@ -212,3 +212,11 @@ async def get_daily_basic(trade_date: str) -> list[dict]:
     if result is None or (hasattr(result, 'empty') and result.empty):
         return []
     return result.to_dict(orient="records")
+
+
+async def get_moneyflow(ts_code: str, start_date: str, end_date: str) -> list[dict]:
+    """个股资金流向——主力/超大单/大单/中单/小单净流入。2000积分解锁。"""
+    result = await call_tushare("moneyflow", ts_code=ts_code, start_date=start_date, end_date=end_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")

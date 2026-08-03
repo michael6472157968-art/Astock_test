@@ -161,6 +161,12 @@
   var INITIAL_LIMIT = 30;
   var FETCH_TIMEOUT = 15000;
 
+  // Parse ?industry= param for auto-open from dashboard
+  var _autoIndustry = (function() {
+    var m = location.search.match(/industry=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  })();
+
   (function renderPlaceholder() {
     chart.setOption({
       grid: { left: '2%', right: '8%', top: 8, bottom: 30, containLabel: true },
@@ -330,6 +336,17 @@
     setTimeout(function() { chart.resize(); }, 50);
 
     loadMoreWrap.style.display = (!ALL_LOADED && sectorsData.length > 0) ? '' : 'none';
+
+    // Auto-open sector modal if linked from dashboard with ?industry=
+    if (_autoIndustry) {
+      var target = sectorsData.find(function(s) { return s.name === _autoIndustry; });
+      if (target) {
+        var code = target.code || target.name;
+        setTimeout(function() { showSectorModal(target.name, code, target.pct_chg || 0); }, 400);
+      }
+      _autoIndustry = null;
+    }
+
     return true;
   }
 

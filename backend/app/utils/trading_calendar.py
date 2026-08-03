@@ -88,75 +88,21 @@ async def is_trade_date(date_str: str) -> bool:
 
 
 async def get_latest_trade_date() -> str:
-    """获取最近一个交易日。
+    """Return the most recent trade date that has actual stock_daily data.
 
-    - 如果今天是交易日且已收盘（15:30 后），返回今天
-    - 如果今天是交易日但未收盘，返回上一交易日
-    - 如果今天不是交易日，返回最近一个交易日
+    Falls back through: stock_daily MAX trade_date → trading calendar cache →
+    Tushare trade_cal → weekday heuristic.
     """
-    await _ensure_cache_table()
-
-    today_str = date.today().strftime("%Y%m%d")
-    today = datetime.now()
-
-    # 向前扫描最多 10 天
     from app.core.database import async_session
     from sqlalchemy import text
 
-    # 先从缓存查最近记录
+    today_str = date.today().strftime("%Y%m%d")
+
+    # 1. Check stock_daily for the newest trade date with data
     async with async_session() as sess:
         r = await sess.execute(
-            text(f"SELECT cal_date FROM {_CALENDAR_CACHE_TABLE} WHERE is_open = 1 AND cal_date <= :d ORDER BY cal_date DESC LIMIT 1"),
-            {"d": today_str},
+            text("SELECT MAX(trade_date) FROM stock_daily")
         )
-        row = r.first()
-
-    if row:
-        cached_date = row[0]
-        # 如果今天在缓存中是交易日
-        if cached_date == today_str:
-            # 已收盘（15:30 后）→ 返回今天
-            if today.hour >= 15 and today.minute >= 30:
-                return today_str
-            # 未收盘 → 返回上一个交易日
-            async with async_session() as sess:
-                r = await sess.execute(
-                    text(f"SELECT cal_date FROM {_CALENDAR_CACHE_TABLE} WHERE is_open = 1 AND cal_date < :d ORDER BY cal_date DESC LIMIT 1"),
-                    {"d": today_str},
-                )
-                prev = r.first()
-                if prev:
-                    return prev[0]
-        return cached_date
-
-    # 缓存无数据，拉取
-    start = (today - timedelta(days=60)).strftime("%Y%m%d")
-    end = today_str
-    await _load_from_tushare(start, end)
-
-    # 重查
-    async with async_session() as sess:
-        r = await sess.execute(
-            text(f"SELECT cal_date FROM {_CALENDAR_CACHE_TABLE} WHERE is_open = 1 AND cal_date <= :d ORDER BY cal_date DESC LIMIT 1"),
-            {"d": today_str},
-        )
-        row = r.first()
-
-    if row:
-        trade_date = row[0]
-        if trade_date == today_str and not (today.hour >= 15 and today.minute >= 30):
-            async with async_session() as sess:
-                r = await sess.execute(
-                    text(f"SELECT cal_date FROM {_CALENDAR_CACHE_TABLE} WHERE is_open = 1 AND cal_date < :d ORDER BY cal_date DESC LIMIT 1"),
-                    {"d": today_str},
-                )
-                prev = r.first()
-                if prev:
-                    return prev[0]
-        return trade_date
-
-    # 彻底兜底：回退到周五（如果今天在周末）
-    fallback = today
-    while fallback.weekday() >= 5:
-        fallback = fallback - timedelta(days=1)
-    return fallback.strftime("%Y%m%d")
+        max_td = r.scalar()
+        if max_td:
+            return max_td

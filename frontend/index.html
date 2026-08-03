@@ -107,6 +107,18 @@
   </div>
 </main>
 
+<!-- Sector Leaders Modal -->
+<div class="modal-overlay" id="sectorModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="sectorModalTitle">--</h3>
+      <button class="modal-close-btn" onclick="document.getElementById('sectorModal').classList.remove('show')">&times;</button>
+    </div>
+    <div class="modal-pct" id="sectorModalPct">--</div>
+    <div id="sectorModalBody"><div style="text-align:center;padding:30px;color:var(--color-text-muted);">加载中...</div></div>
+  </div>
+</div>
+
 <script src="/js/app.js?v=5"></script>
 <script src="/lib/echarts.js"></script>
 <script>
@@ -188,11 +200,11 @@
         grid.innerHTML = sectors.map(function(s) {
           var w = Math.round(Math.abs(s.pct_chg) / maxAbs * 100);
           var cls = s.pct_chg >= 0 ? 'shm-cell up' : 'shm-cell down';
-          return '<a class="' + cls + '" href="sector.html?industry=' + encodeURIComponent(s.name) + '" title="' + s.name + ' ' + fmtSign(s.pct_chg) + '%">' +
+          return '<span class="' + cls + '" onclick="showSectorLeaders(\'' + s.name.replace(/'/g, "\\'") + '\', ' + s.pct_chg + ')" title="' + s.name + ' ' + fmtSign(s.pct_chg) + '%">' +
             '<span class="shm-name">' + s.name + '</span>' +
             '<span class="shm-pct">' + fmtSign(s.pct_chg) + '%</span>' +
             '<span class="shm-bar" style="width:' + w + '%"></span>' +
-            '</a>';
+            '</span>';
         }).join('');
       }
     }).catch(function() {});
@@ -282,6 +294,45 @@
       document.getElementById('hotStocks').innerHTML = '<div class="hot-stock-card"><div class="hs-info"><div class="hs-name">数据加载失败</div></div></div>';
     });
   }
+
+  // ── Sector Leaders Modal ──
+  function showSectorLeaders(name, pct) {
+    var overlay = document.getElementById('sectorModal');
+    document.getElementById('sectorModalTitle').textContent = name;
+    var pctEl = document.getElementById('sectorModalPct');
+    pctEl.textContent = fmtSign(pct) + '%';
+    pctEl.className = 'modal-pct ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : '');
+    document.getElementById('sectorModalBody').innerHTML = '<div style="text-align:center;padding:30px;color:var(--color-text-muted);">正在加载 ' + name + ' 领涨股...</div>';
+    overlay.classList.add('show');
+
+    API.get('/sector/' + encodeURIComponent(name) + '/leaders').then(function(r) {
+      var stocks = r.data.stocks || [];
+      var sname = r.data.sector_name || name;
+      document.getElementById('sectorModalTitle').textContent = sname;
+      if (!stocks.length) {
+        document.getElementById('sectorModalBody').innerHTML = '<div style="text-align:center;padding:30px;color:var(--color-text-muted);">暂无该板块成分股数据</div>';
+        return;
+      }
+      var html = '<table class="leader-table modal-fade-in"><thead><tr><th>#</th><th>股票名称</th><th>最新价</th><th>涨跌幅</th></tr></thead><tbody>';
+      stocks.forEach(function(s, i) {
+        var pctCls = s.pct_chg > 0 ? 'up' : s.pct_chg < 0 ? 'down' : 'flat';
+        html += '<tr><td style="color:var(--color-text-muted)">' + (i + 1) + '</td>'
+          + '<td><a class="stock-link" href="diagnosis.html?code=' + encodeURIComponent(s.ts_code || '') + '">' + (s.name || s.ts_code) + '</a></td>'
+          + '<td>' + (s.close ? s.close.toFixed(2) : '--') + '</td>'
+          + '<td class="pct ' + pctCls + '">' + fmtSign(s.pct_chg) + '%</td></tr>';
+      });
+      html += '</tbody></table>';
+      document.getElementById('sectorModalBody').innerHTML = html;
+    }).catch(function(e) {
+      document.getElementById('sectorModalBody').innerHTML = '<div style="text-align:center;padding:30px;color:var(--color-danger);">加载失败: ' + (e.message || '请重试') + '</div>';
+    });
+  }
+
+  window.showSectorLeaders = showSectorLeaders;
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') document.getElementById('sectorModal').classList.remove('show');
+  });
 
   function updateHealth() {
     API.get('/health').then(function(r) {

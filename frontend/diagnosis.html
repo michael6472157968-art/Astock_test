@@ -217,9 +217,11 @@ function renderDiagnosis(r, code) {
   }
 
   html += '<div class="card" style="margin-top:16px"><div class="card-header">K线图（日线 / 近60日）</div><div class="card-body"><div id="klineChart" style="width:100%;height:500px;"></div></div></div>';
+  html += '<div class="card" style="margin-top:16px"><div class="card-header">资金流向 · 近30日</div><div class="card-body"><div id="mfSummary" style="margin-bottom:14px;"></div><div id="mfChart" style="width:100%;height:360px;"></div></div></div>';
   result.innerHTML = html;
 
   setTimeout(function() { renderKlineChart(r.data); }, 100);
+  setTimeout(function() { loadMoneyflow(code); }, 150);
 }
 
 function riskClass(risk) {
@@ -312,6 +314,123 @@ function calcMA(data, i, n) {
   var sum = 0;
   for (var j = i - n + 1; j <= i; j++) sum += data[j][1];
   return (sum / n).toFixed(2);
+}
+
+var _mfChart = null;
+
+function loadMoneyflow(code) {
+  var summaryEl = document.getElementById('mfSummary');
+  var chartEl = document.getElementById('mfChart');
+  if (!summaryEl || !chartEl) return;
+  summaryEl.innerHTML = '<span style="color:var(--color-text-muted);font-size:0.82rem;">加载中...</span>';
+
+  API.get('/diagnosis/moneyflow?stock_code=' + encodeURIComponent(code)).then(function(r) {
+    var d = r.data;
+    var summary = d.summary;
+    var trend = d.trend || [];
+
+    if (!summary || !trend.length) {
+      summaryEl.innerHTML = '<span style="color:var(--color-text-muted);">暂无资金流向数据</span>';
+      chartEl.innerHTML = '<p class="state-empty">资金流向数据暂不可用</p>';
+      return;
+    }
+
+    var summaryHtml = '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.82rem;">' +
+      '<div><span style="color:var(--color-text-muted);">近' + summary.days + '日主力净流入: </span>' +
+        '<span style="font-weight:700;color:' + (summary.net_mf_amount >= 0 ? 'var(--color-danger)' : 'var(--color-success)') + ';">' +
+        fmtAmount(summary.net_mf_amount) + '</span></div>' +
+      '<div><span style="color:var(--color-text-muted);">超大单: </span>' +
+        '<span style="color:' + (summary.net_elg_amount >= 0 ? 'var(--color-danger)' : 'var(--color-success)') + ';">' +
+        fmtAmount(summary.net_elg_amount) + '</span></div>' +
+      '<div><span style="color:var(--color-text-muted);">大单: </span>' +
+        '<span style="color:' + (summary.net_lg_amount >= 0 ? 'var(--color-danger)' : 'var(--color-success)') + ';">' +
+        fmtAmount(summary.net_lg_amount) + '</span></div>' +
+      '<div><span style="color:var(--color-text-muted);">中单: </span>' +
+        '<span style="color:' + (summary.net_md_amount >= 0 ? 'var(--color-danger)' : 'var(--color-success)') + ';">' +
+        fmtAmount(summary.net_md_amount) + '</span></div>' +
+      '<div><span style="color:var(--color-text-muted);">小单: </span>' +
+        '<span style="color:' + (summary.net_sm_amount >= 0 ? 'var(--color-danger)' : 'var(--color-success)') + ';">' +
+        fmtAmount(summary.net_sm_amount) + '</span></div>' +
+      '</div>';
+    summaryEl.innerHTML = summaryHtml;
+
+    renderMoneyflow(trend);
+  }).catch(function(e) {
+    document.getElementById('mfSummary').innerHTML = '<span style="color:var(--color-danger);">加载失败</span>';
+  });
+}
+
+function renderMoneyflow(trend) {
+  var el = document.getElementById('mfChart');
+  if (!el) return;
+
+  var dates = trend.map(function(t) { return t.date.substring(4,6) + '/' + t.date.substring(6,8); });
+  var netMf = trend.map(function(t) { return (t.net_mf_amount / 1e4).toFixed(0); });
+  var netElg = trend.map(function(t) { return ((t.buy_elg_amount - t.sell_elg_amount) / 1e4).toFixed(0); });
+  var netLg = trend.map(function(t) { return ((t.buy_lg_amount - t.sell_lg_amount) / 1e4).toFixed(0); });
+  var netMd = trend.map(function(t) { return ((t.buy_md_amount - t.sell_md_amount) / 1e4).toFixed(0); });
+  var netSm = trend.map(function(t) { return ((t.buy_sm_amount - t.sell_sm_amount) / 1e4).toFixed(0); });
+
+  if (_mfChart) { _mfChart.dispose(); }
+  var chart = echarts.init(el);
+  _mfChart = chart;
+  window.addEventListener('resize', function() { chart.resize(); });
+
+  var upColor = '#ef232a', downColor = '#14b143';
+  chart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: {
+      data: ['主力净流入', '超大单', '大单', '中单', '小单'],
+      top: 0, textStyle: { color: '#8392A5', fontSize: 11 },
+    },
+    grid: { left: '3%', right: '4%', top: 36, bottom: 36, containLabel: true },
+    xAxis: {
+      type: 'category', data: dates,
+      axisLabel: { color: '#8392A5', fontSize: 10 },
+      axisLine: { lineStyle: { color: '#8392A5' } }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#8392A5', formatter: '{value}万' },
+      splitLine: { lineStyle: { color: '#8392A520' } },
+      name: '万元', nameTextStyle: { color: '#8392A5' }
+    },
+    series: [
+      {
+        name: '主力净流入', type: 'bar', data: netMf,
+        itemStyle: { color: function(p) { return p.value >= 0 ? upColor : downColor; } },
+        emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(239,35,42,0.3)' } }
+      },
+      {
+        name: '超大单', type: 'line', data: netElg,
+        lineStyle: { color: '#ff6b6b' }, itemStyle: { color: '#ff6b6b' },
+        symbol: 'none', smooth: true
+      },
+      {
+        name: '大单', type: 'line', data: netLg,
+        lineStyle: { color: '#ffa726' }, itemStyle: { color: '#ffa726' },
+        symbol: 'none', smooth: true
+      },
+      {
+        name: '中单', type: 'line', data: netMd,
+        lineStyle: { color: '#42a5f5' }, itemStyle: { color: '#42a5f5' },
+        symbol: 'none', smooth: true
+      },
+      {
+        name: '小单', type: 'line', data: netSm,
+        lineStyle: { color: '#66bb6a' }, itemStyle: { color: '#66bb6a' },
+        symbol: 'none', smooth: true
+      },
+    ]
+  });
+}
+
+function fmtAmount(v) {
+  if (v === undefined || v === null) return '--';
+  if (Math.abs(v) >= 1e12) return (v / 1e12).toFixed(2) + ' 万亿';
+  if (Math.abs(v) >= 1e8) return (v / 1e8).toFixed(2) + ' 亿';
+  if (Math.abs(v) >= 1e4) return (v / 1e4).toFixed(0) + ' 万';
+  return v.toFixed(0);
 }
 
 function addFavorite(code, name) {
