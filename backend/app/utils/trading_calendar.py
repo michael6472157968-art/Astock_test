@@ -122,6 +122,27 @@ async def get_next_trade_date(from_date_str: str) -> str:
     raise RuntimeError(f"No trade day found within 14 days after {from_date_str}")
 
 
+async def get_trade_days_in_range(start_date: str, end_date: str) -> list[str]:
+    """返回 [start_date, end_date] 区间内所有交易日，按日期升序。"""
+    await _ensure_cache_table()
+
+    from app.core.database import async_session
+    from sqlalchemy import text
+
+    async with async_session() as sess:
+        r = await sess.execute(
+            text(f"SELECT cal_date FROM {_CALENDAR_CACHE_TABLE} WHERE cal_date BETWEEN :s AND :e AND is_open=1 ORDER BY cal_date"),
+            {"s": start_date, "e": end_date},
+        )
+        trade_days = [row[0] for row in r]
+
+    if not trade_days:
+        loaded = await _load_from_tushare(start_date, end_date)
+        trade_days = sorted([d for d in loaded if start_date <= d <= end_date])
+
+    return trade_days
+
+
 async def get_latest_trade_date() -> str:
     """Return the most recent trade date that has actual stock_daily data.
 

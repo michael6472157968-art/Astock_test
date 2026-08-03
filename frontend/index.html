@@ -94,6 +94,18 @@
       </div>
     </div>
 
+    <!-- 交易日历 -->
+    <div class="mood-panel" id="tradeCalendarPanel" style="margin-bottom:16px;">
+      <div class="mood-header"><span class="mood-title">交易日历</span><span class="mood-date" id="calMonthLabel">--</span></div>
+      <div class="mood-body" style="flex-direction:column;padding:12px 16px;">
+        <div id="calCountdown" style="text-align:center;padding:6px 0 10px;font-size:0.85rem;"></div>
+        <div class="cal-weekdays" style="display:flex;text-align:center;font-size:0.7rem;color:var(--color-text-muted);margin-bottom:4px;">
+          <span style="flex:1">一</span><span style="flex:1">二</span><span style="flex:1">三</span><span style="flex:1">四</span><span style="flex:1">五</span><span style="flex:1;color:var(--color-danger)">六</span><span style="flex:1;color:var(--color-danger)">日</span>
+        </div>
+        <div id="calGrid"></div>
+      </div>
+    </div>
+
     <!-- 热门股票 -->
     <div>
       <h3 style="font-size:0.95rem;font-weight:600;margin-bottom:12px;">热门股票</h3>
@@ -362,9 +374,49 @@
   }
 
   var indexTimer = null;
+  function loadTradeCalendar() {
+    API.get('/market/calendar').then(function(r) {
+      var d = r.data;
+      document.getElementById('calMonthLabel').textContent = d.month;
+
+      var cdEl = document.getElementById('calCountdown');
+      if (d.countdown && d.countdown.days > 0) {
+        cdEl.innerHTML = '<span style="color:var(--color-warning);">' + d.countdown.label + '</span>';
+      } else if (d.is_trade_day) {
+        cdEl.textContent = '今日交易中';
+        cdEl.style.color = 'var(--color-success)';
+      } else if (d.countdown) {
+        cdEl.textContent = d.countdown.label;
+      } else {
+        cdEl.textContent = '';
+      }
+
+      var weeks = d.weeks || [];
+      var html = '';
+      weeks.forEach(function(week) {
+        html += '<div style="display:flex;text-align:center;">';
+        week.forEach(function(day) {
+          var cls = 'cal-day ';
+          if (!day.is_current_month) { cls += 'cal-day-other '; }
+          if (day.is_today) { cls += 'cal-day-today '; }
+          if (day.is_trade_day) { cls += 'cal-day-trade '; }
+          if (day.is_weekend) { cls += 'cal-day-weekend '; }
+          var bg = '';
+          if (day.is_today) bg = 'background:var(--color-primary);color:#fff;font-weight:700;';
+          else if (day.is_trade_day) bg = 'background:var(--color-success);color:#fff;opacity:0.6;';
+          else if (!day.is_current_month) bg = 'color:var(--color-text-muted);opacity:0.3;';
+          else if (day.is_weekend) bg = 'color:var(--color-text-muted);opacity:0.4;';
+          html += '<span style="flex:1;padding:4px 0;font-size:0.72rem;border-radius:4px;margin:1px;' + bg + '">' + day.date + '</span>';
+        });
+        html += '</div>';
+      });
+      document.getElementById('calGrid').innerHTML = html;
+    }).catch(function() {});
+  }
   function autoRefresh() {
     updateHealth(); loadStockCount();
     loadDashboard();
+    loadTradeCalendar();
     if (inTradingHours()) {
       loadIndices(); loadMood();
       document.getElementById('refreshHint').textContent = '交易时段 | 60s 刷新';

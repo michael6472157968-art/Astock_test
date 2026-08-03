@@ -14,7 +14,7 @@ from sqlalchemy import text
 from app.core.cache import cache_get, cache_set, cache_delete
 from app.middleware.auth_middleware import require_auth_optional
 from app.models.schemas.common import APIResponse
-from app.utils.trading_calendar import get_latest_trade_date, is_trade_date
+from app.utils.trading_calendar import get_latest_trade_date, get_next_trade_date, get_trade_days_in_range, is_trade_date
 
 logger = logging.getLogger("market")
 
@@ -926,3 +926,216 @@ async def risk_list(page: int = 1, page_size: int = 20, user: dict = Depends(req
               "is_trade_day": is_td, "trade_date": trade_date},
         timestamp=int(time.time()),
     )
+
+
+# ── 交易日历 ──
+
+@market_router.get("/calendar")
+async def market_calendar(user: dict = Depends(require_auth_optional)):
+    """返回当月交易日历 + 休市倒计时。"""
+    today = date.today()
+    today_str = today.strftime("%Y%m%d")
+
+    # 当月范围
+    month_start = today.replace(day=1)
+    if today.month == 12:
+        month_end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+    else:
+        month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+
+    # 拉到 ±30 天确保缓存覆盖
+    start_str = (month_start - timedelta(days=30)).strftime("%Y%m%d")
+    end_str = (month_end + timedelta(days=30)).strftime("%Y%m%d")
+    trade_days = await get_trade_days_in_range(start_str, end_str)
+
+    # 当月交易日
+    month_trade_days = [d for d in trade_days if month_start.strftime("%Y%m%d") <= d <= month_end.strftime("%Y%m%d")]
+
+    try:
+        is_td = await is_trade_date(today_str)
+    except Exception:
+        is_td = today.weekday() < 5
+
+    # 倒计时：找下一个交易日
+    countdown = None
+    next_trade_day = None
+    try:
+        next_trade_day = await get_next_trade_date(today_str)
+        next_dt = datetime.strptime(next_trade_day, "%Y%m%d")
+        delta = (next_dt.date() - today).days
+        if delta > 0:
+            countdown = {
+                "days": delta,
+                "next_date": next_trade_day,
+                "label": f"距下次开盘还有 {delta} 天" if delta > 1 else "明天开盘",
+            }
+        elif not is_td:
+            countdown = {
+                "days": 0,
+                "next_date": next_trade_day,
+                "label": "今天休市",
+            }
+    except Exception:
+        pass
+
+    # 构建当月日历（简化为周视图）
+    weeks = []
+    current = month_start
+    while current.weekday() != 0:  # 回退到周一
+        current = current - timedelta(days=1)
+
+    cursor = current
+    for _ in range(6):  # 最多6周
+        week = []
+        for _ in range(7):
+            ds = cursor.strftime("%Y%m%d")
+            week.append({
+                "date": cursor.day,
+                "date_str": ds,
+                "is_current_month": cursor.month == today.month,
+                "is_trade_day": ds in trade_days,
+                "is_today": ds == today_str,
+                "is_weekend": cursor.weekday() >= 5,
+            })
+            cursor += timedelta(days=1)
+        weeks.append(week)
+        if cursor > month_end and cursor.weekday() == 0:
+            break
+
+    trade_date, _ = await _get_trade_context()
+
+    return APIResponse(data={
+        "month": f"{today.year}-{today.month:02d}",
+        "is_trade_day": is_td,
+        "today": today_str,
+        "trade_date": trade_date,
+        "month_trade_days": len(month_trade_days),
+        "weeks": weeks,
+        "countdown": countdown,
+    }, timestamp=int(time.time()))
+
+
+# ── 行业龙头成分股 ──
+
+@market_router.get("/industry-leaders")
+async def industry_leaders(ts_code: str = "", user: dict = Depends(require_auth_optional)):
+    """根据股票代码查询同行业市值Top5龙头股。"""
+    if not ts_code:
+        return APIResponse(data={"industry": "", "leaders": []}, timestamp=int(time.time()))
+
+    from app.core.database import async_session
+
+    code = ts_code.strip()
+    if "." not in code:
+        for suffix in [".SZ", ".SH"]:
+            c = code + suffix
+            async with async_session() as sess:
+                r = await sess.execute(
+                    text("SELECT industry FROM stocks WHERE ts_code=:c"),
+                    {"c": c},
+                )
+                row = r.first()
+                if row:
+                    code = c
+                    break
+
+    industry_name = ""
+    stock_name = code
+    async with async_session() as sess:
+        r = await sess.execute(
+            text("SELECT name, industry FROM stocks WHERE ts_code=:c"),
+            {"c": code},
+        )
+        row = r.first()
+        if not row:
+            return APIResponse(data={"industry": "", "leaders": [], "stock_code": code}, timestamp=int(time.time()))
+        stock_name, industry_name = row[0], row[1]
+
+    if not industry_name:
+        return APIResponse(data={"industry": "", "leaders": [], "stock_code": code}, timestamp=int(time.time()))
+
+    cache_key = f"industry:leaders:{industry_name}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return APIResponse(data=cached, timestamp=int(time.time()))
+
+    # 获取同行业所有股票代码
+    async with async_session() as sess:
+        r = await sess.execute(
+            text("SELECT ts_code FROM stocks WHERE industry=:ind"),
+            {"ind": industry_name},
+        )
+        industry_codes = [row2[0] for row2 in r]
+
+    if not industry_codes:
+        return APIResponse(data={"industry": industry_name, "leaders": [], "stock_code": code}, timestamp=int(time.time()))
+
+    trade_date, _ = await _get_trade_context()
+
+    # 从 tushare daily_basic 获取总市值数据（按日尝试，取最近有数据的）
+    leaders_raw = []
+    from app.services.tushare_client import get_daily_basic
+    for offset in range(7):
+        td = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
+        try:
+            basics = await get_daily_basic(td)
+            if basics:
+                code_set = set(industry_codes)
+                for b in basics:
+                    tc = b.get("ts_code", "")
+                    if tc in code_set:
+                        leaders_raw.append({
+                            "ts_code": tc,
+                            "total_mv": float(b.get("total_mv", 0) or 0),
+                            "circ_mv": float(b.get("circ_mv", 0) or 0),
+                            "pe": float(b.get("pe", 0) or 0),
+                            "pb": float(b.get("pb", 0) or 0),
+                        })
+                if leaders_raw:
+                    break
+        except Exception:
+            continue
+
+    # 按总市值降序，取Top5
+    leaders_raw.sort(key=lambda x: x["total_mv"], reverse=True)
+    top5 = leaders_raw[:5]
+
+    # 补充名称和最新价
+    leaders = []
+    for item in top5:
+        async with async_session() as sess:
+            r = await sess.execute(
+                text("SELECT name FROM stocks WHERE ts_code=:c"),
+                {"c": item["ts_code"]},
+            )
+            name_row = r.first()
+            name = name_row[0] if name_row else item["ts_code"]
+            r2 = await sess.execute(
+                text("SELECT close, pct_chg FROM stock_daily WHERE ts_code=:c AND trade_date=:td ORDER BY trade_date DESC LIMIT 1"),
+                {"c": item["ts_code"], "td": trade_date},
+            )
+            dr = r2.first()
+            close = round(float(dr[0]), 2) if dr and dr[0] else 0
+            pct_chg = round(float(dr[1]), 2) if dr and dr[1] else 0
+
+        leaders.append({
+            "ts_code": item["ts_code"],
+            "name": name,
+            "close": close,
+            "pct_chg": pct_chg,
+            "total_mv": round(item["total_mv"] / 1e4, 2),
+            "circ_mv": round(item["circ_mv"] / 1e4, 2),
+            "pe": round(item["pe"], 2),
+            "pb": round(item["pb"], 2),
+        })
+
+    data = {
+        "industry": industry_name,
+        "stock_name": stock_name,
+        "stock_code": code,
+        "leaders": leaders,
+        "trade_date": trade_date,
+    }
+    ttl = 300 if _is_trading_time() else 86400
+    await cache_set(cache_key, data, ttl=ttl)
+    return APIResponse(data=data, timestamp=int(time.time()))

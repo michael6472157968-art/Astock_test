@@ -265,12 +265,14 @@ function renderDiagnosis(r, code) {
     '</div>' +
     '<div id="klineChart" style="width:100%;height:500px;"></div></div></div>';
   html += '<div class="card" style="margin-top:16px"><div class="card-header">资金流向 · 近30日</div><div class="card-body"><div id="mfSummary" style="margin-bottom:14px;"></div><div id="mfChart" style="width:100%;height:360px;"></div></div></div>';
+  html += '<div class="card" style="margin-top:16px"><div class="card-header">行业龙头对比 <span style="font-size:0.75rem;color:var(--color-text-muted);font-weight:400;">同行业市值Top5</span></div><div class="card-body"><div id="industryLeaders" style="min-height:60px;"><span style="color:var(--color-text-muted);font-size:0.82rem;">加载中...</span></div></div></div>';
   result.innerHTML = html;
 
   renderAiCard(code, stockName);
 
   setTimeout(function() { renderKlineChart(r.data); }, 100);
   setTimeout(function() { loadMoneyflow(code); }, 150);
+  loadIndustryLeaders(code);
 }
 
 function renderAiCard(code, stockName) {
@@ -690,6 +692,53 @@ function fmtAmount(v) {
   if (Math.abs(v) >= 1e8) return (v / 1e8).toFixed(2) + ' 亿';
   if (Math.abs(v) >= 1e4) return (v / 1e4).toFixed(0) + ' 万';
   return v.toFixed(0);
+}
+
+function loadIndustryLeaders(code) {
+  var el = document.getElementById('industryLeaders');
+  if (!el) return;
+  API.get('/market/industry-leaders?ts_code=' + encodeURIComponent(code)).then(function(r) {
+    var d = r.data;
+    if (!d.industry || !d.leaders || !d.leaders.length) {
+      el.innerHTML = '<span style="color:var(--color-text-muted);font-size:0.82rem;">暂无行业对比数据</span>';
+      return;
+    }
+    var html = '<div style="font-size:0.8rem;color:var(--color-text-muted);margin-bottom:8px;">' +
+      d.stock_name + ' 所属 <strong style="color:var(--color-primary);">' + d.industry +
+      '</strong> 行业，数据截止 ' + (d.trade_date || '--') + '</div>';
+    html += '<table style="width:100%;font-size:0.82rem;border-collapse:collapse;">';
+    html += '<thead><tr style="color:var(--color-text-muted);border-bottom:1px solid var(--color-border);">' +
+      '<th style="text-align:left;padding:6px 4px;">#</th>' +
+      '<th style="text-align:left;padding:6px 4px;">股票</th>' +
+      '<th style="text-align:right;padding:6px 4px;">最新价</th>' +
+      '<th style="text-align:right;padding:6px 4px;">涨跌</th>' +
+      '<th style="text-align:right;padding:6px 4px;">总市值(亿)</th>' +
+      '<th style="text-align:right;padding:6px 4px;">PE</th>' +
+      '<th style="text-align:right;padding:6px 4px;">PB</th>' +
+      '</tr></thead><tbody>';
+    d.leaders.forEach(function(s, i) {
+      var isCurrent = (s.ts_code === d.stock_code);
+      var rowStyle = isCurrent ? 'background:var(--color-bg-secondary);font-weight:700;' : '';
+      var pctCls = s.pct_chg >= 0 ? 'var(--color-up)' : 'var(--color-down)';
+      html += '<tr style="' + rowStyle + 'border-bottom:1px solid var(--color-border);">' +
+        '<td style="padding:6px 4px;color:var(--color-text-muted);">' + (i + 1) + '</td>' +
+        '<td style="padding:6px 4px;">' +
+          '<a href="diagnosis.html?code=' + encodeURIComponent(s.ts_code) + '" style="color:var(--color-text);text-decoration:none;">' +
+          s.name + '</a>' +
+          (isCurrent ? ' <span style="font-size:0.65rem;color:var(--color-primary);">←当前</span>' : '') +
+        '</td>' +
+        '<td style="text-align:right;padding:6px 4px;">' + (s.close || '--') + '</td>' +
+        '<td style="text-align:right;padding:6px 4px;color:' + pctCls + ';">' + (s.pct_chg !== undefined ? (s.pct_chg >= 0 ? '+' : '') + s.pct_chg + '%' : '--') + '</td>' +
+        '<td style="text-align:right;padding:6px 4px;">' + (s.total_mv ? s.total_mv.toFixed(1) : '--') + '</td>' +
+        '<td style="text-align:right;padding:6px 4px;">' + (s.pe ? s.pe.toFixed(1) : '--') + '</td>' +
+        '<td style="text-align:right;padding:6px 4px;">' + (s.pb ? s.pb.toFixed(2) : '--') + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }).catch(function() {
+    el.innerHTML = '<span style="color:var(--color-text-muted);font-size:0.82rem;">行业数据暂不可用</span>';
+  });
 }
 
 function addFavorite(code, name) {

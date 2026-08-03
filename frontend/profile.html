@@ -198,6 +198,7 @@
       area.innerHTML = '<p class="state-error">加载失败</p>';
     });
   }
+  window.loadLedger = loadLedger;
 
   function escHtml2(v) {
     if (!v) return '';
@@ -277,6 +278,7 @@
       if (e.message && e.message.indexOf('今日已签到') >= 0) loadCheckin();
     });
   }
+  window.doCheckin = doCheckin;
 })();
 
 // 激活码兑换
