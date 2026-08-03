@@ -44,6 +44,20 @@
 }
 .progress-bar-fill.error { background:linear-gradient(90deg,var(--color-danger),#f87171); }
 .progress-error-text { color:var(--color-danger); font-size:0.85rem; margin-top:8px; display:none; }
+
+/* 指标标签栏 */
+.ind-tag-bar { display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;align-items:center; }
+.ind-tag-bar .ind-label { font-size:0.7rem;color:var(--color-text-muted);margin-right:4px;user-select:none; }
+.ind-tag {
+  display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;
+  font-size:0.7rem;cursor:pointer;user-select:none;transition: all 0.15s ease;
+  border:1px solid var(--color-border);color:var(--color-text-muted);background:transparent;
+}
+.ind-tag:hover { border-color:var(--color-primary);color:var(--color-primary); }
+.ind-tag.active { background:var(--color-primary);color:#fff;border-color:var(--color-primary); }
+.ind-tag .ind-dot { width:6px;height:6px;border-radius:50%;flex-shrink:0; }
+.ind-tag.active .ind-dot { opacity:0.5; }
+.ind-tags-sep { width:1px;height:14px;background:var(--color-border);margin:0 6px; }
 </style>
 </head>
 <body>
@@ -234,7 +248,22 @@ function renderDiagnosis(r, code) {
     html += '</div></div></div>';
   }
 
-  html += '<div class="card" style="margin-top:16px"><div class="card-header">K线图（日线 / 近60日）+ 技术指标</div><div class="card-body"><div id="klineChart" style="width:100%;height:720px;"></div></div></div>';
+  html += '<div class="card" style="margin-top:16px"><div class="card-header">K线图（日线 / 近60日）<span style="font-size:0.75rem;color:var(--color-text-muted);font-weight:400;margin-left:8px;">点击标签叠加指标</span></div>' +
+    '<div class="card-body">' +
+    '<div class="ind-tag-bar" id="indTags">' +
+      '<span class="ind-label">主图叠加:</span>' +
+      buildIndTag('MA5',  '#ff9600', true) +
+      buildIndTag('MA10', '#4878ff', true) +
+      buildIndTag('MA20', '#cc33ff', true) +
+      '<span class="ind-tags-sep"></span>' +
+      buildIndTag('BOLL', '#9e9e9e', true) +
+      '<span class="ind-tags-sep"></span><span class="ind-label">副图:</span>' +
+      buildIndTag('VOL',  '#ef232a', true) +
+      buildIndTag('MACD', '#ff9600', true) +
+      buildIndTag('KDJ',  '#ff9600', true) +
+      buildIndTag('RSI',  '#e040fb', true) +
+    '</div>' +
+    '<div id="klineChart" style="width:100%;height:500px;"></div></div></div>';
   html += '<div class="card" style="margin-top:16px"><div class="card-header">资金流向 · 近30日</div><div class="card-body"><div id="mfSummary" style="margin-bottom:14px;"></div><div id="mfChart" style="width:100%;height:360px;"></div></div></div>';
   result.innerHTML = html;
 
@@ -340,106 +369,203 @@ function signalTag(group, text) {
     '</span><span class="signal-tooltip">' + desc + '</span></span>';
 }
 
+// 指标颜色
+var IND_COLORS = {
+  MA5:'#ff9600', MA10:'#4878ff', MA20:'#cc33ff',
+  BOLL:'#9e9e9e', MACD_DIF:'#ff9600', MACD_DEA:'#4878ff',
+  KDJ_K:'#ff9600', KDJ_D:'#4878ff', KDJ_J:'#cc33ff',
+  RSI:'#e040fb', VOL_UP:'#ef232a', VOL_DN:'#14b143'
+};
+
+// 可独立开关的指标（默认全部激活）
+var _activeInds = { MA5:true, MA10:true, MA20:true, BOLL:true, VOL:true, MACD:true, KDJ:true, RSI:true };
+
+function buildIndTag(name, color, active) {
+  var cls = 'ind-tag' + (active ? ' active' : '');
+  return '<span class="' + cls + '" data-ind="' + name + '" onclick="toggleInd(\'' + name + '\')">' +
+    '<span class="ind-dot" style="background:' + color + '"></span>' + name + '</span>';
+}
+
+function toggleInd(name) {
+  _activeInds[name] = !_activeInds[name];
+  var tags = document.querySelectorAll('#indTags .ind-tag');
+  tags.forEach(function(t) {
+    if (t.getAttribute('data-ind') === name) {
+      _activeInds[name] ? t.classList.add('active') : t.classList.remove('active');
+    }
+  });
+  var data = window._lastDiagData;
+  if (data) renderKlineChart(data);
+}
+
 function renderKlineChart(data) {
   var el = document.getElementById('klineChart');
   if (!el) return;
+  window._lastDiagData = data;
   var kline = data && data.kline;
   if (!kline || !kline.rows || !kline.rows.length) { el.innerHTML = '<p class="state-empty">K线数据暂不可用</p>'; return; }
   var ind = data && data.indicators;
   var rows = kline.rows;
-  var dates = [];
-  var ohlc = [], vols = [];
-  var macdDif = [], macdDea = [], macdBar = [];
-  var kdjK = [], kdjD = [], kdjJ = [];
-  var rsiArr = [];
-  var ma5 = [], ma10 = [], ma20 = [], ma60 = [];
+  var n = rows.length;
+  var dates = [], ohlc = [], vols = [];
+  var ma5 = [], ma10 = [], ma20 = [];
   var bollUp = [], bollMid = [], bollLow = [];
-  for (var i = 0; i < rows.length; i++) {
+  var macdDif = [], macdDea = [], macdBar = [];
+  var kdjKArr = [], kdjDArr = [], kdjJArr = [];
+  var rsiArr = [];
+
+  for (var i = 0; i < n; i++) {
     var r = rows[i];
     dates.push(String(r[0]));
     ohlc.push([r[1], r[2], r[3], r[4]]);
     vols.push(r[5]);
     if (ind && ind.series) {
       var s = ind.series[i];
-      ma5.push(s.ma5); ma10.push(s.ma10); ma20.push(s.ma20); ma60.push(s.ma60);
+      ma5.push(s.ma5); ma10.push(s.ma10); ma20.push(s.ma20);
       bollUp.push(s.boll_upper); bollMid.push(s.boll_mid); bollLow.push(s.boll_lower);
       macdDif.push(s.macd_dif); macdDea.push(s.macd_dea);
       macdBar.push(s.macd_bar != null ? s.macd_bar : null);
-      kdjK.push(s.kdj_k); kdjD.push(s.kdj_d); kdjJ.push(s.kdj_j);
+      kdjKArr.push(s.kdj_k); kdjDArr.push(s.kdj_d); kdjJArr.push(s.kdj_j);
       rsiArr.push(s.rsi);
     } else {
       ma5.push(calcMA(ohlc, i, 5)); ma10.push(calcMA(ohlc, i, 10));
-      ma20.push(calcMA(ohlc, i, 20)); ma60.push(null);
+      ma20.push(calcMA(ohlc, i, 20));
       bollUp.push(null); bollMid.push(null); bollLow.push(null);
       macdDif.push(null); macdDea.push(null); macdBar.push(null);
-      kdjK.push(null); kdjD.push(null); kdjJ.push(null);
+      kdjKArr.push(null); kdjDArr.push(null); kdjJArr.push(null);
       rsiArr.push(null);
     }
   }
+
+  // 计算面板数：K线主图 + 副图(按顺序)
+  var subNames = [];
+  if (_activeInds.VOL)  subNames.push('VOL');
+  if (_activeInds.MACD) subNames.push('MACD');
+  if (_activeInds.KDJ)  subNames.push('KDJ');
+  if (_activeInds.RSI)  subNames.push('RSI');
+  var panelCnt = 1 + subNames.length; // K线 + 各副图
+
+  // 布局：K线 50% + 剩余平分给副图
+  var klinePct = subNames.length === 0 ? 92 : 50;
+  var subRemain = 100 - klinePct;
+  var subEach = subNames.length > 0 ? Math.floor(subRemain / subNames.length) : 0;
+
+  function mkGrid(top, h) { return { left:'8%',right:'8%',top:top+'%',height:h+'%' }; }
+  function mkX(sl, gi) {
+    return { type:'category',data:dates,gridIndex:gi,axisLabel:sl?{fontSize:9,color:'#8392A5'}:{show:false},axisLine:{lineStyle:{color:'#8392A5'}},axisTick:{show:false} };
+  }
+  function mkY(gi, opts) {
+    opts = opts || {};
+    return Object.assign({ type:'value',gridIndex:gi,scale:opts.scale!==false,splitLine:{lineStyle:{color:'#8392A520'}},axisLabel:{color:'#8392A5',fontSize:10,formatter:opts.fmt} }, opts.extra||{});
+  }
+
+  // Grid 0: K线主图
+  var grids = [mkGrid(0, klinePct)];
+  var xAxes = [mkX(false, 0)];
+  var yAxes = [mkY(0, {scale:true})];
+  var series = [];
+  var subIdx = 1;
+  var upColor = '#ef232a', downColor = '#14b143';
+
+  // K线
+  series.push(
+    { name:'K线', type:'candlestick', data:ohlc, xAxisIndex:0, yAxisIndex:0,
+      itemStyle:{color:upColor,color0:downColor,borderColor:upColor,borderColor0:downColor} }
+  );
+  // MA 各线 (顶层 color 控制 tooltip 标记色)
+  if (_activeInds.MA5)  series.push({ name:'MA5',  type:'line',data:ma5, xAxisIndex:0,yAxisIndex:0,symbol:'none',color:IND_COLORS.MA5, lineStyle:{width:1,color:IND_COLORS.MA5} });
+  if (_activeInds.MA10) series.push({ name:'MA10', type:'line',data:ma10,xAxisIndex:0,yAxisIndex:0,symbol:'none',color:IND_COLORS.MA10,lineStyle:{width:1,color:IND_COLORS.MA10} });
+  if (_activeInds.MA20) series.push({ name:'MA20', type:'line',data:ma20,xAxisIndex:0,yAxisIndex:0,symbol:'none',color:IND_COLORS.MA20,lineStyle:{width:1,color:IND_COLORS.MA20} });
+  // BOLL
+  if (_activeInds.BOLL) {
+    series.push({ name:'BOLL上', type:'line',data:bollUp, xAxisIndex:0,yAxisIndex:0,symbol:'none',color:IND_COLORS.BOLL, lineStyle:{width:1,color:IND_COLORS.BOLL} });
+    series.push({ name:'BOLL中', type:'line',data:bollMid,xAxisIndex:0,yAxisIndex:0,symbol:'none',color:IND_COLORS.BOLL, lineStyle:{width:1,color:IND_COLORS.BOLL,type:'dashed'} });
+    series.push({ name:'BOLL下', type:'line',data:bollLow,xAxisIndex:0,yAxisIndex:0,symbol:'none',color:IND_COLORS.BOLL, lineStyle:{width:1,color:IND_COLORS.BOLL},areaStyle:{color:'rgba(158,158,158,0.05)'} });
+  }
+
+  // 动态副图
+  var curTop = klinePct;
+  var dzIndices = [0];
+
+  function addSub(name, title, yOpts) {
+    grids.push(mkGrid(curTop, subEach));
+    xAxes.push(mkX(subIdx === panelCnt-1, subIdx));
+    yAxes.push(mkY(subIdx, yOpts || {}));
+    dzIndices.push(subIdx);
+    curTop += subEach;
+    subIdx++;
+    return subIdx - 1;
+  }
+
+  if (_activeInds.VOL) {
+    var vxi = addSub('VOL', '成交量', {scale:false, fmt:function(v){return v>=1e4?(v/1e4).toFixed(0)+'万':v;}, extra:{splitLine:{show:false}}});
+    series.push({ name:'成交量', type:'bar',data:vols, xAxisIndex:vxi,yAxisIndex:vxi,
+      itemStyle:{color:function(p){var d=ohlc[p.dataIndex];return d&&d[1]>d[0]?IND_COLORS.VOL_UP:IND_COLORS.VOL_DN;}} });
+  }
+
+  if (_activeInds.MACD) {
+    var mxi = addSub('MACD', 'MACD', {scale:true});
+    series.push({ name:'DIF', type:'line',data:macdDif, xAxisIndex:mxi,yAxisIndex:mxi,symbol:'none',color:IND_COLORS.MACD_DIF, lineStyle:{width:1,color:IND_COLORS.MACD_DIF} });
+    series.push({ name:'DEA', type:'line',data:macdDea, xAxisIndex:mxi,yAxisIndex:mxi,symbol:'none',color:IND_COLORS.MACD_DEA, lineStyle:{width:1,color:IND_COLORS.MACD_DEA} });
+    series.push({ name:'BAR', type:'bar', data:macdBar, xAxisIndex:mxi,yAxisIndex:mxi, color:IND_COLORS.MACD_DIF,
+      itemStyle:{color:function(p){return p.value>=0?upColor:downColor;}} });
+  }
+
+  if (_activeInds.KDJ) {
+    var kxi = addSub('KDJ', 'KDJ(9,3,3)', {scale:true, extra:{min:0,max:100}});
+    series.push({ name:'K', type:'line',data:kdjKArr, xAxisIndex:kxi,yAxisIndex:kxi,symbol:'none',color:IND_COLORS.KDJ_K, lineStyle:{width:1,color:IND_COLORS.KDJ_K} });
+    series.push({ name:'D', type:'line',data:kdjDArr, xAxisIndex:kxi,yAxisIndex:kxi,symbol:'none',color:IND_COLORS.KDJ_D, lineStyle:{width:1,color:IND_COLORS.KDJ_D} });
+    series.push({ name:'J', type:'line',data:kdjJArr, xAxisIndex:kxi,yAxisIndex:kxi,symbol:'none',color:IND_COLORS.KDJ_J, lineStyle:{width:1,color:IND_COLORS.KDJ_J} });
+  }
+
+  if (_activeInds.RSI) {
+    var rxi = addSub('RSI', 'RSI(14)', {scale:true, extra:{min:0,max:100}});
+    series.push({ name:'RSI(14)', type:'line',data:rsiArr, xAxisIndex:rxi,yAxisIndex:rxi,symbol:'none',color:IND_COLORS.RSI,
+      lineStyle:{width:1.5,color:IND_COLORS.RSI},
+      markLine:{silent:true,symbol:'none',lineStyle:{color:'#8392A550',type:'dashed'},
+        data:[{yAxis:70,label:{formatter:'70',fontSize:9,color:'#8392A5'}},{yAxis:30,label:{formatter:'30',fontSize:9,color:'#8392A5'}}]} });
+  }
+
+  // 图表高度自适应
+  var chartH = 280 + subNames.length * 130;
+  el.style.height = chartH + 'px';
+  // HTML 副图名称标签（绝对定位在副图左上角，不被数据线遮盖）
+  var labelHtml = '';
+  for (var si = 0; si < subNames.length; si++) {
+    var lblTop = klinePct + si * subEach;
+    var lblTitle = subNames[si];
+    if (lblTitle === 'VOL') lblTitle = '成交量';
+    else if (lblTitle === 'MACD') lblTitle = 'MACD';
+    else if (lblTitle === 'KDJ') lblTitle = 'KDJ(9,3,3)';
+    else if (lblTitle === 'RSI') lblTitle = 'RSI(14)';
+    labelHtml += '<span style="position:absolute;left:16px;top:' + Math.round(lblTop) + '%;font-size:10px;font-weight:bold;color:#8392A5;pointer-events:none;z-index:10;line-height:1;">' + lblTitle + '</span>';
+  }
+  el.style.position = 'relative';
+
   if (window._chartInstance) { window._chartInstance.dispose(); }
   if (window._chartResizeHandler) { window.removeEventListener('resize', window._chartResizeHandler); }
   var chart = echarts.init(el);
   window._chartInstance = chart;
-  var _resizeHandler = function() { chart.resize(); };
-  window._chartResizeHandler = _resizeHandler;
-  window.addEventListener('resize', _resizeHandler);
-  var upColor = '#ef232a', downColor = '#14b143';
+  var rh = function() { chart.resize(); };
+  window._chartResizeHandler = rh;
+  window.addEventListener('resize', rh);
+
   chart.setOption({
-    toolbox: { feature: { dataZoom: { yAxisIndex: false }, restore: {} }, right: 10 },
-    dataZoom: [
-      { type: 'slider', xAxisIndex: [0,1,2,3,4], start: 50, end: 100, height: 20, bottom: 0 },
-      { type: 'inside', xAxisIndex: [0,1,2,3,4], start: 50, end: 100, zoomOnMouseWheel: true, moveOnMouseWheel: true, moveOnMouseMove: true }
+    toolbox:{feature:{dataZoom:{yAxisIndex:false},restore:{}},right:10},
+    dataZoom:[
+      {type:'slider',xAxisIndex:dzIndices,start:0,end:100,height:20,bottom:0},
+      {type:'inside',xAxisIndex:dzIndices,start:0,end:100,zoomOnMouseWheel:true,moveOnMouseWheel:true,moveOnMouseMove:true}
     ],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    axisPointer: { link: [{ xAxisIndex: 'all' }] },
-    grid: [
-      { left: '8%', right: '1%', top: '4%', height: '38%' },
-      { left: '8%', right: '1%', top: '45%', height: '8%' },
-      { left: '8%', right: '1%', top: '56%', height: '10%' },
-      { left: '8%', right: '1%', top: '69%', height: '10%' },
-      { left: '8%', right: '1%', top: '82%', height: '12%' }
-    ],
-    xAxis: [
-      { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#8392A5' } }, axisTick: { show: false } },
-      { type: 'category', data: dates, gridIndex: 1, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#8392A5' } }, axisTick: { show: false } },
-      { type: 'category', data: dates, gridIndex: 2, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#8392A5' } }, axisTick: { show: false } },
-      { type: 'category', data: dates, gridIndex: 3, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#8392A5' } }, axisTick: { show: false } },
-      { type: 'category', data: dates, gridIndex: 4, axisLabel: { fontSize: 9, color: '#8392A5' }, axisLine: { lineStyle: { color: '#8392A5' } } }
-    ],
-    yAxis: [
-      { type: 'value', gridIndex: 0, scale: true, splitLine: { lineStyle: { color: '#8392A520' } }, axisLabel: { color: '#8392A5', fontSize: 10 } },
-      { type: 'value', gridIndex: 1, axisLabel: { color: '#8392A5', fontSize: 9, formatter: function(v){ return v>=1e4?(v/1e4).toFixed(0)+'万':v; } }, splitLine: { show: false } },
-      { type: 'value', gridIndex: 2, axisLabel: { color: '#8392A5', fontSize: 9 }, splitLine: { lineStyle: { color: '#8392A520' } } },
-      { type: 'value', gridIndex: 3, axisLabel: { color: '#8392A5', fontSize: 9 }, splitLine: { lineStyle: { color: '#8392A520' } }, min: 0, max: 100 },
-      { type: 'value', gridIndex: 4, axisLabel: { color: '#8392A5', fontSize: 9 }, splitLine: { lineStyle: { color: '#8392A520' } }, min: 0, max: 100 }
-    ],
-    series: [
-      { name: 'K线', type: 'candlestick', data: ohlc, xAxisIndex: 0, yAxisIndex: 0,
-        itemStyle: { color: upColor, color0: downColor, borderColor: upColor, borderColor0: downColor } },
-      { name: 'MA5',  type: 'line', data: ma5,  xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#ff9600' }, symbol: 'none' },
-      { name: 'MA10', type: 'line', data: ma10, xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#4878ff' }, symbol: 'none' },
-      { name: 'MA20', type: 'line', data: ma20, xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#cc33ff' }, symbol: 'none' },
-      { name: 'MA60', type: 'line', data: ma60, xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#00bcd4', type: 'dashed' }, symbol: 'none' },
-      { name: 'BOLL上', type: 'line', data: bollUp,  xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#9e9e9e' }, symbol: 'none' },
-      { name: 'BOLL中', type: 'line', data: bollMid, xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#9e9e9e', type: 'dashed' }, symbol: 'none' },
-      { name: 'BOLL下', type: 'line', data: bollLow, xAxisIndex: 0, yAxisIndex: 0, smooth: false, lineStyle: { width: 1, color: '#9e9e9e' }, symbol: 'none',
-        areaStyle: { color: 'rgba(158,158,158,0.05)' } },
-      { name: '成交量', type: 'bar', data: vols, xAxisIndex: 1, yAxisIndex: 1,
-        itemStyle: { color: function(p) { var d = ohlc[p.dataIndex]; return d && d[1] > d[0] ? upColor : downColor; } } },
-      { name: 'DIF', type: 'line', data: macdDif, xAxisIndex: 2, yAxisIndex: 2, smooth: false, lineStyle: { width: 1, color: '#ff9600' }, symbol: 'none' },
-      { name: 'DEA', type: 'line', data: macdDea, xAxisIndex: 2, yAxisIndex: 2, smooth: false, lineStyle: { width: 1, color: '#4878ff' }, symbol: 'none' },
-      { name: 'BAR', type: 'bar',  data: macdBar, xAxisIndex: 2, yAxisIndex: 2,
-        itemStyle: { color: function(p) { return p.value >= 0 ? upColor : downColor; } } },
-      { name: 'K', type: 'line', data: kdjK, xAxisIndex: 3, yAxisIndex: 3, smooth: false, lineStyle: { width: 1, color: '#ff9600' }, symbol: 'none' },
-      { name: 'D', type: 'line', data: kdjD, xAxisIndex: 3, yAxisIndex: 3, smooth: false, lineStyle: { width: 1, color: '#4878ff' }, symbol: 'none' },
-      { name: 'J', type: 'line', data: kdjJ, xAxisIndex: 3, yAxisIndex: 3, smooth: false, lineStyle: { width: 1, color: '#cc33ff' }, symbol: 'none' },
-      { name: 'RSI(14)', type: 'line', data: rsiArr, xAxisIndex: 4, yAxisIndex: 4, smooth: false,
-        lineStyle: { width: 1.5, color: '#e040fb' }, symbol: 'none',
-        markLine: { silent: true, symbol: 'none', lineStyle: { color: '#8392A550', type: 'dashed' },
-          data: [{ yAxis: 70, label: { formatter: '70', fontSize: 9, color: '#8392A5' } },
-                 { yAxis: 30, label: { formatter: '30', fontSize: 9, color: '#8392A5' } }] } }
-    ]
+    tooltip:{trigger:'axis',axisPointer:{type:'cross'}},
+    axisPointer:{link:[{xAxisIndex:'all'}]},
+    grid:grids, xAxis:xAxes, yAxis:yAxes, series:series
   });
+  // 注入 HTML 标签
+  var oldLabels = el.querySelectorAll('.kline-sub-title');
+  oldLabels.forEach(function(l) { l.remove(); });
+  var frag = document.createElement('span');
+  frag.innerHTML = labelHtml;
+  el.appendChild(frag);
 }
 
 function calcMA(data, i, n) {

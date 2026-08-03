@@ -330,7 +330,6 @@ def _build_indicator_series(closes, highs, lows) -> dict:
     ma5 = _sma(closes, 5)
     ma10 = _sma(closes, 10)
     ma20 = _sma(closes, 20)
-    ma60 = _sma(closes, 60) if n >= 60 else [None] * n
     boll = _bollinger(closes)
     macd = _macd(closes)
     kdj = _kdj(highs, lows, closes)
@@ -349,7 +348,6 @@ def _build_indicator_series(closes, highs, lows) -> dict:
             "ma5": _r(ma5[i], i),
             "ma10": _r(ma10[i], i),
             "ma20": _r(ma20[i], i),
-            "ma60": _r(ma60[i], i),
             "boll_upper": _r(boll["upper"][i], i),
             "boll_mid": _r(boll["mid"][i], i),
             "boll_lower": _r(boll["lower"][i], i),
@@ -549,7 +547,7 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
     try:
         pro = get_pro()
         end = date.today().strftime("%Y%m%d")
-        start = (date.today() - timedelta(days=60)).strftime("%Y%m%d")
+        start = (date.today() - timedelta(days=120)).strftime("%Y%m%d")
 
         for suffix in [".SZ", ".SH", ""]:
             code = stock_code if suffix == "" else (stock_code if "." in stock_code else stock_code + suffix)
