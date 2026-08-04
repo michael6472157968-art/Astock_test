@@ -599,9 +599,8 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
             "financial": None,  # _enhance_financials() 单独填充
         }
     except Exception as e:
-        import logging
-        logging.getLogger("diagnosis").exception(f"_compute_diagnosis({stock_code}) failed: {e}")
-        return None
+        import traceback
+        raise HTTPException(status_code=500, detail=f"诊股失败: {type(e).__name__}: {e}\n{traceback.format_exc()}")
 
 
 async def _fetch_financial_snapshot(stock_code: str) -> dict | None:
