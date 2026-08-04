@@ -9,8 +9,9 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.database import init_db
@@ -93,6 +94,26 @@ def create_app() -> FastAPI:
 
     app.add_exception_handler(AppError, app_error_handler)
     app.add_exception_handler(Exception, http_exception_handler)
+
+    from fastapi.exceptions import HTTPException as FastAPIHTTPException
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    async def _http_exception_handler(request: Request, exc: Exception):
+        status_code = exc.status_code if hasattr(exc, 'status_code') else 500
+        detail = exc.detail if hasattr(exc, 'detail') else str(exc)
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "code": status_code,
+                "message": detail,
+                "data": None,
+                "timestamp": int(time.time()),
+                "ext_info": {},
+            },
+        )
+
+    app.add_exception_handler(FastAPIHTTPException, _http_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
 
     # API 路由注册
     from app.api.auth import router as auth_router

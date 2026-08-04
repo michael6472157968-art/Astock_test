@@ -19,6 +19,7 @@
 <script>
 API.get('/sector-rotation/ranking').then(function(r) {
   var sectors = r.data.sectors || [];
+  var tradeDate = r.data.date || '';
   if (!sectors.length) {
     document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无板块数据，请先在<a href="admin-trigger.html">管理后台</a>执行数据同步和板块分析。</p></div></div>';
     return;

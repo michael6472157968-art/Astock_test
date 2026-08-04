@@ -454,6 +454,7 @@ async def sector_heat(limit: int = 0, user: dict = Depends(require_auth_optional
         "date": trade_date,
         "trade_date": trade_date,
         "is_trade_day": is_td,
+        "source": "db_industry",
     }
     if not is_td:
         data["message"] = f"今日非交易日，显示 {trade_date[:4]}-{trade_date[4:6]}-{trade_date[6:8]} 数据"
@@ -636,6 +637,17 @@ async def latest_review(user: dict = Depends(require_auth_optional)):
         cached["is_trade_day"] = is_td
         cached["trade_date"] = trade_date
         return APIResponse(data=cached, timestamp=int(time.time()))
+
+    # 缓存清空后回退计算
+    from app.services.market_review import MarketReviewEngine
+    engine = MarketReviewEngine()
+    review_data = await engine.compute(trade_date)
+    if review_data and review_data.get("content", {}).get("total"):
+        await cache_set(f"review:{trade_date}", review_data, ttl=86400 * 60)
+        review_data["is_trade_day"] = is_td
+        review_data["trade_date"] = trade_date
+        return APIResponse(data=review_data, timestamp=int(time.time()))
+
     return APIResponse(data={"date": "", "content": {}, "is_trade_day": is_td, "trade_date": trade_date}, timestamp=int(time.time()),
                        ext_info={"note": "需要先运行数据同步"})
 

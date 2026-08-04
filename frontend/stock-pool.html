@@ -61,6 +61,7 @@ var pools = [
 ];
 var activePool = 'hot_leader';
 var allItems = [];
+var currentTradeDate = '';
 
 function checked(id) { return document.getElementById(id).checked; }
 
@@ -137,6 +138,10 @@ function loadPool(type) {
   content.innerHTML = '<p class="state-loading">加载中...</p>';
   API.get('/stock-pool/' + type + getExcludeParams()).then(function(r) {
     allItems = r.data.items || [];
+    currentTradeDate = r.data.trade_date || '';
+    if (currentTradeDate && currentTradeDate.length === 8) {
+      document.getElementById('statDate').textContent = currentTradeDate.substring(0,4) + '-' + currentTradeDate.substring(4,6) + '-' + currentTradeDate.substring(6,8);
+    }
     if (!allItems.length) {
       content.innerHTML = '<p class="state-empty">暂无数据 — 请先在<a href="admin-trigger.html">管理后台</a>执行数据同步和选股池计算。</p>';
       return;
@@ -156,9 +161,9 @@ function renderTable(items) {
     return;
   }
   document.getElementById('statCount').textContent = items.length + ' 条';
-  var dt = items[0].calc_date || items[0].trade_date || '';
-  if (dt && dt.length === 8) dt = dt.substring(0,4) + '-' + dt.substring(4,6) + '-' + dt.substring(6,8);
-  document.getElementById('statDate').textContent = dt || '--';
+  if (currentTradeDate && currentTradeDate.length === 8) {
+    document.getElementById('statDate').textContent = currentTradeDate.substring(0,4) + '-' + currentTradeDate.substring(4,6) + '-' + currentTradeDate.substring(6,8);
+  }
   var html = '<table class="data-table"><thead><tr><th>排名</th><th>代码</th><th>名称</th><th>收盘价</th><th>涨跌幅</th><th>入选理由</th></tr></thead><tbody>';
   items.forEach(function(s, i) {
     var color = s.change_pct > 0 ? 'color:var(--color-danger)' : 'color:var(--color-success)';
