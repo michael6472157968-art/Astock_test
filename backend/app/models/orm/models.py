@@ -182,6 +182,47 @@ class RiskListResult(Base):
     created_at = Column(DateTime, default=_now)
 
 
+class LimitListRecord(Base):
+    __tablename__ = "limit_list_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trade_date = Column(String(8), nullable=False, index=True)
+    ts_code = Column(String(20), nullable=False)
+    name = Column(String(50), default="")
+    close = Column(Float, default=0)
+    pct_chg = Column(Float, default=0)
+    limit = Column(String(4), default="")  # U/D
+    limit_times = Column(Integer, default=0)
+    open_times = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_now)
+
+    __table_args__ = (
+        Index("ix_limit_list_td_code", "trade_date", "ts_code", unique=True),
+    )
+
+
+class MarginRecord(Base):
+    __tablename__ = "margin_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trade_date = Column(String(8), nullable=False, index=True)
+    ts_code = Column(String(20), nullable=False)
+    name = Column(String(50), default="")
+    rzye = Column(Float, nullable=True)   # 融资余额(元)
+    rqye = Column(Float, nullable=True)   # 融券余额(元)
+    rzmre = Column(Float, nullable=True)  # 融资买入额
+    rqyl = Column(Float, nullable=True)   # 融券余量
+    rzche = Column(Float, nullable=True)  # 融资偿还额
+    rqchl = Column(Float, nullable=True)  # 融券偿还量
+    rqmcl = Column(Float, nullable=True)  # 融券卖出量
+    rzrqye = Column(Float, nullable=True) # 融资融券余额
+    created_at = Column(DateTime, default=_now)
+
+    __table_args__ = (
+        Index("ix_margin_td_code", "trade_date", "ts_code", unique=True),
+    )
+
+
 class BacktestResult(Base):
     __tablename__ = "backtest_results"
 

@@ -294,15 +294,27 @@ async def market_mood(user: dict = Depends(require_auth_optional)):
                 limit_up = 0
                 limit_down = 0
                 limit_r = await sess.execute(
-                    text("SELECT COUNT(*) FILTER (WHERE pct_chg >= 9.9) as up, "
-                         "COUNT(*) FILTER (WHERE pct_chg <= -9.9) as down "
-                         "FROM stock_daily WHERE trade_date = :td"),
+                    text("SELECT COUNT(*) FILTER (WHERE \"limit\" = 'U') as up, "
+                         "COUNT(*) FILTER (WHERE \"limit\" = 'D') as down "
+                         "FROM limit_list_records WHERE trade_date = :td"),
                     {"td": td},
                 )
                 lr = limit_r.first()
-                if lr:
+                if lr and (lr[0] or lr[1]):
                     limit_up = lr[0] or 0
                     limit_down = lr[1] or 0
+                else:
+                    # 降级：limit_list_records 为空时用 pct_chg 估算
+                    fb_r = await sess.execute(
+                        text("SELECT COUNT(*) FILTER (WHERE pct_chg >= 9.8), "
+                             "COUNT(*) FILTER (WHERE pct_chg <= -9.8) "
+                             "FROM stock_daily WHERE trade_date = :td"),
+                        {"td": td},
+                    )
+                    fb = fb_r.first()
+                    if fb:
+                        limit_up = fb[0] or 0
+                        limit_down = fb[1] or 0
 
                 mood_data = {
                     "up": int(row[0]), "down": int(row[1]), "flat": int(row[2]),

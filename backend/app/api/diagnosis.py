@@ -536,6 +536,10 @@ async def get_diagnosis(stock_code: str, request: Request, user: dict = Depends(
     if report is None:
         raise HTTPException(status_code=404, detail=f"股票 {stock_code} 暂无数据")
 
+    report["financial"] = await _fetch_financial_snapshot(stock_code)
+    report["holders"] = await _fetch_holder_snapshot(stock_code)
+    report["margin"] = await _fetch_margin_snapshot(stock_code)
+
     await cache_set(cache_key, report, ttl=_settings.cache_diagnosis_ttl)
     return _build_response(report, tier, cache_hit=False, cache_date=today)
 
@@ -591,9 +595,93 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
             "quant": quant,
             "kline": kline,
             "indicators": indicators,
+            "financial": None,  # _enhance_financials() 单独填充
         }
     except Exception:
         return None
+
+
+async def _fetch_financial_snapshot(stock_code: str) -> dict | None:
+    """按代码+日期缓存财务指标，当天内不重复请求Tushare。"""
+    today = date.today().isoformat()
+    cache_key = f"fina:{stock_code}:{today}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached if cached else None
+
+    from app.services.tushare_client import get_fina_indicator
+
+    code = stock_code
+    if "." not in code:
+        code = stock_code + (".SH" if stock_code.startswith(("5", "6", "9")) else ".SZ")
+
+    result = await get_fina_indicator(code)
+    await cache_set(cache_key, result or {}, ttl=86400)
+    return result
+
+
+async def _fetch_holder_snapshot(stock_code: str) -> dict | None:
+    """股东人数变化——当天内缓存不重复请求。"""
+    today = date.today().isoformat()
+    cache_key = f"holder:{stock_code}:{today}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached if cached else None
+
+    from app.services.tushare_client import get_stk_holdernumber
+
+    code = stock_code
+    if "." not in code:
+        code = stock_code + (".SH" if stock_code.startswith(("5", "6", "9")) else ".SZ")
+
+    try:
+        rows = await get_stk_holdernumber(code)
+    except Exception:
+        rows = []
+
+    if not rows:
+        await cache_set(cache_key, {}, ttl=86400)
+        return None
+
+    # 保留最近3期
+    recent = sorted(rows, key=lambda r: r.get("end_date", ""), reverse=True)[:3]
+    result = {
+        "holders": [{
+            "end_date": str(r.get("end_date", "")),
+            "holder_num": int(r.get("holder_num", 0) or 0),
+            "top_holder_ratio": round(float(r.get("top_holder_ratio", 0) or 0), 2),
+        } for r in recent],
+        "trend": "concentrated" if (
+            len(recent) >= 2 and recent[0].get("holder_num", 0) < recent[1].get("holder_num", 0)
+        ) else "dispersed",
+    }
+    await cache_set(cache_key, result, ttl=86400)
+    return result
+
+
+async def _fetch_margin_snapshot(stock_code: str) -> dict | None:
+    """从 margin_records 表读取最新融资融券数据。"""
+    from sqlalchemy import text
+
+    code = stock_code
+    if "." not in code:
+        code = stock_code + (".SH" if stock_code.startswith(("5", "6", "9")) else ".SZ")
+
+    async with async_session() as session:
+        r = await session.execute(
+            text("SELECT rzye, rqye, rzmre, rzrqye FROM margin_records "
+                 "WHERE ts_code = :ts ORDER BY trade_date DESC LIMIT 1"),
+            {"ts": code},
+        )
+        row = r.first()
+        if not row:
+            return None
+        return {
+            "rzye": round(float(row[0] or 0), 2),
+            "rqye": round(float(row[1] or 0), 2),
+            "rzmre": round(float(row[2] or 0), 2),
+            "rzrqye": round(float(row[3] or 0), 2),
+        }
 
 
 def _build_response(report: dict, tier: int, cache_hit: bool, cache_date: str = "") -> APIResponse:
@@ -603,6 +691,9 @@ def _build_response(report: dict, tier: int, cache_hit: bool, cache_date: str = 
         "quant": report["quant"],
         "kline": report.get("kline"),
         "indicators": report.get("indicators"),
+        "financial": report.get("financial"),
+        "holders": report.get("holders"),
+        "margin": report.get("margin"),
     }
 
     ext = {"cache_hit": cache_hit}

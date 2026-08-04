@@ -31,14 +31,35 @@ class MarketReviewEngine:
                     SUM(CASE WHEN pct_chg > 0 THEN 1 ELSE 0 END),
                     SUM(CASE WHEN pct_chg = 0 THEN 1 ELSE 0 END),
                     SUM(CASE WHEN pct_chg < 0 THEN 1 ELSE 0 END),
-                    SUM(CASE WHEN pct_chg >= 9.8 THEN 1 ELSE 0 END),
-                    SUM(CASE WHEN pct_chg <= -9.8 THEN 1 ELSE 0 END),
                     AVG(pct_chg),
                     MAX(pct_chg),
                     MIN(pct_chg)
                 FROM stock_daily WHERE trade_date = :td
             """), {"td": trade_date})
             row = r.fetchone()
+
+            limit_up = 0
+            limit_down = 0
+            r_lim = await session.execute(text("""
+                SELECT COUNT(*) FILTER (WHERE "limit" = 'U'),
+                       COUNT(*) FILTER (WHERE "limit" = 'D')
+                FROM limit_list_records WHERE trade_date = :td
+            """), {"td": trade_date})
+            lr = r_lim.first()
+            if lr and (lr[0] or lr[1]):
+                limit_up = int(lr[0] or 0)
+                limit_down = int(lr[1] or 0)
+            else:
+                # 降级：表空时用日线 pct_chg 估算
+                r_fb = await session.execute(text("""
+                    SELECT COUNT(*) FILTER (WHERE pct_chg >= 9.8) as up,
+                           COUNT(*) FILTER (WHERE pct_chg <= -9.8) as down
+                    FROM stock_daily WHERE trade_date = :td
+                """), {"td": trade_date})
+                fb_row = r_fb.first()
+                if fb_row:
+                    limit_up = int(fb_row[0] or 0)
+                    limit_down = int(fb_row[1] or 0)
 
             r2 = await session.execute(text("""
                 SELECT DISTINCT s.name, d.pct_chg, s.industry
@@ -74,11 +95,11 @@ class MarketReviewEngine:
             "total": total,
             "up_count": up_count, "down_count": down_count, "flat_count": flat_count,
             "up_ratio": up_ratio,
-            "limit_up": int(row[4] or 0), "limit_down": int(row[5] or 0),
-            "avg_pct": round(float(row[6] or 0), 2),
-            "max_pct": round(float(row[7] or 0), 2),
-            "min_pct": round(float(row[8] or 0), 2),
-            "summary": f"全市场{total}只，涨{up_count}平{flat_count}跌{down_count}({up_ratio}%↑)，涨停{int(row[4] or 0)}只跌停{int(row[5] or 0)}只，均涨{round(float(row[6] or 0),2)}%",
+            "limit_up": limit_up, "limit_down": limit_down,
+            "avg_pct": round(float(row[4] or 0), 2),
+            "max_pct": round(float(row[5] or 0), 2),
+            "min_pct": round(float(row[6] or 0), 2),
+            "summary": f"全市场{total}只，涨{up_count}平{flat_count}跌{down_count}({up_ratio}%↑)，涨停{limit_up}只跌停{limit_down}只，均涨{round(float(row[4] or 0),2)}%",
             "top_gainers": top_gainers,
             "top_losers": top_losers,
             "top_sectors": top_sectors,

@@ -220,3 +220,45 @@ async def get_moneyflow(ts_code: str, start_date: str, end_date: str) -> list[di
     if result is None or (hasattr(result, 'empty') and result.empty):
         return []
     return result.to_dict(orient="records")
+
+
+async def get_fina_indicator(ts_code: str) -> dict | None:
+    """财务指标——ROE/ROA/毛利率/净利率/营收增速/净利增速等。2000积分解锁。
+    返回最新一期的指标dict，失败返回None。
+    """
+    try:
+        result = await call_tushare("fina_indicator", call_type="financial", ts_code=ts_code)
+    except Exception:
+        return None
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return None
+    row = result.iloc[0]
+    return {
+        "eps": float(row.get("eps", 0) or 0),
+        "roe": float(row.get("roe", 0) or 0),
+        "roa": float(row.get("roa", 0) or 0),
+        "grossprofit_margin": float(row.get("grossprofit_margin", 0) or 0),
+        "netprofit_margin": float(row.get("netprofit_margin", 0) or 0),
+        "or_yoy": float(row.get("or_yoy", 0) or 0),       # 营收同比
+        "profit_dedt": float(row.get("profit_dedt", 0) or 0),  # 扣非净利同比
+        "debt_to_assets": float(row.get("debt_to_assets", 0) or 0),
+        "current_ratio": float(row.get("current_ratio", 0) or 0),
+        "quick_ratio": float(row.get("quick_ratio", 0) or 0),
+        "report_date": str(row.get("end_date", "")),
+    }
+
+
+async def get_margin(trade_date: str) -> list[dict]:
+    """融资融券明细——当日全市场。2000积分解锁。"""
+    result = await call_tushare("margin", trade_date=trade_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_stk_holdernumber(ts_code: str) -> list[dict]:
+    """股东人数变化——历史各期。2000积分解锁。"""
+    result = await call_tushare("stk_holdernumber", ts_code=ts_code)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")

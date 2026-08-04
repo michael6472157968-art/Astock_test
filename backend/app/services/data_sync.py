@@ -10,8 +10,8 @@ import logging
 from sqlalchemy import text
 
 from app.core.database import async_session
-from app.models.orm.models import Sector, SectorDaily, Stock, StockDaily, StockFinancial
-from app.services.tushare_client import (call_tushare, get_all_daily,
+from app.models.orm.models import LimitListRecord, MarginRecord, Sector, SectorDaily, Stock, StockDaily, StockFinancial
+from app.services.tushare_client import (call_tushare, get_all_daily, get_limit_list, get_margin,
                                           get_sector_list, get_stock_basic)
 
 logger = logging.getLogger("sync")
@@ -141,6 +141,81 @@ async def sync_financials() -> int:
 
     logger.info(f"Financials synced: {count} stocks")
     return count
+
+
+async def sync_limit_list(trade_date: str = "") -> int:
+    """同步涨跌停列表。写入 limit_list_records 表。"""
+    if not trade_date:
+        from app.utils.trading_calendar import get_latest_trade_date
+        trade_date = await get_latest_trade_date()
+
+    rows = await get_limit_list(trade_date)
+    if not rows:
+        logger.info(f"No limit list data for {trade_date}")
+        return 0
+
+    async with async_session() as session:
+        for row in rows:
+            try:
+                await session.execute(text("""
+                    INSERT OR REPLACE INTO limit_list_records
+                        (trade_date, ts_code, name, close, pct_chg, "limit", limit_times, open_times)
+                    VALUES (:td, :ts, :nm, :cl, :pct, :lt, :ltm, :otm)
+                """), {
+                    "td": str(row.get("trade_date", trade_date)),
+                    "ts": row.get("ts_code", ""),
+                    "nm": row.get("name", ""),
+                    "cl": float(row.get("close", 0) or 0),
+                    "pct": float(row.get("pct_chg", 0) or 0),
+                    "lt": str(row.get("limit", "")),
+                    "ltm": int(row.get("limit_times", 0) or 0),
+                    "otm": int(row.get("open_times", 0) or 0),
+                })
+            except Exception:
+                continue
+        await session.commit()
+
+    logger.info(f"Limit list synced: {len(rows)} records for {trade_date}")
+    return len(rows)
+
+
+async def sync_margin(trade_date: str = "") -> int:
+    """同步融资融券明细。写入 margin_records 表。"""
+    if not trade_date:
+        from app.utils.trading_calendar import get_latest_trade_date
+        trade_date = await get_latest_trade_date()
+
+    rows = await get_margin(trade_date)
+    if not rows:
+        logger.info(f"No margin data for {trade_date}")
+        return 0
+
+    async with async_session() as session:
+        for row in rows:
+            try:
+                await session.execute(text("""
+                    INSERT OR REPLACE INTO margin_records
+                        (trade_date, ts_code, name, rzye, rqye, rzmre, rqyl, rzche, rqchl, rqmcl, rzrqye)
+                    VALUES (:td, :ts, :nm, :rzye, :rqye, :rzmre, :rqyl, :rzche, :rqchl, :rqmcl, :rzrqye)
+                """), {
+                    "td": str(row.get("trade_date", trade_date)),
+                    "ts": row.get("ts_code", ""),
+                    "nm": row.get("name", ""),
+                    "rzye": float(row.get("rzye", 0) or 0),
+                    "rqye": float(row.get("rqye", 0) or 0),
+                    "rzmre": float(row.get("rzmre", 0) or 0),
+                    "rqyl": float(row.get("rqyl", 0) or 0),
+                    "rzche": float(row.get("rzche", 0) or 0),
+                    "rqchl": float(row.get("rqchl", 0) or 0),
+                    "rqmcl": float(row.get("rqmcl", 0) or 0),
+                    "rzrqye": float(row.get("rzrqye", 0) or 0),
+                })
+            except Exception:
+                continue
+        await session.commit()
+
+    logger.info(f"Margin synced: {len(rows)} records for {trade_date}")
+    return len(rows)
 
 
 async def sync_historical_daily(days: int = 60) -> dict:
