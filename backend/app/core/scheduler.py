@@ -119,6 +119,10 @@ def _compute_engines_wrapper():
 
 
 async def _run_all_engines():
+    from app.services.stock_pool_engine import StockPoolEngine
+    from app.services.sector_analysis import SectorAnalysisEngine
+    from app.services.market_review import MarketReviewEngine
+    from app.services.risk_scanner import RiskScanner
     await StockPoolEngine().compute_all()
     await SectorAnalysisEngine().compute_all()
     await MarketReviewEngine().compute()
