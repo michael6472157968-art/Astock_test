@@ -312,12 +312,10 @@ async def settle_market_guesses():
         if not records:
             logger.warning("Guess settlement: no index data")
             return
-        import pandas as pd
-        df = pd.DataFrame(records)
-        today_row = df[df["trade_date"] == end]
-        if today_row.empty:
-            today_row = df.head(1)
-        pct = float(today_row.iloc[0]["pct_chg"])
+        # records is list[dict], find the latest trade_date row
+        today_rows = [r for r in records if r.get("trade_date") == end]
+        latest = today_rows[0] if today_rows else records[0]
+        pct = float(latest.get("pct_chg", 0) or 0)
         actual_direction = "up" if pct > 0 else "down" if pct < 0 else "flat"
     except Exception as e:
         logger.exception(f"Guess settlement: failed to get index data: {e}")

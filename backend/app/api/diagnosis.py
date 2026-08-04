@@ -307,17 +307,17 @@ def _gen_suggestion(score, risk, close, pivot):
 
 # ── K线结构数据 ──
 
-def _build_kline_data(df) -> dict:
-    """将Tushare日线DataFrame转为前端ECharts可渲染的K线JSON"""
+def _build_kline_data(records: list[dict]) -> dict:
+    """将list[dict]日线数据转为前端ECharts可渲染的K线JSON"""
     kline = []
-    for _, row in df.iterrows():
+    for r in records:
         kline.append([
-            str(row.get("trade_date", "")),
-            round(float(row.get("open", 0) or 0), 2),
-            round(float(row.get("close", 0) or 0), 2),
-            round(float(row.get("low", 0) or 0), 2),
-            round(float(row.get("high", 0) or 0), 2),
-            round(float(row.get("vol", 0) or 0), 0),
+            str(r.get("trade_date", "")),
+            round(float(r.get("open", 0) or 0), 2),
+            round(float(r.get("close", 0) or 0), 2),
+            round(float(r.get("low", 0) or 0), 2),
+            round(float(r.get("high", 0) or 0), 2),
+            round(float(r.get("vol", 0) or 0), 0),
         ])
     kline.reverse()  # 最旧在前，ECharts candlestick 格式
     return {"columns": ["trade_date", "open", "close", "low", "high", "volume"], "rows": kline}
@@ -562,22 +562,19 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
         if not records:
             return None
 
-        import pandas as pd
-        df = pd.DataFrame(records)
-
-        closes = [float(r.close) for _, r in df.iterrows() if r.close and float(r.close) > 0]
-        highs  = [float(r.high) for _, r in df.iterrows() if r.high]
-        lows   = [float(r.low) for _, r in df.iterrows() if r.low]
-        opens  = [float(r.open) for _, r in df.iterrows() if r.open]
-        vols   = [float(r.vol) for _, r in df.iterrows() if r.vol]
+        # records is list[dict] from get_daily_data
+        closes = [float(r["close"]) for r in records if r.get("close") and float(r.get("close", 0)) > 0]
+        highs  = [float(r["high"]) for r in records if r.get("high")]
+        lows   = [float(r["low"]) for r in records if r.get("low")]
+        opens  = [float(r["open"]) for r in records if r.get("open")]
+        vols   = [float(r["vol"]) for r in records if r.get("vol")]
 
         if len(closes) < 20:
             return None
 
         closes.reverse(); highs.reverse(); lows.reverse(); opens.reverse(); vols.reverse()
 
-        quant = _quant_signal(closes, highs, lows, vols)
-        kline = _build_kline_data(df)
+        kline = _build_kline_data(records)
         indicators = _build_indicator_series(closes, highs, lows)
 
         # 获取股票名称
