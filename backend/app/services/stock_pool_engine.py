@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date, datetime, timedelta
 
@@ -195,9 +196,9 @@ class StockPoolEngine:
             result.append({
                 "stock_code": code,
                 "stock_name": row[1],
-                "close": round(float(row[2]), 2) if row[2] else None,
+                "close": round(float(row[2]), 2) if row[2] is not None else None,
                 "change_pct": pct,
-                "volume_ratio": round(float(row[5]), 2) if len(row) > 5 and row[5] else None,
+                "volume_ratio": round(float(row[5]), 2) if len(row) > 5 and row[5] is not None else None,
                 "inclusion_reason": reason,
             })
             if len(result) >= POOL_SIZE:
@@ -220,7 +221,7 @@ class StockPoolEngine:
                         "rk": i + 1,
                         "ts": item.get("stock_code", ""),
                         "nm": item.get("stock_name", ""),
-                        "md": f'{{"close":{item.get("close")},"change_pct":{item.get("change_pct")},"volume_ratio":{item.get("volume_ratio")}}}',
+                        "md": json.dumps({"close": item.get("close"), "change_pct": item.get("change_pct"), "volume_ratio": item.get("volume_ratio")}),
                         "ir": item.get("inclusion_reason", ""),
                     })
                 except Exception:
