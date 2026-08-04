@@ -52,7 +52,7 @@ async def init_db() -> None:
         result = await conn.execute(
             __import__("sqlalchemy").text("PRAGMA table_info('users')")
         )
-        existing = {row[1] for row in await result.fetchall()}
+        existing = {row[1] for row in result.fetchall()}
         upgrades = {
             "credits": "ALTER TABLE users ADD COLUMN credits INTEGER DEFAULT 0",
             "is_active": "ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1",
