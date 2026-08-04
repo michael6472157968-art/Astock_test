@@ -49,17 +49,45 @@ async def init_db() -> None:
         ))
 
         # 自动补全旧数据库缺失的列（create_all 只建新表不改旧表）
-        result = await conn.execute(
-            __import__("sqlalchemy").text("PRAGMA table_info('users')")
-        )
-        existing = {row[1] for row in result.fetchall()}
-        upgrades = {
-            "credits": "ALTER TABLE users ADD COLUMN credits INTEGER DEFAULT 0",
-            "is_active": "ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1",
-        }
-        for col, sql in upgrades.items():
-            if col not in existing:
-                await conn.execute(__import__("sqlalchemy").text(sql))
-                logger.info(f"Schema upgrade: added users.{col}")
+        await _auto_migrate_schema(conn)
 
     logger.info("SQLite tables created (migrations run via entrypoint)")
+
+
+async def _auto_migrate_schema(conn):
+    """对比 ORM 模型与物理 SQLite 表，自动补全缺失列。
+
+    SQLAlchemy create_all 只建新表不修改已有表结构，此函数确保存量数据库
+    的列与 ORM 模型定义保持一致。
+    """
+    from sqlalchemy import text as _text
+    from app.models.orm.models import Base
+
+    # 收集所有 ORM 模型的 (table_name, column_name, column_type)
+    orm_columns: dict[str, dict[str, str]] = {}
+    for mapper in Base.registry.mappers:
+        table = mapper.local_table
+        if table.name not in orm_columns:
+            orm_columns[table.name] = {}
+        for col in table.columns:
+            sql_type = col.type.compile()
+            default = col.default
+            if default is not None and default.is_scalar and default.arg is not None:
+                arg = default.arg
+                if isinstance(arg, str):
+                    arg = f"'{arg}'"
+                sql_type += f" DEFAULT {arg}"
+            orm_columns[table.name][col.name] = sql_type
+
+    # 对每个 ORM 表检查实际 SQLite 列
+    for table_name, expected_cols in orm_columns.items():
+        result = await conn.execute(_text(f"PRAGMA table_info('{table_name}')"))
+        rows = result.fetchall()
+        if not rows:
+            continue  # 表不存在，create_all 会处理
+        existing = {row[1] for row in rows}
+        for col_name in expected_cols:
+            if col_name not in existing:
+                sql = f"ALTER TABLE {table_name} ADD COLUMN {col_name} {expected_cols[col_name]}"
+                await conn.execute(_text(sql))
+                logger.info(f"Schema upgrade: added {table_name}.{col_name}")
