@@ -90,9 +90,11 @@ def _run_async(coro):
 
 
 def _sync_daily_wrapper():
-    from app.services.data_sync import sync_daily_data
-    logger.info("Scheduled: sync_daily_data")
+    from app.services.data_sync import sync_daily_data, sync_limit_list, sync_margin
+    logger.info("Scheduled: sync_daily_data + limit_list + margin")
     _run_async(sync_daily_data())
+    _run_async(sync_limit_list())
+    _run_async(sync_margin())
 
 
 def _sync_sector_wrapper():
