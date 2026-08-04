@@ -48,12 +48,27 @@ async def sync_stock_basic() -> int:
 
 
 async def sync_daily_data(trade_date: str = "") -> int:
-    """同步指定交易日全市场日线。默认最近交易日。"""
+    """同步指定交易日全市场日线。默认向前搜索拉到最新有数据的交易日。"""
     if not trade_date:
-        from app.utils.trading_calendar import get_latest_trade_date
-        trade_date = await get_latest_trade_date()
+        from app.utils.trading_calendar import is_trade_date
+        today = date.today()
+        # 从今天往回找最近5天内的交易日，找到有数据就拉
+        for offset in range(5):
+            td = (today - timedelta(days=offset)).strftime("%Y%m%d")
+            if not await is_trade_date(td):
+                continue
+            rows = await get_all_daily(td)
+            if rows:
+                trade_date = td
+                break
+        else:
+            # fallback: use DB MAX
+            from app.utils.trading_calendar import get_latest_trade_date
+            trade_date = await get_latest_trade_date()
+            rows = await get_all_daily(trade_date)
+    else:
+        rows = await get_all_daily(trade_date)
 
-    rows = await get_all_daily(trade_date)
     if not rows:
         logger.info(f"No daily data for {trade_date}")
         return 0
