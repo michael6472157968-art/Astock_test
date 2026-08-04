@@ -144,19 +144,12 @@ async def sync_financials() -> int:
 
 
 async def sync_limit_list(trade_date: str = "") -> int:
-    """同步涨跌停列表。写入 limit_list_records 表。
-    注意: limit_list_ths 需要 8000 积分，2000 积分账户会失败。
-    失败时返回 -1 表示接口不可用，不阻断调用方流程。
-    """
+    """同步涨跌停列表（标准 limit_list，120积分）。写入 limit_list_records 表。"""
     if not trade_date:
         from app.utils.trading_calendar import get_latest_trade_date
         trade_date = await get_latest_trade_date()
 
-    try:
-        rows = await get_limit_list(trade_date)
-    except Exception as e:
-        logger.warning(f"limit_list_ths failed (积分不足?): {e}")
-        return -1
+    rows = await get_limit_list(trade_date)
 
     if not rows:
         logger.info(f"No limit list data for {trade_date}")
@@ -173,13 +166,13 @@ async def sync_limit_list(trade_date: str = "") -> int:
                     "td": str(row.get("trade_date", trade_date)),
                     "ts": row.get("ts_code", ""),
                     "nm": row.get("name", ""),
-                    "pr": float(row.get("price", 0) or 0),
+                    "pr": float(row.get("close", 0) or 0),
                     "pct": float(row.get("pct_chg", 0) or 0),
-                    "lt": str(row.get("limit_type", "")),
-                    "onm": int(row.get("open_num", 0) or 0),
-                    "ld": str(row.get("lu_desc", ""))[:200],
-                    "tg": str(row.get("tag", ""))[:50],
-                    "st": str(row.get("status", ""))[:50],
+                    "lt": str(row.get("limit", "")),
+                    "onm": int(row.get("open_times", 0) or 0),
+                    "ld": str(row.get("up_stat", ""))[:200],
+                    "tg": "",
+                    "st": str(row.get("limit_times", ""))[:50],
                 })
             except Exception:
                 continue

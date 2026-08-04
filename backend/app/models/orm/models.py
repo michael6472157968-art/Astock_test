@@ -191,7 +191,7 @@ class LimitListRecord(Base):
     name = Column(String(50), default="")
     price = Column(Float, default=0)
     pct_chg = Column(Float, default=0)
-    limit_type = Column(String(10), default="")  # 涨停池/连扳池/跌停池
+    limit_type = Column(String(10), default="")  # U=涨停, D=跌停, Z=炸板
     open_num = Column(Integer, default=0)
     lu_desc = Column(String(200), default="")
     tag = Column(String(50), default="")

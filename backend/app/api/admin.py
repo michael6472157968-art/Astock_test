@@ -170,8 +170,8 @@ async def admin_run_daily_batch():
             warnings.append("日线数据同步为0——Tushare可能尚未更新今日行情，已接管昨日选股池/板块数据")
         if stock_count == 0:
             warnings.append("股票基础信息同步为0")
-        if limit_count <= 0:
-            warnings.append("涨跌停同步失败(limit_list_ths需8000积分，当前2000)，涨停数据已降级为pct_chg估算")
+        if limit_count == 0:
+            warnings.append("涨跌停同步为0，已降级为pct_chg估算")
 
         return APIResponse(
             data={"stock_synced": stock_count, "daily_synced": daily_count,

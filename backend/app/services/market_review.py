@@ -41,8 +41,8 @@ class MarketReviewEngine:
             limit_up = 0
             limit_down = 0
             r_lim = await session.execute(text("""
-                SELECT COUNT(*) FILTER (WHERE limit_type != '跌停池'),
-                       COUNT(*) FILTER (WHERE limit_type = '跌停池')
+                SELECT COUNT(*) FILTER (WHERE limit_type = 'U'),
+                       COUNT(*) FILTER (WHERE limit_type = 'D')
                 FROM limit_list_records WHERE trade_date = :td
             """), {"td": trade_date})
             lr = r_lim.first()
