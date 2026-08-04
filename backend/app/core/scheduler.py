@@ -81,14 +81,29 @@ def _run_async(coro):
 
 
 def _sync_daily_wrapper():
+    logger.info("Scheduled: sync_daily_all starting")
+    _run_async(_sync_daily_all())
+
+
+async def _sync_daily_all():
+    """所有日线同步合并到一个event loop中执行，避免跨loop连接泄漏。"""
     from app.services.data_sync import sync_daily_data, sync_limit_list, sync_margin, sync_stock_basic, sync_daily_basic, sync_moneyflow_hsgt
-    logger.info("Scheduled: sync_stock_basic + sync_daily_data + daily_basic + limit_list + margin + moneyflow_hsgt")
-    _run_async(sync_stock_basic())
-    _run_async(sync_daily_data())
-    _run_async(sync_daily_basic())
-    _run_async(sync_limit_list())
-    _run_async(sync_margin())
-    _run_async(sync_moneyflow_hsgt())
+    import logging
+    log = logging.getLogger("sync")
+    for name, fn in [
+        ("stock_basic", sync_stock_basic),
+        ("daily_data", sync_daily_data),
+        ("daily_basic", sync_daily_basic),
+        ("limit_list", sync_limit_list),
+        ("margin", sync_margin),
+        ("moneyflow_hsgt", sync_moneyflow_hsgt),
+    ]:
+        try:
+            n = await fn()
+            if isinstance(n, int):
+                log.info(f"sync_{name}: {n} records")
+        except Exception as e:
+            log.exception(f"sync_{name} failed: {e}")
 
 
 def _sync_sector_wrapper():
