@@ -144,12 +144,18 @@ async def sync_financials() -> int:
 
 
 async def sync_limit_list(trade_date: str = "") -> int:
-    """同步涨跌停列表（标准 limit_list，120积分）。写入 limit_list_records 表。"""
+    """同步涨跌停列表。调用Tushare标准 limit_list 接口(120积分需要注册后社区贡献)。
+    如接口返回"请指定正确的接口名"说明积分不足，静默跳过不阻断batch。
+    """
     if not trade_date:
         from app.utils.trading_calendar import get_latest_trade_date
         trade_date = await get_latest_trade_date()
 
-    rows = await get_limit_list(trade_date)
+    try:
+        rows = await get_limit_list(trade_date)
+    except Exception as e:
+        logger.warning(f"limit_list 接口暂不可用(积分不够?): {e}")
+        return -1
 
     if not rows:
         logger.info(f"No limit list data for {trade_date}")
