@@ -32,6 +32,13 @@ backend/.env
 # User data (generated at runtime)
 backend/data/user_data/
 
+# Large data directories
+backend/data/
+
+# Error logs
+error_logs.txt
+phase4-summary.md
+
 # OS
 .DS_Store
 Thumbs.db
