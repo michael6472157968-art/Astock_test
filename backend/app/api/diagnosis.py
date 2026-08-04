@@ -597,7 +597,9 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
             "indicators": indicators,
             "financial": None,  # _enhance_financials() 单独填充
         }
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger("diagnosis").exception(f"_compute_diagnosis({stock_code}) failed: {e}")
         return None
 
 
