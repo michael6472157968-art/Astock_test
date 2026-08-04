@@ -227,32 +227,57 @@ async def market_dashboard(user: dict = Depends(require_auth_optional)):
             top8 = sorted(industries, key=lambda x: abs(x[1]), reverse=True)[:8]
             result["top_sectors"] = [{"name": n, "pct_chg": pct, "cnt": c} for n, pct, c in top8]
 
-    # 3. 北向资金
+    # 3. 北向资金（DB优先——定时任务已同步到moneyflow_hsgt表）
     try:
-        from app.services.tushare_client import get_moneyflow_hsgt
-        end_d = trade_date
-        start_d = (date.today() - timedelta(days=10)).strftime("%Y%m%d")
-        nf = await get_moneyflow_hsgt(start_d, end_d)
-        if nf:
-            nf_sorted = sorted(nf, key=lambda x: x.get("trade_date", ""), reverse=True)
-            latest = nf_sorted[0]
-            north_val = float(latest.get("north_money", 0) or 0) * 1e4  # Tushare万元→元
+        r3 = await sess.execute(text(
+            "SELECT trade_date, north_money, ggt_ss, ggt_sz, hgt, sgt "
+            "FROM moneyflow_hsgt ORDER BY trade_date DESC LIMIT 5"
+        ))
+        hsgt_rows = list(r3)
+        if hsgt_rows:
+            latest = hsgt_rows[0]
             result["northbound"] = {
-                "date": trade_date,
-                "net_in": round(north_val, 2),
-                "ggt_ss": round(float(latest.get("ggt_ss", 0) or 0), 2),
-                "ggt_sz": round(float(latest.get("ggt_sz", 0) or 0), 2),
-                "hgt": round(float(latest.get("hgt", 0) or 0), 2),
-                "sgt": round(float(latest.get("sgt", 0) or 0), 2),
+                "date": latest[0],
+                "net_in": round(float(latest[1] or 0) * 1e4, 2),
+                "ggt_ss": round(float(latest[2] or 0), 2),
+                "ggt_sz": round(float(latest[3] or 0), 2),
+                "hgt": round(float(latest[4] or 0), 2),
+                "sgt": round(float(latest[5] or 0), 2),
             }
-            # 近期5日趋势
             result["northbound"]["recent"] = [
-                {"date": x.get("trade_date", ""), "net_in": round(float(x.get("north_money", 0) or 0) * 1e4, 2)}
-                for x in nf_sorted[:5]
-            ][::-1]  # oldest first
-    except Exception as e:
-        logger.warning(f"北向资金获取失败: {e}")
-        result["northbound"] = None
+                {"date": r[0], "net_in": round(float(r[1] or 0) * 1e4, 2)}
+                for r in hsgt_rows
+            ][::-1]
+    except Exception:
+        pass
+
+    # 北向DB无数据时降级调用Tushare实时API
+    if not result.get("northbound"):
+        try:
+            from app.services.tushare_client import get_moneyflow_hsgt
+            end_d = date.today().strftime("%Y%m%d")
+            start_d = (date.today() - timedelta(days=10)).strftime("%Y%m%d")
+            nf = await get_moneyflow_hsgt(start_d, end_d)
+            if nf:
+                nf_sorted = sorted(nf, key=lambda x: x.get("trade_date", ""), reverse=True)
+                latest = nf_sorted[0]
+                nb_date = latest.get("trade_date", end_d)
+                north_val = float(latest.get("north_money", 0) or 0) * 1e4
+                result["northbound"] = {
+                    "date": nb_date,
+                    "net_in": round(north_val, 2),
+                    "ggt_ss": round(float(latest.get("ggt_ss", 0) or 0), 2),
+                    "ggt_sz": round(float(latest.get("ggt_sz", 0) or 0), 2),
+                    "hgt": round(float(latest.get("hgt", 0) or 0), 2),
+                    "sgt": round(float(latest.get("sgt", 0) or 0), 2),
+                }
+                result["northbound"]["recent"] = [
+                    {"date": x.get("trade_date", ""), "net_in": round(float(x.get("north_money", 0) or 0) * 1e4, 2)}
+                    for x in nf_sorted[:5]
+                ][::-1]
+        except Exception as e:
+            logger.warning(f"北向资金获取失败: {e}")
+            result["northbound"] = None
 
     ttl = 300 if trading else 3600
     await cache_set(ck, result, ttl=ttl)
@@ -1115,29 +1140,52 @@ async def industry_leaders(ts_code: str = "", user: dict = Depends(require_auth_
 
     trade_date, _ = await _get_trade_context()
 
-    # 从 tushare daily_basic 获取总市值数据（按日尝试，取最近有数据的）
+    # 从 daily_basic 表读取同行业市值数据（定时任务已同步）
     leaders_raw = []
-    from app.services.tushare_client import get_daily_basic
-    for offset in range(7):
-        td = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
-        try:
-            basics = await get_daily_basic(td)
-            if basics:
-                code_set = set(industry_codes)
-                for b in basics:
-                    tc = b.get("ts_code", "")
-                    if tc in code_set:
-                        leaders_raw.append({
-                            "ts_code": tc,
-                            "total_mv": float(b.get("total_mv", 0) or 0),
-                            "circ_mv": float(b.get("circ_mv", 0) or 0),
-                            "pe": float(b.get("pe", 0) or 0),
-                            "pb": float(b.get("pb", 0) or 0),
-                        })
+    async with async_session() as sess:
+        for offset in range(4):
+            td = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
+            try:
+                result = await sess.execute(text(
+                    "SELECT ts_code, total_mv, circ_mv, pe, pb FROM daily_basic "
+                    "WHERE trade_date = :td AND ts_code IN (SELECT ts_code FROM stocks WHERE industry = :ind)",
+                ), {"td": td, "ind": industry_name})
+                for row in result:
+                    leaders_raw.append({
+                        "ts_code": row[0],
+                        "total_mv": float(row[1] or 0),
+                        "circ_mv": float(row[2] or 0),
+                        "pe": float(row[3] or 0),
+                        "pb": float(row[4] or 0),
+                    })
                 if leaders_raw:
                     break
-        except Exception:
-            continue
+            except Exception:
+                continue
+
+    # DB降级：daily_basic 表无数据时实时调 Tushare
+    if not leaders_raw:
+        from app.services.tushare_client import get_daily_basic
+        for offset in range(7):
+            td = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
+            try:
+                basics = await get_daily_basic(td)
+                if basics:
+                    code_set = set(industry_codes)
+                    for b in basics:
+                        tc = b.get("ts_code", "")
+                        if tc in code_set:
+                            leaders_raw.append({
+                                "ts_code": tc,
+                                "total_mv": float(b.get("total_mv", 0) or 0),
+                                "circ_mv": float(b.get("circ_mv", 0) or 0),
+                                "pe": float(b.get("pe", 0) or 0),
+                                "pb": float(b.get("pb", 0) or 0),
+                            })
+                    if leaders_raw:
+                        break
+            except Exception:
+                continue
 
     # 按总市值降序，取Top5
     leaders_raw.sort(key=lambda x: x["total_mv"], reverse=True)

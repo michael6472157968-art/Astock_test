@@ -307,12 +307,13 @@ async def settle_market_guesses():
 
     # 获取大盘涨跌方向（用上证指数）
     try:
-        from app.services.tushare_client import get_pro
-        pro = get_pro()
-        df = pro.index_daily(ts_code="000001.SH", start_date=start, end_date=end)
-        if df is None or df.empty:
+        from app.services.tushare_client import get_index_daily
+        records = await get_index_daily("000001.SH", start, end)
+        if not records:
             logger.warning("Guess settlement: no index data")
             return
+        import pandas as pd
+        df = pd.DataFrame(records)
         today_row = df[df["trade_date"] == end]
         if today_row.empty:
             today_row = df.head(1)

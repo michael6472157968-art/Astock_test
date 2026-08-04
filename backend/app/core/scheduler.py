@@ -52,15 +52,6 @@ def start_scheduler() -> None:
         name="盘中板块更新",
         replace_existing=True,
     )
-    # ── 月度财报同步已禁用（stock_financials 表暂无代码查询，未来基本面分析启用时取消注释）──
-    # _scheduler.add_job(
-    #     _sync_financials_wrapper,
-    #     CronTrigger(day=1, hour=5, minute=0, timezone=TZ),
-    #     id="sync_financials",
-    #     name="月度财报同步",
-    #     replace_existing=True,
-    # )
-
     _scheduler.start()
     logger.info(f"Scheduler started ({len(_scheduler.get_jobs())} jobs)")
 
@@ -90,23 +81,20 @@ def _run_async(coro):
 
 
 def _sync_daily_wrapper():
-    from app.services.data_sync import sync_daily_data, sync_limit_list, sync_margin
-    logger.info("Scheduled: sync_daily_data + limit_list + margin")
+    from app.services.data_sync import sync_daily_data, sync_limit_list, sync_margin, sync_stock_basic, sync_daily_basic, sync_moneyflow_hsgt
+    logger.info("Scheduled: sync_stock_basic + sync_daily_data + daily_basic + limit_list + margin + moneyflow_hsgt")
+    _run_async(sync_stock_basic())
     _run_async(sync_daily_data())
+    _run_async(sync_daily_basic())
     _run_async(sync_limit_list())
     _run_async(sync_margin())
+    _run_async(sync_moneyflow_hsgt())
 
 
 def _sync_sector_wrapper():
     from app.services.data_sync import sync_sector_data
     logger.info("Scheduled: sync_sector_data")
     _run_async(sync_sector_data())
-
-
-def _sync_financials_wrapper():
-    from app.services.data_sync import sync_financials
-    logger.info("Scheduled: sync_financials")
-    _run_async(sync_financials())
 
 
 def _compute_engines_wrapper():

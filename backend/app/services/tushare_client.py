@@ -141,39 +141,6 @@ async def get_all_daily(trade_date: str) -> list[dict]:
     return result.to_dict(orient="records")
 
 
-async def get_income(ts_code: str, end_date: str | None = None) -> list[dict]:
-    """利润表——使用财务专用额度(70/min)。"""
-    params = {"ts_code": ts_code}
-    if end_date:
-        params["end_date"] = end_date
-    result = await call_tushare("income", call_type="financial", **params)
-    if result is None or (hasattr(result, 'empty') and result.empty):
-        return []
-    return result.to_dict(orient="records")
-
-
-async def get_balancesheet(ts_code: str, end_date: str | None = None) -> list[dict]:
-    """资产负债表——财务专用额度。"""
-    params = {"ts_code": ts_code}
-    if end_date:
-        params["end_date"] = end_date
-    result = await call_tushare("balancesheet", call_type="financial", **params)
-    if result is None or (hasattr(result, 'empty') and result.empty):
-        return []
-    return result.to_dict(orient="records")
-
-
-async def get_cashflow(ts_code: str, end_date: str | None = None) -> list[dict]:
-    """现金流量表——财务专用额度。"""
-    params = {"ts_code": ts_code}
-    if end_date:
-        params["end_date"] = end_date
-    result = await call_tushare("cashflow", call_type="financial", **params)
-    if result is None or (hasattr(result, 'empty') and result.empty):
-        return []
-    return result.to_dict(orient="records")
-
-
 async def get_index_daily(ts_code: str, start_date: str, end_date: str) -> list[dict]:
     """大盘指数日线。"""
     result = await call_tushare("index_daily", ts_code=ts_code, start_date=start_date, end_date=end_date)

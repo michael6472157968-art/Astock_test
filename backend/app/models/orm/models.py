@@ -90,17 +90,6 @@ class StockDaily(Base):
     __mapper_args__ = {"confirm_deleted_rows": False}
 
 
-class StockFinancial(Base):
-    __tablename__ = "stock_financials"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ts_code = Column(String(20), nullable=False, index=True)
-    report_date = Column(String(10), nullable=False)
-    report_type = Column(String(10), default="")  # income / balance / cashflow
-    data_json = Column(Text, default="{}")  # 财务报表原始数据
-    created_at = Column(DateTime, default=_now)
-
-
 class Sector(Base):
     __tablename__ = "sectors"
 
@@ -110,15 +99,37 @@ class Sector(Base):
     updated_at = Column(DateTime, default=_now)
 
 
-class SectorDaily(Base):
-    __tablename__ = "sector_daily"
+class DailyBasic(Base):
+    """每日指标 PE/PB/市值/换手率——全量按日期同步。"""
+    __tablename__ = "daily_basic"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    code = Column(String(20), nullable=False, index=True)
+    ts_code = Column(String(20), nullable=False)
     trade_date = Column(String(8), nullable=False)
-    close = Column(Float, default=0)
-    pct_chg = Column(Float, default=0)
-    volume = Column(Float, default=0)
+    pe = Column(Float, nullable=True)
+    pb = Column(Float, nullable=True)
+    total_mv = Column(Float, nullable=True)
+    circ_mv = Column(Float, nullable=True)
+    turnover_rate = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=_now)
+
+    __table_args__ = (
+        Index("ix_daily_basic_td_code", "trade_date", "ts_code", unique=True),
+    )
+
+
+class MoneyflowHsgt(Base):
+    """沪深港通北向资金流向——每日全量同步。"""
+    __tablename__ = "moneyflow_hsgt"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trade_date = Column(String(8), nullable=False, unique=True)
+    north_money = Column(Float, default=0)
+    south_money = Column(Float, default=0)
+    ggt_ss = Column(Float, default=0)
+    ggt_sz = Column(Float, default=0)
+    hgt = Column(Float, default=0)
+    sgt = Column(Float, default=0)
     created_at = Column(DateTime, default=_now)
 
 
@@ -136,19 +147,6 @@ class StockPoolResult(Base):
     created_at = Column(DateTime, default=_now)
 
 
-class DiagnosisReport(Base):
-    __tablename__ = "diagnosis_reports"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ts_code = Column(String(20), nullable=False, index=True)
-    calc_date = Column(String(10), nullable=False)
-    tech_score = Column(Float, default=0)
-    fundamental_score = Column(Float, nullable=True)
-    composite_score = Column(Float, default=0)
-    report_json = Column(Text, default="{}")
-    created_at = Column(DateTime, default=_now)
-
-
 class SectorAnalysisResult(Base):
     __tablename__ = "sector_analysis_results"
 
@@ -158,15 +156,6 @@ class SectorAnalysisResult(Base):
     heat_score = Column(Float, default=0)
     differentiation_index = Column(Float, default=0)
     linked_sectors = Column(Text, default="[]")
-    created_at = Column(DateTime, default=_now)
-
-
-class DailyReview(Base):
-    __tablename__ = "daily_reviews"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    review_date = Column(String(10), nullable=False, unique=True)
-    content_json = Column(Text, default="{}")
     created_at = Column(DateTime, default=_now)
 
 

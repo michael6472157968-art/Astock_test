@@ -546,21 +546,24 @@ async def get_diagnosis(stock_code: str, request: Request, user: dict = Depends(
 
 async def _compute_diagnosis(stock_code: str) -> dict | None:
     """从Tushare获取60天日线数据 → 计算技术指标 → 生成报告"""
-    from app.services.tushare_client import get_pro
+    from app.services.tushare_client import get_daily_data
 
     try:
-        pro = get_pro()
         end = date.today().strftime("%Y%m%d")
         start = (date.today() - timedelta(days=120)).strftime("%Y%m%d")
 
+        records = None
         for suffix in [".SZ", ".SH", ""]:
             code = stock_code if suffix == "" else (stock_code if "." in stock_code else stock_code + suffix)
-            df = pro.daily(ts_code=code, start_date=start, end_date=end)
-            if df is not None and not df.empty:
+            records = await get_daily_data(code, start, end)
+            if records:
                 break
 
-        if df is None or df.empty:
+        if not records:
             return None
+
+        import pandas as pd
+        df = pd.DataFrame(records)
 
         closes = [float(r.close) for _, r in df.iterrows() if r.close and float(r.close) > 0]
         highs  = [float(r.high) for _, r in df.iterrows() if r.high]

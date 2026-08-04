@@ -6,13 +6,14 @@
 from __future__ import annotations
 
 import logging
+from datetime import date, timedelta
 
 from sqlalchemy import text
 
 from app.core.database import async_session
-from app.models.orm.models import LimitListRecord, MarginRecord, Sector, SectorDaily, Stock, StockDaily, StockFinancial
-from app.services.tushare_client import (call_tushare, get_all_daily, get_limit_list, get_margin,
-                                          get_sector_list, get_stock_basic)
+from app.models.orm.models import LimitListRecord, MarginRecord, Sector, Stock, StockDaily
+from app.services.tushare_client import (get_all_daily, get_daily_basic, get_limit_list, get_margin,
+                                          get_moneyflow_hsgt, get_sector_list, get_stock_basic)
 
 logger = logging.getLogger("sync")
 
@@ -108,41 +109,6 @@ async def sync_sector_data() -> int:
     return len(sectors)
 
 
-async def sync_financials() -> int:
-    """同步全市场最新财报——月度任务，需控制频率。
-
-    注意：此函数暂未启用。stock_financials 表存在但无任何代码查询。
-    未来实现基本面分析（PE/PB/ROE）时，在 scheduler.py 中重新启用
-    _sync_financials_wrapper 任务并扩展此函数覆盖全市场 + 三张表。
-    """
-    stocks = await get_stock_basic()
-    if not stocks:
-        logger.warning("No stock list available for financial sync")
-        return 0
-
-    count = 0
-    for stock in stocks[:50]:  # 月度仅同步前50只关键股票，避免超额
-        ts_code = stock.get("ts_code", "")
-        try:
-            income = await call_tushare("income", call_type="financial", ts_code=ts_code)
-            if income is not None and not (hasattr(income, 'empty') and income.empty):
-                async with async_session() as session:
-                    session.add(StockFinancial(
-                        ts_code=ts_code,
-                        report_date=str(income.iloc[0].get("end_date", "")),
-                        report_type="income",
-                        data_json=str(income.iloc[0].to_dict()),
-                    ))
-                    await session.commit()
-            count += 1
-        except Exception as e:
-            logger.warning(f"Financial sync failed for {ts_code}: {e}")
-            continue
-
-    logger.info(f"Financials synced: {count} stocks")
-    return count
-
-
 async def sync_limit_list(trade_date: str = "") -> int:
     """同步涨跌停列表。调用Tushare标准 limit_list 接口(120积分需要注册后社区贡献)。
     如接口返回"请指定正确的接口名"说明积分不足，静默跳过不阻断batch。
@@ -224,6 +190,77 @@ async def sync_margin(trade_date: str = "") -> int:
         await session.commit()
 
     logger.info(f"Margin synced: {len(rows)} records for {trade_date}")
+    return len(rows)
+
+
+async def sync_daily_basic(trade_date: str = "") -> int:
+    """同步每日指标 PE/PB/市值/换手率。全市场一次API调用。"""
+    if not trade_date:
+        from app.utils.trading_calendar import get_latest_trade_date
+        trade_date = await get_latest_trade_date()
+
+    rows = await get_daily_basic(trade_date)
+    if not rows:
+        logger.info(f"No daily_basic data for {trade_date}")
+        return 0
+
+    async with async_session() as session:
+        for row in rows:
+            try:
+                await session.execute(text("""
+                    INSERT OR REPLACE INTO daily_basic
+                        (ts_code, trade_date, pe, pb, total_mv, circ_mv, turnover_rate)
+                    VALUES (:ts, :td, :pe, :pb, :tmv, :cmv, :tr)
+                """), {
+                    "ts": row.get("ts_code", ""),
+                    "td": str(row.get("trade_date", trade_date)),
+                    "pe": float(row.get("pe", 0) or 0),
+                    "pb": float(row.get("pb", 0) or 0),
+                    "tmv": float(row.get("total_mv", 0) or 0),
+                    "cmv": float(row.get("circ_mv", 0) or 0),
+                    "tr": float(row.get("turnover_rate", 0) or 0),
+                })
+            except Exception:
+                continue
+        await session.commit()
+
+    logger.info(f"Daily_basic synced: {len(rows)} stocks for {trade_date}")
+    return len(rows)
+
+
+async def sync_moneyflow_hsgt(trade_date: str = "") -> int:
+    """同步北向资金流向——一次API调全市场。写入 moneyflow_hsgt 表。"""
+    if not trade_date:
+        trade_date = date.today().strftime("%Y%m%d")
+
+    end_d = trade_date
+    start_d = (date.today() - timedelta(days=10)).strftime("%Y%m%d")
+    rows = await get_moneyflow_hsgt(start_d, end_d)
+    if not rows:
+        logger.info(f"No moneyflow_hsgt data for {start_d}~{end_d}")
+        return 0
+
+    async with async_session() as session:
+        for row in rows:
+            try:
+                await session.execute(text("""
+                    INSERT OR REPLACE INTO moneyflow_hsgt
+                        (trade_date, north_money, south_money, ggt_ss, ggt_sz, hgt, sgt)
+                    VALUES (:td, :nm, :sm, :gs, :gz, :hg, :sg)
+                """), {
+                    "td": str(row.get("trade_date", "")),
+                    "nm": float(row.get("north_money", 0) or 0),
+                    "sm": float(row.get("south_money", 0) or 0),
+                    "gs": float(row.get("ggt_ss", 0) or 0),
+                    "gz": float(row.get("ggt_sz", 0) or 0),
+                    "hg": float(row.get("hgt", 0) or 0),
+                    "sg": float(row.get("sgt", 0) or 0),
+                })
+            except Exception:
+                continue
+        await session.commit()
+
+    logger.info(f"Moneyflow_hsgt synced: {len(rows)} records")
     return len(rows)
 
 
