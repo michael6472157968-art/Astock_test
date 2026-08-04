@@ -386,9 +386,11 @@
     API.post('/admin/tasks/run-daily-batch').then(function(r) {
       var msg = '完成：' + r.data.stock_synced + ' 只股票, ' + r.data.daily_synced + ' 条日线';
       if (r.data.warnings && r.data.warnings.length > 0) {
-        msg += '\n⚠ ' + r.data.warnings.join('\n⚠ ');
+        msg += '<br>⚠ ' + r.data.warnings.join('<br>⚠ ');
+        document.getElementById('syncMsg').innerHTML = msg;
+      } else {
+        document.getElementById('syncMsg').textContent = msg;
       }
-      document.getElementById('syncMsg').textContent = msg;
       loadSyncStats();
     }).catch(function(e) {
       document.getElementById('syncMsg').textContent = '失败: ' + (e.message || '');
