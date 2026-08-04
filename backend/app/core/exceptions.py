@@ -61,12 +61,11 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 async def http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception(f"Unhandled exception: {exc}")
-    import traceback
     return JSONResponse(
         status_code=500,
         content={
             "code": 500,
-            "message": f"服务器内部错误: {exc}\n{traceback.format_exc()}",
+            "message": "服务器内部错误",
             "data": None,
             "timestamp": int(time.time()),
             "ext_info": {},

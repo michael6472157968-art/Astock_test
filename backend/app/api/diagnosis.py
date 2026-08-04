@@ -599,8 +599,9 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
             "financial": None,  # _enhance_financials() 单独填充
         }
     except Exception as e:
-        import traceback
-        raise HTTPException(status_code=500, detail=f"诊股失败: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        import logging
+        logging.getLogger("diagnosis").exception(f"_compute_diagnosis({stock_code}) failed: {e}")
+        return None
 
 
 async def _fetch_financial_snapshot(stock_code: str) -> dict | None:
@@ -650,7 +651,7 @@ async def _fetch_holder_snapshot(stock_code: str) -> dict | None:
     result = {
         "holders": [{
             "end_date": str(r.get("end_date", "")),
-            "holder_num": int(r.get("holder_num", 0) or 0),
+            "holder_num": int(float(r.get("holder_num", 0) or 0)),
             "top_holder_ratio": round(float(r.get("top_holder_ratio", 0) or 0), 2),
         } for r in recent],
         "trend": "concentrated" if (
