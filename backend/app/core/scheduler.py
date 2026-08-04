@@ -32,20 +32,6 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
     _scheduler.add_job(
-        _compute_engines_wrapper,
-        CronTrigger(hour=16, minute=10, timezone=TZ),
-        id="compute_engines",
-        name="离线计算引擎",
-        replace_existing=True,
-    )
-    _scheduler.add_job(
-        _settle_guesses_wrapper,
-        CronTrigger(hour=16, minute=15, timezone=TZ),
-        id="settle_guesses",
-        name="竞猜结算",
-        replace_existing=True,
-    )
-    _scheduler.add_job(
         _sync_sector_wrapper,
         CronTrigger(hour=11, minute=35, timezone=TZ),
         id="sync_sector_am",
@@ -86,8 +72,13 @@ def _sync_daily_wrapper():
 
 
 async def _sync_daily_all():
-    """所有日线同步合并到一个event loop中执行，避免跨loop连接泄漏。"""
+    """所有收盘后同步+计算合并到一个event loop中执行，避免跨loop连接泄漏。"""
     from app.services.data_sync import sync_daily_data, sync_limit_list, sync_margin, sync_stock_basic, sync_daily_basic, sync_moneyflow_hsgt
+    from app.services.stock_pool_engine import StockPoolEngine
+    from app.services.sector_analysis import SectorAnalysisEngine
+    from app.services.market_review import MarketReviewEngine
+    from app.services.risk_scanner import RiskScanner
+    from app.api.credits import settle_market_guesses
     import logging
     log = logging.getLogger("sync")
     for name, fn in [
@@ -105,35 +96,24 @@ async def _sync_daily_all():
         except Exception as e:
             log.exception(f"sync_{name} failed: {e}")
 
+    log.info("compute: stock pool engines")
+    try:
+        await StockPoolEngine().compute_all()
+        await SectorAnalysisEngine().compute_all()
+        await MarketReviewEngine().compute()
+        scanner = RiskScanner()
+        await scanner.scan_risk_list()
+    except Exception as e:
+        log.exception(f"compute engines failed: {e}")
+
+    log.info("settle: market guesses")
+    try:
+        await settle_market_guesses()
+    except Exception as e:
+        log.exception(f"settle guesses failed: {e}")
+
 
 def _sync_sector_wrapper():
     from app.services.data_sync import sync_sector_data
     logger.info("Scheduled: sync_sector_data")
     _run_async(sync_sector_data())
-
-
-def _compute_engines_wrapper():
-    from app.services.stock_pool_engine import StockPoolEngine
-    from app.services.sector_analysis import SectorAnalysisEngine
-    from app.services.market_review import MarketReviewEngine
-    from app.services.risk_scanner import RiskScanner
-    logger.info("Scheduled: compute_all_engines")
-    _run_async(_run_all_engines())
-
-
-async def _run_all_engines():
-    from app.services.stock_pool_engine import StockPoolEngine
-    from app.services.sector_analysis import SectorAnalysisEngine
-    from app.services.market_review import MarketReviewEngine
-    from app.services.risk_scanner import RiskScanner
-    await StockPoolEngine().compute_all()
-    await SectorAnalysisEngine().compute_all()
-    await MarketReviewEngine().compute()
-    scanner = RiskScanner()
-    await scanner.scan_risk_list()
-
-
-def _settle_guesses_wrapper():
-    from app.api.credits import settle_market_guesses
-    logger.info("Scheduled: settle_market_guesses")
-    _run_async(settle_market_guesses())

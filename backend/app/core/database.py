@@ -51,6 +51,9 @@ async def init_db() -> None:
         # 自动补全旧数据库缺失的列（create_all 只建新表不改旧表）
         await _auto_migrate_schema(conn)
 
+        # 防御性建表：确保新增的ORM表在存量数据库中也存在
+        await _ensure_new_tables(conn)
+
     logger.info("SQLite tables created (migrations run via entrypoint)")
 
 
@@ -91,3 +94,18 @@ async def _auto_migrate_schema(conn):
                 sql = f"ALTER TABLE {table_name} ADD COLUMN {col_name} {expected_cols[col_name]}"
                 await conn.execute(_text(sql))
                 logger.info(f"Schema upgrade: added {table_name}.{col_name}")
+
+
+async def _ensure_new_tables(conn):
+    """防御性补建存量DB缺失的ORM表（create_all 在某些环境下会跳过新表）。"""
+    from sqlalchemy import text as _text
+    from app.models.orm.models import Base
+
+    for mapper in Base.registry.mappers:
+        table = mapper.local_table
+        result = await conn.execute(_text(
+            f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table.name}'"
+        ))
+        if not result.fetchone():
+            await conn.run_sync(lambda sync_conn: table.create(sync_conn, checkfirst=True))
+            logger.info(f"Schema upgrade: created table {table.name}")

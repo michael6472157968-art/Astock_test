@@ -135,11 +135,13 @@ async def admin_list_tasks():
 @router.post("/tasks/run-daily-batch")
 async def admin_run_daily_batch():
     try:
-        from app.services.data_sync import sync_daily_data, sync_limit_list, sync_margin, sync_stock_basic
+        from app.services.data_sync import sync_daily_data, sync_limit_list, sync_margin, sync_stock_basic, sync_daily_basic, sync_moneyflow_hsgt
         stock_count = await sync_stock_basic()
         daily_count = await sync_daily_data()
+        daily_basic_count = await sync_daily_basic()
         limit_count = await sync_limit_list()
         margin_count = await sync_margin()
+        moneyflow_count = await sync_moneyflow_hsgt()
 
         from app.services.stock_pool_engine import StockPoolEngine
         from app.services.sector_analysis import SectorAnalysisEngine
@@ -175,7 +177,9 @@ async def admin_run_daily_batch():
 
         return APIResponse(
             data={"stock_synced": stock_count, "daily_synced": daily_count,
+                  "daily_basic_synced": daily_basic_count,
                   "limit_synced": limit_count, "margin_synced": margin_count,
+                  "moneyflow_synced": moneyflow_count,
                   "warnings": warnings},
             timestamp=int(time.time()),
         )
