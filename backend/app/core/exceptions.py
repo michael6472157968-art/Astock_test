@@ -65,7 +65,7 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
         status_code=500,
         content={
             "code": 500,
-            "message": "服务器内部错误",
+            "message": f"服务器内部错误: {exc}",
             "data": None,
             "timestamp": int(time.time()),
             "ext_info": {},
