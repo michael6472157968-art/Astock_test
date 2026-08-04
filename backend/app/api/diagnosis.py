@@ -574,6 +574,7 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
 
         closes.reverse(); highs.reverse(); lows.reverse(); opens.reverse(); vols.reverse()
 
+        quant = _quant_signal(closes, highs, lows, vols)
         kline = _build_kline_data(records)
         indicators = _build_indicator_series(closes, highs, lows)
 
