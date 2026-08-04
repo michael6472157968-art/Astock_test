@@ -142,10 +142,13 @@ async def admin_run_daily_batch():
         from app.services.stock_pool_engine import StockPoolEngine
         from app.services.sector_analysis import SectorAnalysisEngine
         from app.services.market_review import MarketReviewEngine
+        from app.services.risk_scanner import RiskScanner
         from app.api.market import _ensure_review_table, _set_latest_flag, _save_review_meta, _purge_expired_reviews, cache_delete as _cache_delete
         from datetime import datetime as _datetime, timezone as _timezone
         await _ensure_review_table()
         await _purge_expired_reviews()
+        await StockPoolEngine().compute_all()
+        await SectorAnalysisEngine().compute_all()
         review_result = await MarketReviewEngine().compute()
         trade_date = review_result.get("date", "")
         if trade_date and review_result.get("content", {}).get("total"):
