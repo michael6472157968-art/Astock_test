@@ -26,21 +26,21 @@ def start_scheduler() -> None:
 
     _scheduler.add_job(
         _sync_daily_wrapper,
-        CronTrigger(hour=15, minute=35, timezone=TZ),
+        CronTrigger(hour=16, minute=5, timezone=TZ),
         id="sync_daily",
         name="日线数据同步",
         replace_existing=True,
     )
     _scheduler.add_job(
         _compute_engines_wrapper,
-        CronTrigger(hour=15, minute=40, timezone=TZ),
+        CronTrigger(hour=16, minute=10, timezone=TZ),
         id="compute_engines",
         name="离线计算引擎",
         replace_existing=True,
     )
     _scheduler.add_job(
         _settle_guesses_wrapper,
-        CronTrigger(hour=15, minute=45, timezone=TZ),
+        CronTrigger(hour=16, minute=15, timezone=TZ),
         id="settle_guesses",
         name="竞猜结算",
         replace_existing=True,

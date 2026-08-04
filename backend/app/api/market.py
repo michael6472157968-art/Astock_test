@@ -524,7 +524,7 @@ async def sector_ranking(user: dict = Depends(require_auth_optional)):
     # 缓存 miss → 从 DB 降级读取
     sectors = await _load_sectors_from_db(trade_date)
     if sectors:
-        await _cache_set(f"sector:ranking:{trade_date}", sectors, ttl=_settings.cache_offline_ttl)
+        await cache_set(f"sector:ranking:{trade_date}", sectors, ttl=86400)
         return APIResponse(data={"date": trade_date, "sectors": sectors}, timestamp=int(time.time()))
 
     return APIResponse(data={"date": "", "sectors": []}, timestamp=int(time.time()),
@@ -662,8 +662,7 @@ async def review_daily(date: str = "", user: dict = Depends(require_auth_optiona
             cached["is_trade_day"] = is_td
             cached["trade_date"] = date
             cached["generated_at"] = ""
-            return APIResponse(data=cached, timestamp=int(time.time())
-        )
+            return APIResponse(data=cached, timestamp=int(time.time()))
         return APIResponse(
             data={"status": "not_generated", "date": date, "content": {}, "is_trade_day": is_td, "trade_date": date},
             timestamp=int(time.time()),
