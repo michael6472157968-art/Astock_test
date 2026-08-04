@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from app.core.cache import cache_get as _cache_get, cache_set as _cache_set
 from app.core.settings import get_settings
 from app.middleware.auth_middleware import require_auth_optional
 from app.models.schemas.common import APIResponse
@@ -76,9 +78,34 @@ async def list_pool(pool_type: str, page: int = 1, page_size: int = 20,
 
     trade_date, is_td = await _resolve_trade_date()
 
-    from app.core.cache import cache_get
-    cached = await cache_get(f"pool:{pool_type}:{trade_date}")
+    from app.core.cache import cache_get as _cg
+    cached = await _cg(f"pool:{pool_type}:{trade_date}")
     items = cached if cached else []
+
+    # 缓存 miss 时从 DB 降级读取
+    if not items:
+        async with _sess() as s:
+            r = await s.execute(_text(
+                "SELECT ts_code, stock_name, market_data_json, inclusion_reason "
+                "FROM stock_pool_results "
+                "WHERE calc_date = :cd AND pool_type = :pt "
+                "ORDER BY rank_in_pool ASC"
+            ), {"cd": trade_date, "pt": pool_type})
+            for row in r:
+                try:
+                    md = json.loads(row[2]) if row[2] else {}
+                except Exception:
+                    md = {}
+                items.append({
+                    "stock_code": row[0],
+                    "stock_name": row[1],
+                    "close": md.get("close"),
+                    "change_pct": md.get("change_pct"),
+                    "volume_ratio": md.get("volume_ratio"),
+                    "inclusion_reason": row[3],
+                })
+            if items:
+                await _cache_set(f"pool:{pool_type}:{trade_date}", items, ttl=_settings.cache_offline_ttl)
 
     # 按用户偏好过滤交易权限板块
     exclude_prefixes = set()

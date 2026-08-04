@@ -14,6 +14,7 @@ from sqlalchemy import text
 from app.core.cache import cache_set
 from app.core.database import async_session
 from app.core.settings import get_settings
+from app.models.orm.models import StockPoolResult
 
 logger = logging.getLogger("stock_pool")
 _settings = get_settings()
@@ -69,6 +70,8 @@ class StockPoolEngine:
         for ptype in pools:
             await cache_set(f"pool:{ptype}:{trade_date}", pools[ptype],
                             ttl=_settings.cache_offline_ttl)
+            # 持久化到 DB——缓存 miss 时可降级读取
+            await self._persist_pool(ptype, pools[ptype], trade_date)
 
         counts = {k: len(v) for k, v in pools.items()}
         logger.info(f"Stock pools computed for {trade_date}: {counts}")
@@ -200,3 +203,26 @@ class StockPoolEngine:
             if len(result) >= POOL_SIZE:
                 break
         return result
+
+    async def _persist_pool(self, pool_type: str, items: list, calc_date: str):
+        """将选股池结果写入 stock_pool_results 表。"""
+        async with async_session() as session:
+            for i, item in enumerate(items):
+                try:
+                    await session.execute(text("""
+                        INSERT OR REPLACE INTO stock_pool_results
+                            (calc_date, pool_type, rank_in_pool, ts_code, stock_name,
+                             market_data_json, inclusion_reason)
+                        VALUES (:cd, :pt, :rk, :ts, :nm, :md, :ir)
+                    """), {
+                        "cd": calc_date,
+                        "pt": pool_type,
+                        "rk": i + 1,
+                        "ts": item.get("stock_code", ""),
+                        "nm": item.get("stock_name", ""),
+                        "md": f'{{"close":{item.get("close")},"change_pct":{item.get("change_pct")},"volume_ratio":{item.get("volume_ratio")}}}',
+                        "ir": item.get("inclusion_reason", ""),
+                    })
+                except Exception:
+                    continue
+            await session.commit()

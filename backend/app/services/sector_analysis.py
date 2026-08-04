@@ -10,6 +10,7 @@ from sqlalchemy import text
 from app.core.cache import cache_get, cache_set
 from app.core.database import async_session
 from app.core.settings import get_settings
+from app.models.orm.models import SectorAnalysisResult
 
 logger = logging.getLogger("sector")
 _settings = get_settings()
@@ -95,5 +96,26 @@ class SectorAnalysisEngine:
                 })
 
         await cache_set(f"sector:ranking:{trade_date}", sectors, ttl=_settings.cache_offline_ttl)
+        # 持久化到 DB
+        await self._persist_sectors(sectors, trade_date)
         logger.info(f"Sector analysis computed for {trade_date}: {len(sectors)} industries")
         return sectors
+
+    async def _persist_sectors(self, sectors: list, calc_date: str):
+        async with async_session() as session:
+            for s in sectors:
+                try:
+                    await session.execute(text("""
+                        INSERT OR REPLACE INTO sector_analysis_results
+                            (calc_date, sector_code, heat_score, differentiation_index, linked_sectors)
+                        VALUES (:cd, :sc, :hs, :di, :ls)
+                    """), {
+                        "cd": calc_date,
+                        "sc": s["name"],
+                        "hs": s["heat_score"],
+                        "di": abs(s.get("momentum", 0)),
+                        "ls": "[]",
+                    })
+                except Exception:
+                    continue
+            await session.commit()

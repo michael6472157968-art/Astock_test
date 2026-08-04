@@ -489,12 +489,44 @@ async def sector_leaders(sector_code: str, user: dict = Depends(require_auth_opt
 
 # ── 旧板块分析（保留兼容）──
 
+async def _load_sectors_from_db(trade_date: str) -> list:
+    """从 sector_analysis_results 表读取板块分析结果。"""
+    rows_list = []
+    from app.core.database import async_session
+    async with async_session() as sess:
+        r = await sess.execute(text(
+            "SELECT sector_code, heat_score, differentiation_index "
+            "FROM sector_analysis_results WHERE calc_date = :cd "
+            "ORDER BY heat_score DESC"
+        ), {"cd": trade_date})
+        for row in r:
+            rows_list.append({
+                "name": row[0],
+                "heat_score": round(float(row[1]), 2) if row[1] else 0,
+                "momentum": round(float(row[2]), 2) if row[2] else 0,
+                "avg_pct": 0,
+                "count": 0,
+                "max_pct": 0,
+                "min_pct": 0,
+                "prev_5d_avg": 0,
+                "phase": "",
+            })
+    return rows_list
+
+
 @sector_router.get("/ranking")
 async def sector_ranking(user: dict = Depends(require_auth_optional)):
     trade_date, _ = await _get_trade_context()
     cached = await cache_get(f"sector:ranking:{trade_date}")
     if cached:
         return APIResponse(data={"date": trade_date, "sectors": cached}, timestamp=int(time.time()))
+
+    # 缓存 miss → 从 DB 降级读取
+    sectors = await _load_sectors_from_db(trade_date)
+    if sectors:
+        await _cache_set(f"sector:ranking:{trade_date}", sectors, ttl=_settings.cache_offline_ttl)
+        return APIResponse(data={"date": trade_date, "sectors": sectors}, timestamp=int(time.time()))
+
     return APIResponse(data={"date": "", "sectors": []}, timestamp=int(time.time()),
                        ext_info={"note": "请先在管理后台执行数据同步和板块分析计算"})
 
