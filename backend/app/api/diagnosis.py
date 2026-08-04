@@ -623,6 +623,15 @@ async def _fetch_financial_snapshot(stock_code: str) -> dict | None:
     return result
 
 
+def _safe_float(val, default=0.0):
+    """Safely convert a value to float, handling NaN and None."""
+    import math
+    if val is None:
+        return default
+    f = float(val)
+    return default if math.isnan(f) else f
+
+
 async def _fetch_holder_snapshot(stock_code: str) -> dict | None:
     """股东人数变化——当天内缓存不重复请求。"""
     today = date.today().isoformat()
@@ -646,13 +655,12 @@ async def _fetch_holder_snapshot(stock_code: str) -> dict | None:
         await cache_set(cache_key, {}, ttl=86400)
         return None
 
-    # 保留最近3期
     recent = sorted(rows, key=lambda r: r.get("end_date", ""), reverse=True)[:3]
     result = {
         "holders": [{
             "end_date": str(r.get("end_date", "")),
-            "holder_num": int(float(r.get("holder_num", 0) or 0)),
-            "top_holder_ratio": round(float(r.get("top_holder_ratio", 0) or 0), 2),
+            "holder_num": int(_safe_float(r.get("holder_num"), 0)),
+            "top_holder_ratio": round(_safe_float(r.get("top_holder_ratio"), 0), 2),
         } for r in recent],
         "trend": "concentrated" if (
             len(recent) >= 2 and recent[0].get("holder_num", 0) < recent[1].get("holder_num", 0)
