@@ -294,8 +294,8 @@ async def market_mood(user: dict = Depends(require_auth_optional)):
                 limit_up = 0
                 limit_down = 0
                 limit_r = await sess.execute(
-                    text("SELECT COUNT(*) FILTER (WHERE \"limit\" = 'U') as up, "
-                         "COUNT(*) FILTER (WHERE \"limit\" = 'D') as down "
+                    text("SELECT COUNT(*) FILTER (WHERE limit_type != '跌停池') as up, "
+                         "COUNT(*) FILTER (WHERE limit_type = '跌停池') as down "
                          "FROM limit_list_records WHERE trade_date = :td"),
                     {"td": td},
                 )

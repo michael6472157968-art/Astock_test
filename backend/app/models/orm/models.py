@@ -189,11 +189,13 @@ class LimitListRecord(Base):
     trade_date = Column(String(8), nullable=False, index=True)
     ts_code = Column(String(20), nullable=False)
     name = Column(String(50), default="")
-    close = Column(Float, default=0)
+    price = Column(Float, default=0)
     pct_chg = Column(Float, default=0)
-    limit = Column(String(4), default="")  # U/D
-    limit_times = Column(Integer, default=0)
-    open_times = Column(Integer, default=0)
+    limit_type = Column(String(10), default="")  # 涨停池/连扳池/跌停池
+    open_num = Column(Integer, default=0)
+    lu_desc = Column(String(200), default="")
+    tag = Column(String(50), default="")
+    status = Column(String(50), default="")  # N连板/换手板等
     created_at = Column(DateTime, default=_now)
 
     __table_args__ = (

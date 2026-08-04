@@ -159,17 +159,19 @@ async def sync_limit_list(trade_date: str = "") -> int:
             try:
                 await session.execute(text("""
                     INSERT OR REPLACE INTO limit_list_records
-                        (trade_date, ts_code, name, close, pct_chg, "limit", limit_times, open_times)
-                    VALUES (:td, :ts, :nm, :cl, :pct, :lt, :ltm, :otm)
+                        (trade_date, ts_code, name, price, pct_chg, limit_type, open_num, lu_desc, tag, status)
+                    VALUES (:td, :ts, :nm, :pr, :pct, :lt, :onm, :ld, :tg, :st)
                 """), {
                     "td": str(row.get("trade_date", trade_date)),
                     "ts": row.get("ts_code", ""),
                     "nm": row.get("name", ""),
-                    "cl": float(row.get("close", 0) or 0),
+                    "pr": float(row.get("price", 0) or 0),
                     "pct": float(row.get("pct_chg", 0) or 0),
-                    "lt": str(row.get("limit", "")),
-                    "ltm": int(row.get("limit_times", 0) or 0),
-                    "otm": int(row.get("open_times", 0) or 0),
+                    "lt": str(row.get("limit_type", "")),
+                    "onm": int(row.get("open_num", 0) or 0),
+                    "ld": str(row.get("lu_desc", ""))[:200],
+                    "tg": str(row.get("tag", ""))[:50],
+                    "st": str(row.get("status", ""))[:50],
                 })
             except Exception:
                 continue

@@ -183,8 +183,8 @@ async def get_index_daily(ts_code: str, start_date: str, end_date: str) -> list[
 
 
 async def get_limit_list(trade_date: str) -> list[dict]:
-    """涨跌停列表。"""
-    result = await call_tushare("limit_list", trade_date=trade_date)
+    """涨跌停列表——同花顺来源，120积分可调用。"""
+    result = await call_tushare("limit_list_ths", trade_date=trade_date, limit_type="涨停池")
     if result is None or (hasattr(result, 'empty') and result.empty):
         return []
     return result.to_dict(orient="records")
