@@ -384,7 +384,11 @@
     btn.disabled = true; btn.textContent = '同步中...';
     document.getElementById('syncMsg').textContent = '同步中（约30秒）...';
     API.post('/admin/tasks/run-daily-batch').then(function(r) {
-      document.getElementById('syncMsg').textContent = '完成：' + r.data.stock_synced + ' 只股票, ' + r.data.daily_synced + ' 条日线';
+      var msg = '完成：' + r.data.stock_synced + ' 只股票, ' + r.data.daily_synced + ' 条日线';
+      if (r.data.warnings && r.data.warnings.length > 0) {
+        msg += '\n⚠ ' + r.data.warnings.join('\n⚠ ');
+      }
+      document.getElementById('syncMsg').textContent = msg;
       loadSyncStats();
     }).catch(function(e) {
       document.getElementById('syncMsg').textContent = '失败: ' + (e.message || '');

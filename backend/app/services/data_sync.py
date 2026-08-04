@@ -144,12 +144,20 @@ async def sync_financials() -> int:
 
 
 async def sync_limit_list(trade_date: str = "") -> int:
-    """同步涨跌停列表。写入 limit_list_records 表。"""
+    """同步涨跌停列表。写入 limit_list_records 表。
+    注意: limit_list_ths 需要 8000 积分，2000 积分账户会失败。
+    失败时返回 -1 表示接口不可用，不阻断调用方流程。
+    """
     if not trade_date:
         from app.utils.trading_calendar import get_latest_trade_date
         trade_date = await get_latest_trade_date()
 
-    rows = await get_limit_list(trade_date)
+    try:
+        rows = await get_limit_list(trade_date)
+    except Exception as e:
+        logger.warning(f"limit_list_ths failed (积分不足?): {e}")
+        return -1
+
     if not rows:
         logger.info(f"No limit list data for {trade_date}")
         return 0
