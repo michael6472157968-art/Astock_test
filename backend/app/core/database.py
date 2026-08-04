@@ -40,11 +40,26 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
         # 存量数据库补充 industry 索引
         await conn.run_sync(lambda sync_conn: sync_conn.execute(
             __import__("sqlalchemy").text(
                 "CREATE INDEX IF NOT EXISTS ix_stocks_industry ON stocks (industry)"
             )
         ))
+
+        # 自动补全旧数据库缺失的列（create_all 只建新表不改旧表）
+        result = await conn.execute(
+            __import__("sqlalchemy").text("PRAGMA table_info('users')")
+        )
+        existing = {row[1] for row in await result.fetchall()}
+        upgrades = {
+            "credits": "ALTER TABLE users ADD COLUMN credits INTEGER DEFAULT 0",
+            "is_active": "ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1",
+        }
+        for col, sql in upgrades.items():
+            if col not in existing:
+                await conn.execute(__import__("sqlalchemy").text(sql))
+                logger.info(f"Schema upgrade: added users.{col}")
 
     logger.info("SQLite tables created (migrations run via entrypoint)")
