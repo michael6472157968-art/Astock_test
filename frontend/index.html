@@ -332,7 +332,30 @@
       var ma5 = ma(5), ma10 = ma(10), ma20 = ma(20);
 
       var option = {
-        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' },
+          formatter: function(params) {
+            var html = '<div style="font-size:12px">' + params[0].axisValue + '</div>';
+            for (var i = 0; i < params.length; i++) {
+              var p = params[i];
+              var color = p.color || '#ccc';
+              var dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin-right:6px;"></span>';
+              var val = '';
+              if (p.seriesName === 'K线') {
+                var d = p.data;
+                var idxName = names[currentKlineCode] || currentKlineCode;
+                html += '<div style="margin-top:2px">' + dot + ' ' + idxName + '：' + d[2] + '</div>';
+                html += '<div style="margin-left:14px;line-height:1.6">开 ' + d[1] + '</div>';
+                html += '<div style="margin-left:14px;line-height:1.6">收 ' + d[2] + '</div>';
+                html += '<div style="margin-left:14px;line-height:1.6">低 ' + d[3] + '</div>';
+                html += '<div style="margin-left:14px;line-height:1.6">高 ' + d[4] + '</div>';
+                continue;
+              }
+              val = (p.data != null ? p.data.toFixed(2) : '--');
+              html += '<div style="margin-top:2px">' + dot + ' ' + p.seriesName + ': ' + val + '</div>';
+            }
+            return html;
+          }
+        },
         grid: { left: '8%', right: '4%', top: 20, bottom: 30 },
         xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 10, formatter: function(v) { return v.slice(5); } } },
         yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { color: 'rgba(128,128,128,0.15)' } } },
@@ -362,7 +385,7 @@
   function loadMarquee() {
     // 并行拉取热门+短线4池
     Promise.all([
-      API.get('/stock-pool/hot_leader').then(function(r) { return (r.data.items || []).slice(0, 6); }).catch(function() { return []; }),
+      API.get('/stock-pool/hot_leader').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
       API.get('/stock-pool/short_t3_momentum').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
       API.get('/stock-pool/short_t3_dip').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
       API.get('/stock-pool/short_t7_momentum').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),

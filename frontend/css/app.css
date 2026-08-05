@@ -502,7 +502,7 @@ body {
   display: flex;
   gap: 0;
   width: max-content;
-  animation: marqueeScroll 30s linear infinite;
+  animation: marqueeScroll 60s linear infinite;
 }
 .marquee-wrap:hover .marquee-track { animation-play-state: paused; }
 @keyframes marqueeScroll {
