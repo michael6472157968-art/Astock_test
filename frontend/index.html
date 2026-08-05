@@ -73,6 +73,17 @@
       </div>
     </div>
 
+    <!-- 短线优选4池 -->
+    <div class="mood-panel" id="shortPoolPanel" style="margin-bottom:16px;">
+      <div class="mood-header"><span class="mood-title">短线优选</span><span class="mood-date" id="shortPoolDate">加载中...</span></div>
+      <div class="short-pool-grid" id="shortPoolGrid">
+        <div class="short-pool-col" id="spT3Momentum"><div class="spc-label">T+3 追涨</div><div class="spc-list">加载中...</div></div>
+        <div class="short-pool-col" id="spT3Dip"><div class="spc-label">T+3 低吸</div><div class="spc-list">加载中...</div></div>
+        <div class="short-pool-col" id="spT7Momentum"><div class="spc-label">T+7 追涨</div><div class="spc-list">加载中...</div></div>
+        <div class="short-pool-col" id="spT7Dip"><div class="spc-label">T+7 低吸</div><div class="spc-list">加载中...</div></div>
+      </div>
+    </div>
+
     <!-- 市场情绪 + 板块热力预览 双栏 -->
     <div class="mid-row">
       <div class="mood-panel" id="moodPanel">
@@ -349,18 +360,23 @@
   });
 
   function loadMarquee() {
-    // 并行拉取热门+短线优选
+    // 并行拉取热门+短线4池
     Promise.all([
       API.get('/stock-pool/hot_leader').then(function(r) { return (r.data.items || []).slice(0, 6); }).catch(function() { return []; }),
-      API.get('/stock-pool/short_t3_momentum').then(function(r) { return (r.data.items || []).slice(0, 6); }).catch(function() { return []; })
+      API.get('/stock-pool/short_t3_momentum').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
+      API.get('/stock-pool/short_t3_dip').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
+      API.get('/stock-pool/short_t7_momentum').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
+      API.get('/stock-pool/short_t7_dip').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; })
     ]).then(function(results) {
-      var hotItems = results[0], shortItems = results[1];
+      var hotItems = results[0];
       var rows = [];
       hotItems.forEach(function(s) {
         rows.push({ name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0, tag: 'hot', tagLabel: '热门' });
       });
-      shortItems.forEach(function(s) {
-        rows.push({ name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0, tag: 'short', tagLabel: '短线' });
+      // 短线4池去重合并
+      var seen = {};
+      [].concat(results[1], results[2], results[3], results[4]).forEach(function(s) {
+        if (!seen[s.stock_code]) { seen[s.stock_code] = true; rows.push({ name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0, tag: 'short', tagLabel: '短线' }); }
       });
       if (!rows.length) return;
       // 双份拼接实现无缝循环
@@ -377,12 +393,83 @@
       document.getElementById('marqueeTrack').innerHTML = html;
     }).catch(function() {});
   }
+  }
+
+  // ── 短线优选4池列表 ──
+  var shortPoolMap = [
+    { id: 'spT3Momentum', pool: 'short_t3_momentum', label: 'T+3 追涨' },
+    { id: 'spT3Dip', pool: 'short_t3_dip', label: 'T+3 低吸' },
+    { id: 'spT7Momentum', pool: 'short_t7_momentum', label: 'T+7 追涨' },
+    { id: 'spT7Dip', pool: 'short_t7_dip', label: 'T+7 低吸' }
+  ];
+  function loadShortPools() {
+    shortPoolMap.forEach(function(sp) {
+      var el = document.getElementById(sp.id);
+      API.get('/stock-pool/' + sp.pool).then(function(r) {
+        var items = (r.data.items || []).slice(0, 8);
+        document.getElementById('shortPoolDate').textContent = '数据日期 ' + (r.data.trade_date || '--');
+        if (!items.length) { el.querySelector('.spc-list').innerHTML = '<div style="color:var(--color-text-muted);font-size:0.75rem;padding:8px;">暂无信号</div>'; return; }
+        var html = '';
+        items.forEach(function(s) {
+          var pct = s.change_pct || 0;
+          var cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+          html += '<div class="spc-item" onclick="window.location.href='diagnosis.html?code=' + encodeURIComponent(s.stock_code) + ''"><span class="spc-name">' + (s.stock_name || s.stock_code) + '</span><span class="spc-pct ' + cls + '">' + fmtSign(pct) + '%</span></div>';
+        });
+        el.querySelector('.spc-list').innerHTML = html;
+      }).catch(function() {
+        el.querySelector('.spc-list').innerHTML = '<div style="color:var(--color-text-muted);font-size:0.75rem;padding:8px;">加载失败</div>';
+      });
+    });
+  }
+
+
+  var indexTimer = null;
+  function loadTradeCalendar() {
+    API.get('/market/calendar').then(function(r) {
+      var d = r.data;
+      document.getElementById('calMonthLabel').textContent = d.month;
+
+      var cdEl = document.getElementById('calCountdown');
+      if (d.countdown && d.countdown.days > 0) {
+        cdEl.innerHTML = '<span style="color:var(--color-warning);">' + d.countdown.label + '</span>';
+      } else if (d.is_trade_day) {
+        cdEl.textContent = '今日交易中';
+        cdEl.style.color = 'var(--color-success)';
+      } else if (d.countdown) {
+        cdEl.textContent = d.countdown.label;
+      } else {
+        cdEl.textContent = '';
+      }
+
+      var weeks = d.weeks || [];
+      var html = '';
+      weeks.forEach(function(week) {
+        html += '<div style="display:flex;text-align:center;">';
+        week.forEach(function(day) {
+          var cls = 'cal-day ';
+          if (!day.is_current_month) { cls += 'cal-day-other '; }
+          if (day.is_today) { cls += 'cal-day-today '; }
+          if (day.is_trade_day) { cls += 'cal-day-trade '; }
+          if (day.is_weekend) { cls += 'cal-day-weekend '; }
+          var bg = '';
+          if (day.is_today) bg = 'background:var(--color-primary);color:#fff;font-weight:700;';
+          else if (day.is_trade_day) bg = 'background:var(--color-success);color:#fff;opacity:0.6;';
+          else if (!day.is_current_month) bg = 'color:var(--color-text-muted);opacity:0.3;';
+          else if (day.is_weekend) bg = 'color:var(--color-text-muted);opacity:0.4;';
+          html += '<span style="flex:1;padding:4px 0;font-size:0.72rem;border-radius:4px;margin:1px;' + bg + '">' + day.date + '</span>';
+        });
+        html += '</div>';
+      });
+      document.getElementById('calGrid').innerHTML = html;
+    }).catch(function() {});
+  }
 
   function autoRefresh() {
     updateHealth(); loadStockCount();
     loadDashboard();
     loadTradeCalendar();
     loadMarquee();
+    loadShortPools();
     if (inTradingHours()) {
       loadIndices(); loadMood();
       document.getElementById('refreshHint').textContent = '交易时段 | 60s 刷新';
@@ -395,7 +482,7 @@
     }
   }
 
-  loadIndices(); loadMood(); loadIndexKline(); loadMarquee(); loadMarketGuess(); autoRefresh();
+  loadIndices(); loadMood(); loadIndexKline(); loadMarquee(); loadShortPools(); loadMarketGuess(); autoRefresh();
   setInterval(function() { updateHealth(); }, 30000);
 
   // 窗口resize时重绘K线
@@ -459,64 +546,6 @@
     }).catch(function() { document.getElementById('statusStockCount').textContent = '--'; });
   }
 
-  var indexTimer = null;
-  function loadTradeCalendar() {
-    API.get('/market/calendar').then(function(r) {
-      var d = r.data;
-      document.getElementById('calMonthLabel').textContent = d.month;
-
-      var cdEl = document.getElementById('calCountdown');
-      if (d.countdown && d.countdown.days > 0) {
-        cdEl.innerHTML = '<span style="color:var(--color-warning);">' + d.countdown.label + '</span>';
-      } else if (d.is_trade_day) {
-        cdEl.textContent = '今日交易中';
-        cdEl.style.color = 'var(--color-success)';
-      } else if (d.countdown) {
-        cdEl.textContent = d.countdown.label;
-      } else {
-        cdEl.textContent = '';
-      }
-
-      var weeks = d.weeks || [];
-      var html = '';
-      weeks.forEach(function(week) {
-        html += '<div style="display:flex;text-align:center;">';
-        week.forEach(function(day) {
-          var cls = 'cal-day ';
-          if (!day.is_current_month) { cls += 'cal-day-other '; }
-          if (day.is_today) { cls += 'cal-day-today '; }
-          if (day.is_trade_day) { cls += 'cal-day-trade '; }
-          if (day.is_weekend) { cls += 'cal-day-weekend '; }
-          var bg = '';
-          if (day.is_today) bg = 'background:var(--color-primary);color:#fff;font-weight:700;';
-          else if (day.is_trade_day) bg = 'background:var(--color-success);color:#fff;opacity:0.6;';
-          else if (!day.is_current_month) bg = 'color:var(--color-text-muted);opacity:0.3;';
-          else if (day.is_weekend) bg = 'color:var(--color-text-muted);opacity:0.4;';
-          html += '<span style="flex:1;padding:4px 0;font-size:0.72rem;border-radius:4px;margin:1px;' + bg + '">' + day.date + '</span>';
-        });
-        html += '</div>';
-      });
-      document.getElementById('calGrid').innerHTML = html;
-    }).catch(function() {});
-  }
-  function autoRefresh() {
-    updateHealth(); loadStockCount();
-    loadDashboard();
-    loadTradeCalendar();
-    if (inTradingHours()) {
-      loadIndices(); loadMood();
-      document.getElementById('refreshHint').textContent = '交易时段 | 60s 刷新';
-      indexTimer = setInterval(function() {
-        if (!inTradingHours()) { clearInterval(indexTimer); document.getElementById('refreshHint').textContent = '非交易时段'; return; }
-        loadIndices(); loadMood(); loadDashboard();
-      }, 60000);
-    } else {
-      document.getElementById('refreshHint').textContent = '非交易时段';
-    }
-  }
-
-  loadIndices(); loadMood(); loadHotStocks(); loadMarketGuess(); autoRefresh();
-  setInterval(function() { updateHealth(); }, 30000);
 
   // ── 大盘竞猜 ──
   function loadMarketGuess() {
