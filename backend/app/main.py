@@ -42,15 +42,17 @@ async def lifespan(app: FastAPI):
 
     start_scheduler()
 
-    # 启动时轻量同步：仅股票列表 + 单日日线。其余由 scheduler 定时执行
+    # 启动时轻量同步：股票列表 + 日线 + 每日指标。计算引擎随后触发。
     async def _auto_sync():
         try:
-            from app.services.data_sync import sync_stock_basic, sync_daily_data
+            from app.services.data_sync import sync_stock_basic, sync_daily_data, sync_daily_basic
 
             logger.info("Auto-sync: stock basic...")
             await sync_stock_basic()
             logger.info("Auto-sync: daily data...")
             await sync_daily_data()
+            logger.info("Auto-sync: daily basic...")
+            await sync_daily_basic()
 
             from app.core.database import async_session
             from sqlalchemy import text
@@ -64,8 +66,23 @@ async def lifespan(app: FastAPI):
                 logger.info(f"Historical sync complete: {hist_result}")
             else:
                 logger.info(f"Stock daily rows: {daily_count} (>= 50000), skip historical sync")
+
+            # 数据同步完成后触发计算引擎，确保启动后数据都是新的
+            logger.info("Auto-sync: compute engines...")
+            from app.services.stock_pool_engine import StockPoolEngine
+            from app.services.short_term_engine import ShortTermEngine
+            from app.services.sector_analysis import SectorAnalysisEngine
+            from app.services.market_review import MarketReviewEngine
+            from app.services.risk_scanner import RiskScanner
+            await StockPoolEngine().compute_all()
+            await ShortTermEngine().compute_all()
+            await SectorAnalysisEngine().compute_all()
+            await MarketReviewEngine().compute()
+            scanner = RiskScanner()
+            await scanner.scan_risk_list()
+            logger.info("Auto-sync: all engines done")
         except Exception as e:
-            logger.warning(f"Auto-sync skipped: {e}")
+            logger.warning(f"Auto-sync failed: {e}")
 
     import asyncio
     asyncio.create_task(_auto_sync())
