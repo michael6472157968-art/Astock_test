@@ -393,7 +393,6 @@
       document.getElementById('marqueeTrack').innerHTML = html;
     }).catch(function() {});
   }
-  }
 
   // ── 短线优选4池列表 ──
   var shortPoolMap = [
@@ -413,7 +412,7 @@
         items.forEach(function(s) {
           var pct = s.change_pct || 0;
           var cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
-          html += '<div class="spc-item" onclick="window.location.href='diagnosis.html?code=' + encodeURIComponent(s.stock_code) + ''"><span class="spc-name">' + (s.stock_name || s.stock_code) + '</span><span class="spc-pct ' + cls + '">' + fmtSign(pct) + '%</span></div>';
+          html += '<div class="spc-item" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'"><span class="spc-name">' + (s.stock_name || s.stock_code) + '</span><span class="spc-pct ' + cls + '">' + fmtSign(pct) + '%</span></div>';
         });
         el.querySelector('.spc-list').innerHTML = html;
       }).catch(function() {
