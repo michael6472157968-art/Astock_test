@@ -60,15 +60,17 @@ async def admin_cache_clear():
 async def admin_refresh_pool():
     try:
         from app.services.stock_pool_engine import StockPoolEngine
+        from app.services.short_term_engine import ShortTermEngine
         from app.services.sector_analysis import SectorAnalysisEngine
         from app.services.market_review import MarketReviewEngine
         from app.services.risk_scanner import RiskScanner
         result = await StockPoolEngine().compute_all()
+        await ShortTermEngine().compute_all()
         await SectorAnalysisEngine().compute_all()
         await MarketReviewEngine().compute()
         scanner = RiskScanner()
         await scanner.scan_risk_list()
-        return APIResponse(data={"message": "选股池+板块+复盘+风险已全部刷新"}, timestamp=int(time.time()))
+        return APIResponse(data={"message": "选股池+短线优选+板块+复盘+风险已全部刷新"}, timestamp=int(time.time()))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -143,7 +145,11 @@ async def admin_run_daily_batch():
         margin_count = await sync_margin()
         moneyflow_count = await sync_moneyflow_hsgt()
 
+        from app.services.alert_engine import AlertEngine
+        await AlertEngine().scan_all(str(date.today()))
+
         from app.services.stock_pool_engine import StockPoolEngine
+        from app.services.short_term_engine import ShortTermEngine
         from app.services.sector_analysis import SectorAnalysisEngine
         from app.services.market_review import MarketReviewEngine
         from app.services.risk_scanner import RiskScanner
@@ -152,6 +158,7 @@ async def admin_run_daily_batch():
         await _ensure_review_table()
         await _purge_expired_reviews()
         await StockPoolEngine().compute_all()
+        await ShortTermEngine().compute_all()
         await SectorAnalysisEngine().compute_all()
         review_result = await MarketReviewEngine().compute()
         trade_date = review_result.get("date", "")

@@ -75,6 +75,7 @@ async def _sync_daily_all():
     """所有收盘后同步+计算合并到一个event loop中执行，避免跨loop连接泄漏。"""
     from app.services.data_sync import sync_daily_data, sync_limit_list, sync_margin, sync_stock_basic, sync_daily_basic, sync_moneyflow_hsgt
     from app.services.stock_pool_engine import StockPoolEngine
+    from app.services.short_term_engine import ShortTermEngine
     from app.services.sector_analysis import SectorAnalysisEngine
     from app.services.market_review import MarketReviewEngine
     from app.services.risk_scanner import RiskScanner
@@ -96,9 +97,17 @@ async def _sync_daily_all():
         except Exception as e:
             log.exception(f"sync_{name} failed: {e}")
 
+    log.info("scan: personalized alerts")
+    try:
+        from app.services.alert_engine import AlertEngine
+        await AlertEngine().scan_all(trade_date)
+    except Exception as e:
+        log.exception(f"alert scan failed: {e}")
+
     log.info("compute: stock pool engines")
     try:
         await StockPoolEngine().compute_all()
+        await ShortTermEngine().compute_all()
         await SectorAnalysisEngine().compute_all()
         await MarketReviewEngine().compute()
         scanner = RiskScanner()
