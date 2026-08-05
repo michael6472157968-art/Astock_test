@@ -45,10 +45,32 @@
       <span style="font-size:0.7rem;padding:2px 8px;border-radius:4px;background:var(--color-border);color:var(--color-text-muted);" id="indexSource">--</span>
     </div>
     <div class="index-bar" id="indexBar">
-      <div class="index-card"><div class="ic-name">上证指数</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
-      <div class="index-card"><div class="ic-name">深证成指</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
-      <div class="index-card"><div class="ic-name">创业板指</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
-      <div class="index-card"><div class="ic-name">科创50</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
+      <div class="index-card active" data-code="000001.SH"><div class="ic-name">上证指数</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
+      <div class="index-card" data-code="399001.SZ"><div class="ic-name">深证成指</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
+      <div class="index-card" data-code="399006.SZ"><div class="ic-name">创业板指</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
+      <div class="index-card" data-code="000688.SH"><div class="ic-name">科创50</div><div class="ic-price">--</div><div class="ic-change flat">--</div></div>
+    </div>
+
+    <!-- 指数K线图 -->
+    <div class="index-kline-wrap" id="klineWrap">
+      <div class="kline-header">
+        <span class="kline-title" id="klineTitle">上证指数 K线图</span>
+        <span class="kline-meta" id="klineMeta">加载中...</span>
+      </div>
+      <div class="kline-chart" id="klineChart"></div>
+    </div>
+
+    <!-- 滚动行情条 -->
+    <div class="marquee-section" id="marqueeSection">
+      <div class="marquee-header">
+        <span class="mh-dot green"></span>
+        <span class="mh-label">热门股票</span>
+        <span class="mh-dot red" style="margin-left:16px;"></span>
+        <span class="mh-label">短线优选</span>
+      </div>
+      <div class="marquee-wrap">
+        <div class="marquee-track" id="marqueeTrack"></div>
+      </div>
     </div>
 
     <!-- 市场情绪 + 板块热力预览 双栏 -->
@@ -103,14 +125,6 @@
           <span style="flex:1">一</span><span style="flex:1">二</span><span style="flex:1">三</span><span style="flex:1">四</span><span style="flex:1">五</span><span style="flex:1;color:var(--color-danger)">六</span><span style="flex:1;color:var(--color-danger)">日</span>
         </div>
         <div id="calGrid"></div>
-      </div>
-    </div>
-
-    <!-- 热门股票 -->
-    <div>
-      <h3 style="font-size:0.95rem;font-weight:600;margin-bottom:12px;">热门股票</h3>
-      <div class="hot-stock-list" id="hotStocks">
-        <div class="hot-stock-card"><div class="hs-info"><div class="hs-name">加载中...</div></div></div>
       </div>
     </div>
 
@@ -272,50 +286,122 @@
     }).catch(function() {});
   }
 
-  function renderSparkline(container, tsCode, pctChg) {
-    var el = typeof container === 'string' ? document.getElementById(container) : container;
-    if (!el) return;
-    var c = pctChg >= 0 ? '#ef4444' : '#22c55e';
-    var h = Math.min(Math.abs(pctChg) * 2.5, 30); h = Math.max(h, 4);
-    el.innerHTML = '<div style="display:flex;align-items:flex-end;gap:2px;height:36px;justify-content:center">' +
-      Array.from({length:5}, function(_, i) {
-        var barH = h * (0.4 + Math.random() * 0.6);
-        return '<div style="width:10px;height:' + barH + 'px;background:' + c + ';border-radius:2px;opacity:' + (0.3 + i*0.17) + '"></div>';
-      }).join('') + '</div>';
-  }
+  var klineChart = null;
+  var currentKlineCode = '000001.SH';
 
-  function loadHotStocks() {
-    API.get('/stock-pool/hot_leader').then(function(r) {
-      var items = r.data.items || [];
-      checkHolidayBanner(r.data);
-      if (!items.length) {
-        document.getElementById('hotStocks').innerHTML = '<div class="hot-stock-card"><div class="hs-info"><div class="hs-name">暂无数据</div></div></div>';
+  function loadIndexKline(code) {
+    code = code || currentKlineCode;
+    currentKlineCode = code;
+    var names = {'000001.SH': '上证指数', '399001.SZ': '深证成指', '399006.SZ': '创业板指', '000688.SH': '科创50'};
+    document.getElementById('klineTitle').textContent = (names[code] || code) + ' K线图';
+    document.getElementById('klineMeta').textContent = '加载中...';
+
+    // 高亮当前选中卡片
+    document.querySelectorAll('.index-card').forEach(function(c) {
+      c.classList.toggle('active', c.getAttribute('data-code') === code);
+    });
+
+    API.get('/market/index_kline?code=' + encodeURIComponent(code) + '&days=120').then(function(r) {
+      var data = r.data.kline || [];
+      document.getElementById('klineMeta').textContent = (r.data.trade_date || '') + ' · ' + data.length + '条';
+      if (!data.length) {
+        if (klineChart) { klineChart.dispose(); klineChart = null; }
+        document.getElementById('klineChart').innerHTML = '<div style="text-align:center;padding:60px;color:var(--color-text-muted);">暂无K线数据</div>';
         return;
       }
-      var top4 = items.slice(0, 4);
-      var html = '';
-      top4.forEach(function(s, idx) {
-        var tsCode = s.stock_code || s.ts_code || '';
-        var name = s.stock_name || s.name || tsCode;
-        var close = s.close !== undefined ? s.close : 0;
-        var pct = s.change_pct !== undefined ? s.change_pct : (s.pct_chg !== undefined ? s.pct_chg : 0);
-        var chartId = 'spark_' + idx;
-        html += '<div class="hot-stock-card" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(tsCode) + '\'">' +
-          '<div class="hs-info"><div class="hs-name">' + name + '</div><div class="hs-code">' + tsCode + '</div>' +
-          '<div class="hs-price">' + (close ? close.toFixed(2) : '--') + ' <span class="hs-pct ' + pctCls(pct) + '">' + fmtSign(pct) + '%</span></div></div>' +
-          '<div class="hs-chart" id="' + chartId + '"></div></div>';
-      });
-      document.getElementById('hotStocks').innerHTML = html;
-      top4.forEach(function(s, idx) {
-        var el = document.getElementById('spark_' + idx);
-        if (el) renderSparkline(el, s.stock_code || s.ts_code, s.change_pct !== undefined ? s.change_pct : (s.pct_chg !== undefined ? s.pct_chg : 0));
-      });
+      var dates = data.map(function(d) { return d.date; });
+      var ohlc = data.map(function(d) { return [d.open, d.close, d.low, d.high]; });
+      var ma = function(period) {
+        return data.map(function(_, i) {
+          if (i < period - 1) return null;
+          var sum = 0; for (var j = 0; j < period; j++) sum += data[i - j].close;
+          return +(sum / period).toFixed(2);
+        });
+      };
+      var ma5 = ma(5), ma10 = ma(10), ma20 = ma(20);
+
+      var option = {
+        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+        grid: { left: '8%', right: '4%', top: 20, bottom: 30 },
+        xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 10, formatter: function(v) { return v.slice(5); } } },
+        yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { color: 'rgba(128,128,128,0.15)' } } },
+        series: [
+          { name: 'K线', type: 'candlestick', data: ohlc,
+            itemStyle: { color: '#ef4444', color0: '#22c55e', borderColor: '#ef4444', borderColor0: '#22c55e' } },
+          { name: 'MA5', type: 'line', data: ma5, smooth: true, lineStyle: { width: 1, color: '#f59e0b' }, symbol: 'none' },
+          { name: 'MA10', type: 'line', data: ma10, smooth: true, lineStyle: { width: 1, color: '#3b82f6' }, symbol: 'none' },
+          { name: 'MA20', type: 'line', data: ma20, smooth: true, lineStyle: { width: 1, color: '#a855f7' }, symbol: 'none' },
+        ]
+      };
+      var dom = document.getElementById('klineChart');
+      if (klineChart) klineChart.dispose();
+      klineChart = echarts.init(dom);
+      klineChart.setOption(option);
     }).catch(function() {
-      document.getElementById('hotStocks').innerHTML = '<div class="hot-stock-card"><div class="hs-info"><div class="hs-name">数据加载失败</div></div></div>';
+      document.getElementById('klineMeta').textContent = '加载失败';
     });
   }
 
-  // ── Sector Leaders Modal ──
+  // 指数卡片点击切换K线
+  document.getElementById('indexBar').addEventListener('click', function(e) {
+    var card = e.target.closest('.index-card');
+    if (card) loadIndexKline(card.getAttribute('data-code'));
+  });
+
+  function loadMarquee() {
+    // 并行拉取热门+短线优选
+    Promise.all([
+      API.get('/stock-pool/hot_leader').then(function(r) { return (r.data.items || []).slice(0, 6); }).catch(function() { return []; }),
+      API.get('/stock-pool/short_t3_momentum').then(function(r) { return (r.data.items || []).slice(0, 6); }).catch(function() { return []; })
+    ]).then(function(results) {
+      var hotItems = results[0], shortItems = results[1];
+      var rows = [];
+      hotItems.forEach(function(s) {
+        rows.push({ name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0, tag: 'hot', tagLabel: '热门' });
+      });
+      shortItems.forEach(function(s) {
+        rows.push({ name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0, tag: 'short', tagLabel: '短线' });
+      });
+      if (!rows.length) return;
+      // 双份拼接实现无缝循环
+      var items = rows.concat(rows);
+      var html = items.map(function(r) {
+        return '<div class="marquee-item" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(r.code) + '\'" style="cursor:pointer">' +
+          '<span class="mi-tag ' + r.tag + '">' + r.tagLabel + '</span>' +
+          '<span class="mi-name">' + r.name + '</span>' +
+          '<span class="mi-code">' + r.code + '</span>' +
+          '<span class="mi-price">' + (r.close ? r.close.toFixed(2) : '--') + '</span>' +
+          '<span class="mi-pct ' + (r.pct > 0 ? 'up' : r.pct < 0 ? 'down' : 'flat') + '">' + fmtSign(r.pct) + '%</span>' +
+          '</div>';
+      }).join('');
+      document.getElementById('marqueeTrack').innerHTML = html;
+    }).catch(function() {});
+  }
+
+  function autoRefresh() {
+    updateHealth(); loadStockCount();
+    loadDashboard();
+    loadTradeCalendar();
+    loadMarquee();
+    if (inTradingHours()) {
+      loadIndices(); loadMood();
+      document.getElementById('refreshHint').textContent = '交易时段 | 60s 刷新';
+      indexTimer = setInterval(function() {
+        if (!inTradingHours()) { clearInterval(indexTimer); document.getElementById('refreshHint').textContent = '非交易时段'; return; }
+        loadIndices(); loadMood(); loadDashboard();
+      }, 60000);
+    } else {
+      document.getElementById('refreshHint').textContent = '非交易时段';
+    }
+  }
+
+  loadIndices(); loadMood(); loadIndexKline(); loadMarquee(); loadMarketGuess(); autoRefresh();
+  setInterval(function() { updateHealth(); }, 30000);
+
+  // 窗口resize时重绘K线
+  window.addEventListener('resize', function() {
+    if (klineChart) klineChart.resize();
+  });
   function showSectorLeaders(name, pct) {
     var overlay = document.getElementById('sectorModal');
     document.getElementById('sectorModalTitle').textContent = name;

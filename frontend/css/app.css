@@ -440,16 +440,96 @@ body {
   border: 1px solid var(--color-border);
   border-radius: 10px;
   padding: 16px 18px;
-  transition: transform 0.15s, box-shadow 0.15s;
-  cursor: default;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.2s;
+  cursor: pointer;
 }
 .index-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.index-card.active { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
 .index-card .ic-name { font-size:0.78rem; color:var(--color-text-muted); margin-bottom:6px; }
 .index-card .ic-price { font-size:1.4rem; font-weight:700; color:var(--color-text); margin-bottom:4px; }
 .index-card .ic-change { font-size:1rem; font-weight:700; }
 .index-card .ic-change.up { color:var(--color-danger); }
 .index-card .ic-change.down { color:var(--color-success); }
 .index-card .ic-change.flat { color:var(--color-text-muted); }
+
+/* ── Dashboard: Index Kline Chart ── */
+.index-kline-wrap {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.index-kline-wrap .kline-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.index-kline-wrap .kline-title { font-weight: 600; font-size: 0.9rem; }
+.index-kline-wrap .kline-meta { font-size: 0.7rem; color: var(--color-text-muted); }
+.index-kline-wrap .kline-chart { width: 100%; height: 420px; }
+
+/* ── Dashboard: Marquee Scroll ── */
+.marquee-section {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 14px 0;
+  overflow: hidden;
+}
+.marquee-section .marquee-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 16px 10px;
+}
+.marquee-section .marquee-header .mh-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  animation: mhPulse 1.5s infinite;
+}
+.marquee-section .marquee-header .mh-dot.green { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+.marquee-section .marquee-header .mh-dot.red { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+@keyframes mhPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+.marquee-section .marquee-header .mh-label {
+  font-size: 0.78rem; font-weight: 600; color: var(--color-text-muted);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.marquee-wrap {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #1a1a2e;
+  border-top: 1px solid rgba(0,212,170,0.15);
+  border-bottom: 1px solid rgba(0,212,170,0.15);
+}
+.marquee-track {
+  display: flex;
+  gap: 0;
+  width: max-content;
+  animation: marqueeScroll 30s linear infinite;
+}
+.marquee-wrap:hover .marquee-track { animation-play-state: paused; }
+@keyframes marqueeScroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.marquee-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+  min-width: 220px;
+}
+.marquee-item .mi-tag {
+  font-size: 0.6rem; font-weight: 700; padding: 2px 6px; border-radius: 3px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.marquee-item .mi-tag.hot { background: rgba(239,68,68,0.2); color: #ef4444; }
+.marquee-item .mi-tag.short { background: rgba(0,212,170,0.2); color: #00d4aa; }
+.marquee-item .mi-name { font-size: 0.85rem; font-weight: 600; color: #e0e0e0; }
+.marquee-item .mi-code { font-size: 0.7rem; color: #888; }
+.marquee-item .mi-price { font-size: 0.9rem; font-weight: 700; color: #fff; }
+.marquee-item .mi-pct { font-size: 0.82rem; font-weight: 700; }
+.marquee-item .mi-pct.up { color: #ef4444; }
+.marquee-item .mi-pct.down { color: #22c55e; }
+.marquee-item .mi-pct.flat { color: #888; }
 
 /* ── Dashboard: Mood Panel ── */
 .mood-panel {
@@ -693,6 +773,10 @@ body {
   .index-card { padding:12px 14px; }
   .index-card .ic-price { font-size:1.15rem; }
   .index-card .ic-change { font-size:0.9rem; }
+  .index-kline-wrap .kline-chart { height: 300px; }
+  .marquee-item { padding: 8px 14px; min-width: 180px; }
+  .marquee-item .mi-name { font-size: 0.8rem; }
+  .marquee-item .mi-price { font-size: 0.82rem; }
   .mood-body { flex-direction:column; gap:14px; }
   .mood-right { flex-direction:row; padding-left:0; border-left:none; border-top:1px solid var(--color-border); padding-top:14px; gap:20px; }
   .hot-stock-list { grid-template-columns: 1fr; }

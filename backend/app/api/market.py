@@ -14,6 +14,7 @@ from sqlalchemy import text
 from app.core.cache import cache_get, cache_set, cache_delete
 from app.middleware.auth_middleware import require_auth_optional
 from app.models.schemas.common import APIResponse
+from app.services.tushare_client import get_index_daily
 from app.utils.trading_calendar import get_latest_trade_date, get_next_trade_date, get_trade_days_in_range, is_trade_date
 
 logger = logging.getLogger("market")
@@ -163,6 +164,55 @@ async def market_index(user: dict = Depends(require_auth_optional)):
         "trading": False, "date": trade_date, "trade_date": trade_date,
         "is_trade_day": is_td,
     }, timestamp=int(time.time()), ext_info={"note": "暂无指数数据，请执行数据同步"})
+
+
+@market_router.get("/index_kline")
+async def market_index_kline(code: str = "000001.SH", days: int = 120):
+    """指数历史K线——支持4大指数切换，优先从Tushare拉取后缓存。"""
+    from app.core.database import async_session
+
+    VALID_CODES = {c: n for c, n in INDEX_CODES}
+    if code not in VALID_CODES:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"不支持的指数代码: {code}")
+
+    name = VALID_CODES[code]
+    trade_date, _ = await _get_trade_context()
+
+    cache_key = f"index_kline:{code}:{trade_date}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return APIResponse(data=cached, timestamp=int(time.time()))
+
+    kline = []
+    try:
+        end_date = (date.today()).strftime("%Y%m%d")
+        start_date = (date.today() - timedelta(days=days + 10)).strftime("%Y%m%d")
+        rows = await get_index_daily(code, start_date, end_date)
+        if rows:
+            for r in rows:
+                kline.append({
+                    "date": str(r.get("trade_date", "")),
+                    "open": round(float(r.get("open", 0) or 0), 2),
+                    "high": round(float(r.get("high", 0) or 0), 2),
+                    "low": round(float(r.get("low", 0) or 0), 2),
+                    "close": round(float(r.get("close", 0) or 0), 2),
+                    "volume": int(float(r.get("vol", 0) or 0)),
+                })
+            kline.sort(key=lambda x: x["date"])
+    except Exception as e:
+        logger.warning(f"index_kline({code}): {e}")
+
+    result = {
+        "code": code,
+        "name": name,
+        "kline": kline,
+        "source": "tushare" if kline else "none",
+        "trade_date": trade_date,
+    }
+    if kline:
+        await cache_set(cache_key, result, ttl=86400)
+    return APIResponse(data=result, timestamp=int(time.time()))
 
 
 @market_router.get("/dashboard")
