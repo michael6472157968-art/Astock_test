@@ -559,3 +559,75 @@ async def admin_toggle_active(user_id: int):
             data={"user_id": user_id, "is_active": bool(u.is_active)},
             timestamp=int(time.time()),
         )
+
+
+# ── 仪表盘趋势 ──
+
+@router.get("/dashboard/trend")
+async def admin_dashboard_trend():
+    """近7天每日新增用户 + 诊股次数 + API调用量趋势。"""
+    today_str = date.today().isoformat()
+    week_ago = (date.today() - timedelta(days=6)).isoformat()
+
+    async with async_session() as session:
+        # 每日新增用户
+        new_users_raw = (await session.execute(
+            text("SELECT DATE(created_at) as d, COUNT(*) FROM users WHERE DATE(created_at) >= :wa GROUP BY d ORDER BY d"),
+            {"wa": week_ago}
+        )).all()
+        # 每日诊股
+        diag_raw = (await session.execute(
+            text("SELECT DATE(created_at) as d, COUNT(*) FROM credit_ledger WHERE type = 'diagnosis' AND DATE(created_at) >= :wa GROUP BY d ORDER BY d"),
+            {"wa": week_ago}
+        )).all()
+        # 每日API调用(access_log)
+        try:
+            api_raw = (await session.execute(
+                text("SELECT DATE(access_time) as d, COUNT(*) FROM access_logs WHERE DATE(access_time) >= :wa GROUP BY d ORDER BY d"),
+                {"wa": week_ago}
+            )).all()
+        except Exception:
+            api_raw = []
+
+        # 填充7天
+        days = []
+        for i in range(7):
+            d = (date.today() - timedelta(days=6 - i)).isoformat()
+            nu = next((r[1] for r in new_users_raw if r[0] == d), 0)
+            dg = next((r[1] for r in diag_raw if r[0] == d), 0)
+            ap = next((r[1] for r in api_raw if r[0] == d), 0)
+            days.append({"date": d, "new_users": nu, "diagnosis_count": dg, "api_calls": ap})
+
+    return APIResponse(data={"days": days}, timestamp=int(time.time()))
+
+
+# ── 系统日志 ──
+
+@router.get("/logs")
+async def admin_logs(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+                     user_id: int | None = Query(None)):
+    """最近200条访问日志，支持按用户筛选。"""
+    async with async_session() as session:
+        base_q = "SELECT id, user_id, phone, path, access_time FROM access_logs"
+        count_q = "SELECT COUNT(*) FROM access_logs"
+        params = {}
+        if user_id:
+            base_q += " WHERE user_id = :uid"
+            count_q += " WHERE user_id = :uid"
+            params["uid"] = user_id
+
+        total = (await session.execute(text(count_q), params)).scalar() or 0
+        rows = (await session.execute(
+            text(base_q + " ORDER BY access_time DESC LIMIT :lim OFFSET :off"),
+            {**params, "lim": page_size, "off": (page - 1) * page_size}
+        )).all()
+
+        items = [{
+            "id": r[0],
+            "user_id": r[1],
+            "phone": (r[2][:3] + "****" + r[2][-4:]) if r[2] and len(r[2]) >= 7 else (r[2] or ""),
+            "path": r[3],
+            "access_time": r[4],
+        } for r in rows]
+
+    return APIResponse(data={"total": total, "page": page, "page_size": page_size, "items": items}, timestamp=int(time.time()))

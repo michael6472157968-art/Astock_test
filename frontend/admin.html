@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>管理后台 - Stockwin</title>
+<link rel="stylesheet" href="/css/app.css?v=3" />
+<script src="/lib/echarts.js"></script>
+<style>
+.admin-wrap { max-width: 1200px; margin: 0 auto; padding: 20px 16px; }
+.admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.admin-header h1 { font-size: 1.3rem; font-weight: 700; }
+.admin-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--color-border); margin-bottom: 20px; }
+.admin-tab { padding: 8px 20px; cursor: pointer; font-size: 0.9rem; color: var(--color-text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+.admin-tab:hover { color: var(--color-text); }
+.admin-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 600; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.admin-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 600; background: var(--color-bg-secondary); }
+.admin-table td { padding: 8px 12px; border-bottom: 1px solid var(--color-border); }
+.admin-table tr:hover td { background: var(--color-bg-secondary); }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.stat-card { background: var(--color-card); border: 1px solid var(--color-border); border-radius: 8px; padding: 16px; }
+.stat-card .stat-label { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 6px; }
+.stat-card .stat-value { font-size: 1.5rem; font-weight: 700; }
+.stat-card .stat-value.up { color: var(--color-up); }
+.stat-card .stat-value.down { color: var(--color-down); }
+.pager { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 16px; }
+.pager button { padding: 4px 12px; font-size: 0.8rem; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
+.modal-overlay.show { display: flex; }
+.modal-box { background: var(--color-card); border-radius: 8px; padding: 20px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-close-btn { background: none; border: none; font-size: 1.4rem; cursor: pointer; color: var(--color-text-muted); }
+.detail-section { margin-bottom: 16px; }
+.detail-section h4 { font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 8px; border-bottom: 1px solid var(--color-border); padding-bottom: 4px; }
+.btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; }
+.tag-admin { background: rgba(239,68,68,0.15); color: #ef4444; }
+.tag-vip { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.tag-free { background: rgba(128,128,128,0.15); color: #888; }
+.action-btn-sm { padding: 2px 8px; font-size: 0.75rem; margin-right: 4px; }
+.trend-chart { width: 100%; height: 280px; margin-bottom: 24px; }
+.gen-result { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 6px; padding: 12px; margin-bottom: 12px; font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+<main class="main-content" data-chrome>
+<div class="admin-wrap">
+
+<div class="admin-header">
+  <h1>管理后台</h1>
+  <a href="/" style="font-size:0.85rem;color:var(--color-text-muted);text-decoration:none;">← 返回首页</a>
+</div>
+
+<div class="admin-tabs">
+  <span class="admin-tab active" data-tab="overview">概览</span>
+  <span class="admin-tab" data-tab="users">用户管理</span>
+  <span class="admin-tab" data-tab="codes">激活码</span>
+  <span class="admin-tab" data-tab="logs">系统日志</span>
+</div>
+
+<!-- 概览 -->
+<div id="tab-overview">
+  <div class="stat-grid" id="overviewStats"></div>
+  <div class="trend-chart" id="trendChart"></div>
+</div>
+
+<!-- 用户管理 -->
+<div id="tab-users" style="display:none;">
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+    <input class="form-input" id="userSearch" placeholder="手机号搜索..." style="max-width:180px" onkeypress="if(event.key==='Enter')loadUsers()" />
+    <select class="form-input" id="tierFilter" style="max-width:130px" onchange="loadUsers()">
+      <option value="">全部等级</option>
+      <option value="1">免费用户</option>
+      <option value="2">月VIP</option>
+      <option value="3">年VIP</option>
+      <option value="99">管理员</option>
+    </select>
+    <button class="btn btn-sm btn-primary" onclick="loadUsers()">搜索</button>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>手机号</th><th>等级</th><th>积分</th><th>状态</th><th>会员到期</th><th>注册时间</th><th>操作</th></tr></thead>
+      <tbody id="userTbody"></tbody>
+    </table>
+  </div>
+  <div class="pager" id="userPager"></div>
+</div>
+
+<!-- 激活码 -->
+<div id="tab-codes" style="display:none;">
+  <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
+    <select class="form-input" id="codeType" style="max-width:120px"><option value="monthly">月卡</option><option value="annual">年卡</option></select>
+    <input class="form-input" id="codeCount" type="number" value="10" min="1" max="200" style="max-width:80px" />
+    <button class="btn btn-sm btn-primary" onclick="genCodes()">生成激活码</button>
+    <button class="btn btn-sm btn-outline" onclick="loadCodes()">刷新列表</button>
+  </div>
+  <div class="gen-result" id="genResult" style="display:none;"></div>
+  <table class="admin-table">
+    <thead><tr><th>ID</th><th>激活码</th><th>类型</th><th>状态</th><th>使用者</th><th>生成时间</th><th>使用时间</th></tr></thead>
+    <tbody id="codeTbody"></tbody>
+  </table>
+</div>
+
+<!-- 系统日志 -->
+<div id="tab-logs" style="display:none;">
+  <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+    <input class="form-input" id="logUserId" placeholder="用户ID筛选..." style="max-width:120px" />
+    <button class="btn btn-sm btn-primary" onclick="loadLogs()">查询</button>
+  </div>
+  <table class="admin-table">
+    <thead><tr><th>ID</th><th>用户ID</th><th>手机号</th><th>路径</th><th>时间</th></tr></thead>
+    <tbody id="logTbody"></tbody>
+  </table>
+  <div class="pager" id="logPager"></div>
+</div>
+
+</div>
+</main>
+
+<!-- 用户详情弹窗 -->
+<div class="modal-overlay" id="userModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header"><h3>用户详情</h3><button class="modal-close-btn" onclick="document.getElementById('userModal').classList.remove('show')">&times;</button></div>
+    <div id="userModalBody"></div>
+  </div>
+</div>
+
+<script src="/js/app.js?v=6"></script>
+<script>
+(function() {
+  if (!Session.isAdmin()) { window.location.href = '/'; return; }
+
+  // Tab 切换
+  document.querySelector('.admin-tabs').addEventListener('click', function(e) {
+    var tab = e.target.closest('.admin-tab');
+    if (!tab) return;
+    document.querySelectorAll('.admin-tab').forEach(function(t) { t.classList.remove('active'); });
+    tab.classList.add('active');
+    var name = tab.getAttribute('data-tab');
+    ['overview','users','codes','logs'].forEach(function(t) {
+      document.getElementById('tab-' + t).style.display = t === name ? '' : 'none';
+    });
+    if (name === 'overview') loadOverview();
+    if (name === 'users') loadUsers();
+    if (name === 'codes') loadCodes();
+    if (name === 'logs') loadLogs();
+  });
+
+  // ── 概览 ──
+  function loadOverview() {
+    API.get('/admin/users/stats').then(function(r) {
+      var d = r.data;
+      var tierLabels = {1:'免费',2:'月VIP',3:'年VIP',99:'管理员'};
+      var tierHtml = Object.keys(d.tier_distribution || {}).map(function(k) {
+        return tierLabels[k] + ': ' + d.tier_distribution[k];
+      }).join(' / ');
+      document.getElementById('overviewStats').innerHTML =
+        '<div class="stat-card"><div class="stat-label">总用户数</div><div class="stat-value">' + d.total_users + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">今日新增</div><div class="stat-value up">' + d.today_new + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">本周新增</div><div class="stat-value">' + d.week_new + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">今日诊股</div><div class="stat-value">' + d.today_diagnosis_count + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">等级分布</div><div class="stat-value" style="font-size:0.85rem;">' + (tierHtml || '--') + '</div></div>';
+    }).catch(function() {});
+
+    API.get('/admin/dashboard/trend').then(function(r) {
+      var days = r.data.days || [];
+      var dom = document.getElementById('trendChart');
+      var chart = echarts.init(dom);
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['新增用户', '诊股次数', 'API调用'], bottom: 0, textStyle: { fontSize: 11 } },
+        grid: { left: '6%', right: '4%', top: 20, bottom: 35 },
+        xAxis: { type: 'category', data: days.map(function(d) { return d.date.slice(5); }) },
+        yAxis: { type: 'value' },
+        series: [
+          { name: '新增用户', type: 'bar', data: days.map(function(d) { return d.new_users; }), itemStyle: { color: '#3b82f6' } },
+          { name: '诊股次数', type: 'line', data: days.map(function(d) { return d.diagnosis_count; }), itemStyle: { color: '#22c55e' }, smooth: true },
+          { name: 'API调用', type: 'line', data: days.map(function(d) { return d.api_calls; }), itemStyle: { color: '#f59e0b' }, smooth: true },
+        ]
+      });
+      window.addEventListener('resize', function() { chart.resize(); });
+    }).catch(function() {});
+  }
+
+  // ── 用户管理 ──
+  var userPage = 1;
+  function loadUsers(p) {
+    userPage = p || userPage;
+    var search = document.getElementById('userSearch').value;
+    var tier = document.getElementById('tierFilter').value;
+    var qs = '?page=' + userPage + '&page_size=15&search=' + encodeURIComponent(search);
+    if (tier) qs += '&tier_filter=' + tier;
+    API.get('/admin/users' + qs).then(function(r) {
+      var d = r.data;
+      var html = '';
+      (d.items || []).forEach(function(u) {
+        var tierLabel = {1:'免费',2:'月VIP',3:'年VIP',99:'管理员'}[u.tier] || '游客';
+        var tierTag = u.tier >= 99 ? 'tag-admin' : u.tier >= 2 ? 'tag-vip' : 'tag-free';
+        var status = u.is_active ? '<span style="color:var(--color-success)">正常</span>' : '<span style="color:var(--color-danger)">禁用</span>';
+        html += '<tr><td>' + u.id + '</td><td>' + u.phone_masked + '</td>' +
+          '<td><span class="tag ' + tierTag + '">' + tierLabel + '</span></td>' +
+          '<td>' + u.credits + '</td><td>' + status + '</td>' +
+          '<td>' + (u.member_expire || '--') + '</td><td>' + (u.created_at ? u.created_at.slice(0,10) : '--') + '</td>' +
+          '<td><div class="btn-row">' +
+          '<button class="btn btn-sm btn-outline action-btn-sm" onclick="viewUser(' + u.id + ')">详情</button>' +
+          '<button class="btn btn-sm btn-outline action-btn-sm" onclick="adjustCredits(' + u.id + ')">积分</button>' +
+          '<button class="btn btn-sm btn-outline action-btn-sm" onclick="adjustTier(' + u.id + ')">等级</button>' +
+          '<button class="btn btn-sm btn-outline action-btn-sm" onclick="resetPwd(' + u.id + ')">密码</button>' +
+          '<button class="btn btn-sm btn-outline action-btn-sm" onclick="toggleActive(' + u.id + ')">' + (u.is_active ? '禁用' : '启用') + '</button>' +
+          '</div></td></tr>';
+      });
+      document.getElementById('userTbody').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:var(--color-text-muted);padding:20px;">暂无数据</td></tr>';
+      var totalPages = Math.ceil(d.total / d.page_size);
+      var pagerHtml = '<button ' + (userPage <= 1 ? 'disabled' : '') + ' onclick="loadUsers(' + (userPage - 1) + ')">上一页</button>' +
+        '<span style="font-size:0.82rem;">' + userPage + ' / ' + totalPages + '</span>' +
+        '<button ' + (userPage >= totalPages ? 'disabled' : '') + ' onclick="loadUsers(' + (userPage + 1) + ')">下一页</button>';
+      document.getElementById('userPager').innerHTML = pagerHtml;
+    }).catch(function() {});
+  }
+
+  window.viewUser = function(uid) {
+    API.get('/admin/users/' + uid).then(function(r) {
+      var u = r.data.user, l = r.data.ledger || [], d = r.data.diagnosis_stats || {};
+      var html = '<div class="detail-section"><h4>基本信息</h4>' +
+        '<p>ID: ' + u.id + ' | 手机: ' + u.phone_masked + ' | 等级: ' + u.tier + ' | 积分: ' + u.credits + ' | 状态: ' + (u.is_active ? '正常' : '禁用') + '</p>' +
+        '<p>会员到期: ' + (u.member_expire || '无') + ' | 注册时间: ' + (u.created_at || '--') + '</p>' +
+        '<p>诊股 ' + d.total + ' 次 | AI分析 ' + d.ai_analysis + ' 次</p></div>';
+      if (l.length) {
+        html += '<div class="detail-section"><h4>积分流水（最近）</h4><table class="admin-table"><thead><tr><th>类型</th><th>金额</th><th>余额</th><th>备注</th><th>时间</th></tr></thead><tbody>';
+        l.forEach(function(x) {
+          html += '<tr><td>' + x.type + '</td><td>' + x.amount + '</td><td>' + x.balance_after + '</td><td>' + (x.note || '') + '</td><td>' + (x.created_at ? x.created_at.slice(0,16) : '') + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      document.getElementById('userModalBody').innerHTML = html;
+      document.getElementById('userModal').classList.add('show');
+    }).catch(function(e) { alert(e.message || '加载失败'); });
+  };
+
+  window.adjustCredits = function(uid) {
+    var amt = prompt('积分调整（正数增加，负数减少）：');
+    if (!amt) return;
+    var note = prompt('备注（必填）：');
+    if (!note) return;
+    API.post('/admin/users/' + uid + '/credits', { amount: parseInt(amt), note: note }).then(function(r) {
+      alert('调整完成，当前积分: ' + r.data.credits);
+      loadUsers();
+    }).catch(function(e) { alert(e.message); });
+  };
+
+  window.adjustTier = function(uid) {
+    var tier = prompt('设置等级（1=免费, 2=月VIP, 3=年VIP, 99=管理员）：');
+    if (!tier) return;
+    var expire = prompt('会员到期日 ISO格式（如2026-12-31），不设则留空：');
+    API.post('/admin/users/' + uid + '/tier', { tier: parseInt(tier), member_expire: expire || null }).then(function() {
+      alert('调整完成'); loadUsers();
+    }).catch(function(e) { alert(e.message); });
+  };
+
+  window.resetPwd = function(uid) {
+    var pwd = prompt('新密码（至少6位）：');
+    if (!pwd || pwd.length < 6) return;
+    API.post('/admin/users/' + uid + '/reset-password', { new_password: pwd }).then(function() {
+      alert('密码已重置');
+    }).catch(function(e) { alert(e.message); });
+  };
+
+  window.toggleActive = function(uid) {
+    if (!confirm('确认切换账号启用/禁用状态？')) return;
+    API.post('/admin/users/' + uid + '/toggle-active').then(function(r) {
+      alert(r.data.is_active ? '已启用' : '已禁用');
+      loadUsers();
+    }).catch(function(e) { alert(e.message); });
+  };
+
+  // ── 激活码 ──
+  function loadCodes() {
+    API.get('/admin/membership/codes').then(function(r) {
+      var html = '';
+      (r.data.items || []).forEach(function(c) {
+        var typeLabel = c.code_type === 'monthly' ? '月卡' : '年卡';
+        html += '<tr><td>' + c.id + '</td><td>' + c.code + '</td><td>' + typeLabel + '</td>' +
+          '<td>' + (c.is_used ? '<span style="color:var(--color-text-muted)">已使用</span>' : '<span style="color:var(--color-success)">未使用</span>') + '</td>' +
+          '<td>' + (c.used_by || '--') + '</td><td>' + (c.created_at ? c.created_at.slice(0,10) : '') + '</td>' +
+          '<td>' + (c.used_at ? c.used_at.slice(0,10) : '') + '</td></tr>';
+      });
+      document.getElementById('codeTbody').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:var(--color-text-muted);padding:20px;">暂无激活码</td></tr>';
+    }).catch(function() {});
+  }
+
+  window.genCodes = function() {
+    var type = document.getElementById('codeType').value;
+    var count = parseInt(document.getElementById('codeCount').value) || 10;
+    API.post('/admin/membership/codes', { code_type: type, count: count }).then(function(r) {
+      var codes = r.data.codes || [];
+      document.getElementById('genResult').style.display = '';
+      document.getElementById('genResult').textContent = '已生成 ' + codes.length + ' 个' + (type === 'monthly' ? '月卡' : '年卡') + ':\n' + codes.join('\n');
+      loadCodes();
+    }).catch(function(e) { alert(e.message); });
+  };
+
+  // ── 系统日志 ──
+  var logPage = 1;
+  function loadLogs(p) {
+    logPage = p || logPage;
+    var uid = document.getElementById('logUserId').value;
+    var qs = '?page=' + logPage + '&page_size=50';
+    if (uid) qs += '&user_id=' + uid;
+    API.get('/admin/logs' + qs).then(function(r) {
+      var d = r.data;
+      var html = '';
+      (d.items || []).forEach(function(l) {
+        html += '<tr><td>' + l.id + '</td><td>' + (l.user_id || '--') + '</td><td>' + l.phone + '</td>' +
+          '<td>' + l.path + '</td><td>' + (l.access_time || '') + '</td></tr>';
+      });
+      document.getElementById('logTbody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:var(--color-text-muted);padding:20px;">暂无日志</td></tr>';
+      var tp = Math.ceil(d.total / d.page_size);
+      document.getElementById('logPager').innerHTML =
+        '<button ' + (logPage <= 1 ? 'disabled' : '') + ' onclick="loadLogs(' + (logPage - 1) + ')">上一页</button>' +
+        '<span style="font-size:0.82rem;">' + logPage + ' / ' + tp + '</span>' +
+        '<button ' + (tp > 0 && logPage < tp ? '' : 'disabled') + ' onclick="loadLogs(' + (logPage + 1) + ')">下一页</button>';
+    }).catch(function() {});
+  }
+
+  loadOverview();
+})();
+</script>
+</body>
+</html>
