@@ -121,6 +121,14 @@ async def _sync_daily_all():
     except Exception as e:
         log.exception(f"settle guesses failed: {e}")
 
+    # 全部同步+计算完成后清缓存，让前端API实时拉到最新数据
+    try:
+        from app.core.cache import cache_clear
+        await cache_clear()
+        log.info("cache cleared after scheduled sync")
+    except Exception as e:
+        log.exception(f"cache clear failed: {e}")
+
 
 def _sync_sector_wrapper():
     from app.services.data_sync import sync_sector_data
