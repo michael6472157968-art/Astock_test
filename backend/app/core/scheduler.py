@@ -100,7 +100,7 @@ async def _sync_daily_all():
     log.info("scan: personalized alerts")
     try:
         from app.services.alert_engine import AlertEngine
-        await AlertEngine().scan_all(trade_date)
+        await AlertEngine().scan_all()
     except Exception as e:
         log.exception(f"alert scan failed: {e}")
 

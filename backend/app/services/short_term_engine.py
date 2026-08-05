@@ -149,13 +149,16 @@ class ShortTermEngine:
     async def _t7_momentum(self, session, trade_date: str, dates: list) -> list:
         """趋势已确立顺势持股。MA5>MA10>MA20，近10日涨幅>0，连续3日收阳。"""
         td10 = self._nth_date(dates, trade_date, 10)
-        if not td10:
+        td4 = self._nth_date(dates, trade_date, 4)
+        td9 = self._nth_date(dates, trade_date, 9)
+        td19 = self._nth_date(dates, trade_date, 19)
+        if not td10 or not td4 or not td9:
             return []
 
         sql = text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d10.close) / NULLIF(d10.close, 0) * 100 AS chg10,
-                   (ma5.ma5 - ma10.ma10) / NULLIF(ma10.ma10, 0) * 100 AS ma_slope,
+                   (ma5.ma5 - ma5.ma10) / NULLIF(ma5.ma10, 0) * 100 AS ma_slope,
                    CASE WHEN db.turnover_rate IS NOT NULL THEN db.turnover_rate ELSE NULL END AS turnover
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
@@ -177,9 +180,6 @@ class ShortTermEngine:
               AND d.ts_code NOT LIKE '688%' AND d.ts_code NOT LIKE '920%'
             LIMIT :lim
         """)
-        td4 = self._nth_date(dates, trade_date, 4)
-        td9 = self._nth_date(dates, trade_date, 9)
-        td19 = self._nth_date(dates, trade_date, 19)
         r = await session.execute(sql, {
             "td": trade_date, "td4": td4 or trade_date, "td9": td9 or trade_date,
             "td10": td10, "td19": td19 or trade_date, "lim": POOL_SIZE * 3,
