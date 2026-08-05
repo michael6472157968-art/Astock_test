@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
     # 启动时轻量同步：股票列表 + 日线 + 每日指标。计算引擎随后触发。
     async def _auto_sync():
         try:
-            from app.services.data_sync import sync_stock_basic, sync_daily_data, sync_daily_basic
+            from app.services.data_sync import sync_stock_basic, sync_daily_data, sync_daily_basic, sync_moneyflow_hsgt
 
             logger.info("Auto-sync: stock basic...")
             await sync_stock_basic()
@@ -53,6 +53,8 @@ async def lifespan(app: FastAPI):
             await sync_daily_data()
             logger.info("Auto-sync: daily basic...")
             await sync_daily_basic()
+            logger.info("Auto-sync: moneyflow hsgt...")
+            await sync_moneyflow_hsgt()
 
             from app.core.database import async_session
             from sqlalchemy import text
@@ -74,12 +76,15 @@ async def lifespan(app: FastAPI):
             from app.services.sector_analysis import SectorAnalysisEngine
             from app.services.market_review import MarketReviewEngine
             from app.services.risk_scanner import RiskScanner
+            from app.core.cache import cache_clear
             await StockPoolEngine().compute_all()
             await ShortTermEngine().compute_all()
             await SectorAnalysisEngine().compute_all()
             await MarketReviewEngine().compute()
             scanner = RiskScanner()
             await scanner.scan_risk_list()
+            # 清除所有内存缓存，让首页API重新从DB读取最新数据
+            await cache_clear()
             logger.info("Auto-sync: all engines done")
         except Exception as e:
             logger.warning(f"Auto-sync failed: {e}")
