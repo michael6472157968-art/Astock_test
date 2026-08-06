@@ -489,8 +489,8 @@
               bg = 'background:rgba(38,38,38,0.5);color:rgba(255,255,255,0.6);';
             }
           } else if (day.is_trade_day && day.is_current_month) {
-            // 未来交易日：使用中性色（即将到来的交易日无涨跌数据）
-            bg = 'color:rgba(255,255,255,0.6);border:1px dashed rgba(255,255,255,0.15);';
+            // 未来交易日：使用虚线边框 + 浅色背景来区别于历史数据
+            bg = 'border:1.5px dashed rgba(255,255,255,0.35);color:rgba(255,255,255,0.7);';
           } else if (!day.is_current_month) {
             bg = 'color:var(--color-text-muted);opacity:0.25;';
           } else if (day.is_weekend) {
@@ -702,6 +702,8 @@
       }
     });
   }
+  window.toggleFav = toggleFav;
+  window.setFavBtnAdded = setFavBtnAdded;
 
   loadFavCache();
 })();

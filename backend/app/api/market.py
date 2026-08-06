@@ -1114,7 +1114,7 @@ async def market_calendar(user: dict = Depends(require_auth_optional)):
         from app.core.database import async_session
         async with async_session() as sess:
             r = await sess.execute(
-                text("SELECT trade_date, pct_chg FROM stock_daily WHERE ts_code='000001.SZ' AND trade_date BETWEEN :s AND :e"),
+                text("SELECT trade_date, pct_chg FROM stock_daily WHERE ts_code='000001.SH' AND trade_date BETWEEN :s AND :e"),
                 {"s": month_start.strftime("%Y%m%d"), "e": month_end.strftime("%Y%m%d")},
             )
             for row in r.fetchall():
