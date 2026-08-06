@@ -409,6 +409,8 @@ function reloadGroups() {
 
 // ── Card Drag (Part A: CSS translate animation) ──
 
+var _swapTarget = null;
+
 function handleCardDragStart(e) {
   _dragSrc = e.target.closest('.fav-card');
   if (!_dragSrc) return;
@@ -421,33 +423,36 @@ function handleCardDragStart(e) {
 function handleCardDragOver(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
-  // Look for the nearest fav-card or fav-group-header
   var container = e.target.closest('.fav-cards-container');
   if (!container) return;
-  // Remove previous indicator & swap classes
-  clearDragState(container);
   var card = e.target.closest('.fav-card');
-  if (card && card !== _dragSrc) {
-    // Determine direction: if dragSrc is before card, target moves up (swap-up);
-    // if dragSrc is after card, target moves down (swap-down)
-    var cards = Array.from(container.querySelectorAll('.fav-card'));
-    var srcIdx = cards.indexOf(_dragSrc);
-    var tgtIdx = cards.indexOf(card);
-    if (srcIdx >= 0 && tgtIdx >= 0) {
-      if (srcIdx < tgtIdx) {
-        card.classList.add('swap-up');
-      } else {
-        card.classList.add('swap-down');
-      }
-    }
-    card.classList.add('drag-over');
+  if (!card || card === _dragSrc || card === _swapTarget) return;
+
+  // Remove swap from previous target
+  if (_swapTarget) {
+    _swapTarget.classList.remove('swap-up', 'swap-down', 'drag-over');
   }
+
+  var cards = Array.from(container.querySelectorAll('.fav-card'));
+  var srcIdx = cards.indexOf(_dragSrc);
+  var tgtIdx = cards.indexOf(card);
+  if (srcIdx >= 0 && tgtIdx >= 0) {
+    card.classList.add(srcIdx < tgtIdx ? 'swap-up' : 'swap-down');
+  }
+  card.classList.add('drag-over');
+  _swapTarget = card;
 }
 
 function handleCardDragLeave(e) {
-  var card = e.target.closest('.fav-card');
-  if (card) {
-    card.classList.remove('drag-over', 'swap-up', 'swap-down');
+  // Only clear when leaving the container entirely, not between cards
+  var container = e.target.closest('.fav-cards-container');
+  if (!container) return;
+  var related = e.relatedTarget;
+  if (related && container.contains(related)) return;
+  // Left the container
+  if (_swapTarget) {
+    _swapTarget.classList.remove('swap-up', 'swap-down', 'drag-over');
+    _swapTarget = null;
   }
 }
 
@@ -458,7 +463,6 @@ function handleCardDrop(e) {
   var targetCard = e.target.closest('.fav-card');
   var targetContainer = e.target.closest('.fav-cards-container');
 
-  // Check if dropped on a group header
   var targetHeader = e.target.closest('.fav-group-header');
   if (targetHeader && _dragSrc) {
     var targetGroupId = targetHeader.getAttribute('data-drop-group');
@@ -481,7 +485,6 @@ function handleCardDrop(e) {
   var tgtIdx = cards.indexOf(targetCard);
   if (srcIdx < 0 || tgtIdx < 0) { resetDrag(); return; }
 
-  // Update _allItems
   var srcCode = _dragSrc.getAttribute('data-code');
   var tgtCode = targetCard.getAttribute('data-code');
   var globalSrcIdx = _allItems.findIndex(function(f){return f.stock_code === srcCode;});
@@ -491,10 +494,8 @@ function handleCardDrop(e) {
     _allItems.splice(globalTgtIdx, 0, moved);
   }
 
-  // Repaint group
   refreshGroupSection(groupKey);
 
-  // Persist global ordering
   var ordered = _allItems.map(function(f){return f.stock_code;});
   API.put('/alerts/favorites/reorder', { ordered_codes: ordered }).catch(function(){});
 
@@ -520,6 +521,7 @@ function clearAllDragState() {
   document.querySelectorAll('.fav-group-header.drop-target').forEach(function(h) {
     h.classList.remove('drop-target');
   });
+  _swapTarget = null;
 }
 
 function resetDrag() {
@@ -594,9 +596,9 @@ function refreshGroupSection(groupKey) {
   var items = itemsForGroup(isUngrouped ? null : groupId);
   var pg = _groupPage[groupKey] || 0;
   body.innerHTML = renderCards(items, pg, groupKey);
-  // Update count
   var countEl = groupEl.querySelector('.group-count');
   if (countEl) countEl.textContent = items.length + '只';
+  loadQuotesForVisible();
 }
 
 // ── Remove ──
