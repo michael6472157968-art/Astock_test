@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>我的自选 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=3" />
+<script src="/lib/echarts.js"></script>
 <style>
 .fav-quota-bar {
   display: flex; align-items: center; justify-content: space-between;
@@ -185,6 +186,13 @@
     <div class="quota-bar-wrap"><div class="quota-bar-fill" id="quotaFill"></div></div>
     <span id="quotaText">0/0</span>
   </div>
+  <div id="favMainChartPanel" class="mood-panel" style="margin-bottom:16px;display:none;">
+    <div class="mood-header"><span class="mood-title">自选速览</span><span class="mood-date" id="favMainDate">配置T日</span></div>
+    <div class="mood-body" style="flex-direction:column;padding:8px 12px;">
+      <div id="favMainChartWrap" style="width:100%;height:320px;"></div>
+      <div id="favConfigRows"></div>
+    </div>
+  </div>
   <div id="content" style="width:100%;"><p class="state-loading">加载中...</p></div>
   <div class="new-group-wrap" id="newGroupWrap" style="display:none;">
     <input type="text" id="newGroupInput" placeholder="输入分组名称，按 Enter 创建" maxlength="30" onkeydown="handleNewGroupKey(event)" />
@@ -250,7 +258,7 @@ function loadAll() {
     }
     document.getElementById('newGroupWrap').style.display = 'flex';
     renderAll();
-    loadNotifications();
+    loadFavMainChart();
   }).catch(function() {
     document.getElementById('content').innerHTML = '<p class="state-error">加载失败</p>';
   });
@@ -269,6 +277,8 @@ function renderAll() {
     html += renderGroupSection(g);
   });
   document.getElementById('content').innerHTML = html;
+  // 渲染完成后重新加载主图（分组数可能变了）
+  setTimeout(loadFavMainChart, 50);
 }
 
 function renderUngroupedSection() {
@@ -482,6 +492,7 @@ function createNewGroup() {
   if (!name) return;
   API.post('/alerts/favorites/groups', { name: name }).then(function(r) {
     input.value = '';
+    invalidateFavStatsCache();
     reloadGroups();
   });
 }
@@ -504,12 +515,12 @@ function startRenameGroup(gid, currentName) {
 
 function finishRenameGroup(gid, name) {
   if (!name) { reloadGroups(); return; }
-  API.put('/alerts/favorites/groups/' + gid, { name: name }).then(function() { reloadGroups(); });
+  API.put('/alerts/favorites/groups/' + gid, { name: name }).then(function() { invalidateFavStatsCache(); reloadGroups(); });
 }
 
 function deleteGroupConfirm(gid) {
   if (!confirm('确定删除此分组？组内股票将移至"未分组"。')) return;
-  API.del('/alerts/favorites/groups/' + gid).then(function() { reloadGroups(); });
+  API.del('/alerts/favorites/groups/' + gid).then(function() { invalidateFavStatsCache(); reloadGroups(); });
 }
 
 function reloadGroups() {
@@ -701,6 +712,7 @@ function moveStockToGroup(code, groupId) {
     // Update local state
     var item = _allItems.find(function(f){return f.stock_code === code;});
     if (item) item.group_id = groupId;
+    invalidateFavStatsCache();
     reloadGroups();
   });
 }
@@ -739,6 +751,7 @@ function refreshGroupSection(groupKey) {
 
 function removeFav(code) {
   API.del('/alerts/favorites/' + encodeURIComponent(code)).then(function() {
+    invalidateFavStatsCache();
     _allItems = _allItems.filter(function(f) { return f.stock_code !== code; });
     _quotaCurrent = Math.max(0, _quotaCurrent - 1);
     updateQuotaBar();
@@ -751,32 +764,213 @@ function removeFav(code) {
   });
 }
 
-// ── Notifications ──
+// ── 自选速览主图 ──
+var _favMainChart = null;
 
-function loadNotifications() {
-  API.get('/alerts/notifications').then(function(r) {
-    var notifs = r.data.items || [];
-    var container = document.getElementById('content');
-    if (!notifs.length) {
-      container.insertAdjacentHTML('beforeend', '<div class="card" style="margin-top:16px"><div class="card-header">异动预警通知</div><div class="card-body"><p class="state-empty">暂无预警通知。收盘后15:40系统将自动扫描生成异动预警。</p></div></div>');
-      return;
-    }
-    var html = '<div class="card" style="margin-top:16px"><div class="card-header">异动预警通知（' + notifs.length + '条）</div><div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>股票</th><th>类型</th><th>内容</th><th>时间</th></tr></thead><tbody>';
-    notifs.forEach(function(n) {
-      var typeClass = '';
-      if (n.alert_type && n.alert_type.indexOf('金叉') >= 0 || n.alert_type && n.alert_type.indexOf('超卖') >= 0) typeClass = 'signal-bullish';
-      else if (n.alert_type && (n.alert_type.indexOf('死叉') >= 0 || n.alert_type.indexOf('超买') >= 0)) typeClass = 'signal-bearish';
-      html += '<tr>';
-      html += '<td><a href="diagnosis.html?code=' + encodeURIComponent(n.ts_code) + '">' + (n.stock_name || n.ts_code) + '</a></td>';
-      html += '<td><span class="signal-tag ' + typeClass + '">' + n.alert_type + '</span></td>';
-      html += '<td>' + n.content + '</td>';
-      html += '<td style="font-size:0.8rem;color:var(--color-text-muted)">' + (n.created_at ? n.created_at.slice(0,16).replace('T',' ') : '') + '</td>';
-      html += '</tr>';
+function fmtDate(d) {
+  if (!d) return '';
+  return d.slice(4, 6) + '-' + d.slice(6, 8);
+}
+
+function date8toPicker(d) {
+  if (!d) return '';
+  return d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8);
+}
+
+function pickerToDate8(s) {
+  return s.replace(/-/g, '');
+}
+
+var _favStatsReq = null;
+
+function invalidateFavStatsCache() {
+  // 分组变更时下次loadFavMainChart会重新拉API（无需操作）
+}
+
+function loadFavMainChart() {
+  var tDates = FavStore.getTDates();
+
+  var groupInfos = [];
+  _groups.forEach(function(g) {
+    groupInfos.push({ key: String(g.id), name: g.name, count: g.stock_count });
+  });
+
+  if (!groupInfos.length) {
+    document.getElementById('favMainChartPanel').style.display = 'none';
+    return;
+  }
+
+  function renderFromData(data) {
+    var allDates = data.dates || [];
+    var groupData = [];
+    groupInfos.forEach(function(gi) {
+      var found = null;
+      (data.groups || []).forEach(function(g) {
+        if (String(g.id) === gi.key) found = g;
+      });
+      if (found) {
+        var td = tDates[gi.key];
+        if (!td && allDates.length > 0) td = allDates[allDates.length - 1];
+        var clipStart = allDates.length;
+        for (var i = 0; i < allDates.length; i++) {
+          if (allDates[i] >= td) { clipStart = i; break; }
+        }
+        var dcMap = {};
+        (found.daily_chg || []).forEach(function(d) { dcMap[d.date] = d.avg_chg; });
+        var clippedChg = allDates.map(function(d, idx) {
+          if (idx >= clipStart) {
+            var v = dcMap[d];
+            return { date: d, avg_chg: v !== undefined ? v : null };
+          }
+          return { date: d, avg_chg: null };
+        });
+        groupData.push({
+          name: found.name,
+          stockCount: found.stock_count,
+          dailyChg: clippedChg,
+          key: gi.key
+        });
+      }
     });
-    html += '</tbody></table></div></div>';
-    container.insertAdjacentHTML('beforeend', html);
+
+    renderFavMainChart(groupData, allDates);
+    renderFavConfigRows(groupInfos, tDates, allDates);
+
+    var viewForSub = { groups: [], ungrouped: null, dates: allDates };
+    groupData.forEach(function(gd) {
+      var entry = { name: gd.name, stock_count: gd.stockCount, daily_chg: gd.dailyChg };
+      if (gd.key === '__ungrouped__') {
+        viewForSub.ungrouped = entry;
+      } else {
+        entry.id = parseInt(gd.key) || 0;
+        viewForSub.groups.push(entry);
+      }
+    });
+    try { localStorage.setItem('fav_stats_view', JSON.stringify(viewForSub)); } catch(e) {}
+  }
+
+  if (_favStatsReq) clearTimeout(_favStatsReq);
+  _favStatsReq = setTimeout(function() {
+    API.get('/alerts/favorites/groups/stats').then(function(r) {
+      var data = r.data || { groups: [], ungrouped: null, dates: [] };
+      renderFromData(data);
+    }).catch(function() {
+      document.getElementById('favMainChartPanel').style.display = 'none';
+    });
+  }, 300);
+}
+
+function renderFavMainChart(groupData, dates) {
+  var wrap = document.getElementById('favMainChartWrap');
+  if (!wrap) return;
+  document.getElementById('favMainChartPanel').style.display = '';
+
+  var xLabels = dates.map(function(d) { return fmtDate(d); });
+  if (!xLabels.length || !groupData.length) {
+    if (_favMainChart) { _favMainChart.dispose(); _favMainChart = null; }
+    return;
+  }
+
+  if (_favMainChart) _favMainChart.dispose();
+  _favMainChart = echarts.init(wrap);
+
+  var colors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316'];
+
+  var seriesOpts = groupData.map(function(s) {
+    var dcMap = {};
+    var gid = parseInt(s.key) || 0;
+    var ci = Math.abs(gid) % colors.length;
+    (s.dailyChg || []).forEach(function(d) { dcMap[d.date] = d.avg_chg; });
+    var values = dates.map(function(d) { return dcMap[d] !== undefined ? dcMap[d] : null; });
+
+    return {
+      name: s.name + ' (' + s.stockCount + '只)',
+      type: 'line',
+      data: values,
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 5,
+      lineStyle: { width: 2, color: colors[ci] },
+      itemStyle: { color: colors[ci] },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: colors[ci] + '30' },
+          { offset: 1, color: colors[ci] + '02' }
+        ])
+      }
+    };
+  });
+
+  _favMainChart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        var lines = ['<b>' + params[0].axisValue + '</b>'];
+        params.forEach(function(p) {
+          var v = p.value;
+          lines.push(p.marker + ' ' + p.seriesName + ': ' + (v != null ? (v >= 0 ? '+' : '') + v + '%' : '--'));
+        });
+        return lines.join('<br/>');
+      }
+    },
+    legend: { type: 'scroll', bottom: 0, textStyle: { color: '#8392A5', fontSize: 11 }, itemWidth: 14, itemHeight: 10 },
+    grid: { left: 8, right: 12, top: 8, bottom: 36 },
+    xAxis: {
+      type: 'category', data: xLabels, boundaryGap: false,
+      axisLabel: { color: '#8392A5', fontSize: 10 },
+      axisLine: { lineStyle: { color: 'rgba(128,128,128,0.15)' } },
+      axisTick: { show: false }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#8392A5', fontSize: 10, formatter: '{value}%' },
+      splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } },
+      name: '涨跌幅', nameTextStyle: { color: '#8392A5', fontSize: 10 }
+    },
+    series: seriesOpts
   });
 }
+
+function renderFavConfigRows(groupInfos, tDates, allDates) {
+  var rows = document.getElementById('favConfigRows');
+  if (!rows) return;
+  var minDate = allDates.length > 0 ? date8toPicker(allDates[0]) : '';
+  var maxDate = allDates.length > 0 ? date8toPicker(allDates[allDates.length - 1]) : '';
+  var colors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316'];
+  var html = '';
+  groupInfos.forEach(function(gi) {
+    var td = tDates[String(gi.key)] || maxDate.replace(/-/g, '');
+    var gid = parseInt(gi.key) || 0;
+    var ci = Math.abs(gid) % colors.length;
+    html += '<div class="fav-config-row">';
+    html += '<span class="color-dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + colors[ci] + ';margin-right:6px;flex-shrink:0;"></span>';
+    html += '<span style="flex:1;font-weight:500;">' + gi.name + '</span>';
+    html += '<span style="font-size:0.75rem;color:var(--color-text-muted);margin-right:8px;">' + gi.count + '只</span>';
+    html += '<span style="font-size:0.75rem;color:var(--color-text-muted);margin-right:4px;">T日</span>';
+    html += '<input type="date" value="' + date8toPicker(td) + '" min="' + minDate + '" max="' + maxDate + '" onchange="onTDateChange(\'' + gi.key + '\', this, \'' + minDate + '\', \'' + maxDate + '\')" style="width:130px;" />';
+    html += '</div>';
+  });
+  rows.innerHTML = html;
+}
+
+function onTDateChange(groupKey, inputEl, minDate, maxDate) {
+  var pickerVal = inputEl.value;
+  if (pickerVal < minDate || pickerVal > maxDate) {
+    alert('T日超出可选范围（' + minDate + ' ~ ' + maxDate + '）');
+    inputEl.value = inputEl.defaultValue;
+    return;
+  }
+  inputEl.defaultValue = pickerVal;
+  var dt = pickerToDate8(pickerVal);
+  FavStore.setTDate(groupKey, dt);
+  loadFavMainChart();
+}
+
+window.addEventListener('resize', function() {
+  if (_favMainChart) _favMainChart.resize();
+});
+
+// ── 分组管理 ──
 
 // Load quotes after DOM render
 setTimeout(loadQuotesForVisible, 100);

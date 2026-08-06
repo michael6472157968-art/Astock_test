@@ -231,6 +231,28 @@ var FavStore = {
         showToast(e.message || '添加失败');
       }
     });
+  },
+
+  // ── T日配置（跨页面共享，localStorage key = fav_t_dates）──
+  getTDates: function() {
+    try {
+      var raw = localStorage.getItem('fav_t_dates');
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+  },
+
+  setTDate: function(groupKey, dateStr) {
+    var cfg = this.getTDates();
+    if (dateStr) {
+      cfg[String(groupKey)] = dateStr;
+    } else {
+      delete cfg[String(groupKey)];
+    }
+    localStorage.setItem('fav_t_dates', JSON.stringify(cfg));
+  },
+
+  clearTDates: function() {
+    localStorage.removeItem('fav_t_dates');
   }
 };
 

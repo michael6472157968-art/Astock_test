@@ -15,6 +15,7 @@ from app.models.orm.models import AlertNotification, UserAlertConfig, UserFavori
 from app.models.schemas.common import APIResponse
 from app.services import user_data
 from sqlalchemy import select
+from sqlalchemy import text as _text
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["预警"])
 _settings = get_settings()
@@ -99,15 +100,6 @@ async def favorites_quotes(codes: str = "", user: dict = Depends(require_auth)):
 
 
 # ── 轻量技术评分（纯Python，不依赖诊股引擎）──
-
-def _sma(values, n):
-    out = []
-    for i in range(len(values)):
-        if i < n - 1:
-            out.append(None)
-        else:
-            out.append(sum(values[i - n + 1:i + 1]) / n)
-    return out
 
 
 def _compute_light_score(closes: list[float]) -> dict:
@@ -438,6 +430,89 @@ async def move_favorite(stock_code: str, req: MoveFavRequest, user: dict = Depen
     if not ok:
         raise HTTPException(404, "自选记录不存在")
     return APIResponse(data={"message": "已移动"}, timestamp=int(time.time()))
+
+
+@router.get("/favorites/groups/stats")
+async def favorites_group_stats(
+    user: dict = Depends(require_auth),
+):
+    uid, tier = user["user_id"], user["tier"]
+    if not uid:
+        raise HTTPException(401, "请先登录")
+
+    stocks = await user_data.get_favorites(uid)
+    all_codes = [s["stock_code"] for s in stocks]
+    if not all_codes:
+        return APIResponse(data={"groups": [], "ungrouped": None, "dates": []}, timestamp=int(time.time()))
+
+    async with async_session() as session:
+        # 取最近22个交易日（覆盖一个月窗口）
+        r = await session.execute(
+            _text("SELECT DISTINCT trade_date FROM stock_daily ORDER BY trade_date DESC LIMIT 22")
+        )
+        dates = [row[0] for row in r.fetchall()]
+        dates.reverse()
+
+        if len(dates) < 1:
+            return APIResponse(data={"groups": [], "ungrouped": None, "dates": []}, timestamp=int(time.time()))
+
+        # 批量取所有自选股在这些交易日的 pct_chg
+        code_placeholders = ",".join([f":c{i}" for i in range(len(all_codes))])
+        date_placeholders = ",".join([f":d{i}" for i in range(len(dates))])
+        params = {f"c{i}": code for i, code in enumerate(all_codes)}
+        params.update({f"d{i}": d for i, d in enumerate(dates)})
+        r2 = await session.execute(
+            _text(f"""SELECT ts_code, trade_date, pct_chg FROM stock_daily
+                     WHERE ts_code IN ({code_placeholders}) AND trade_date IN ({date_placeholders})"""),
+            params
+        )
+        rows = r2.fetchall()
+        code_pct: dict[str, dict[str, float]] = {}
+        for ts_code, td, pct in rows:
+            code_pct.setdefault(ts_code, {})[td] = round(float(pct), 2) if pct is not None else 0.0
+
+    # 按分组聚合逐日均值
+    def _daily_avg(codes_in_group: list[str]) -> list[dict]:
+        result = []
+        for td in dates:
+            vals = []
+            for c in codes_in_group:
+                v = code_pct.get(c, {}).get(td)
+                if v is not None:
+                    vals.append(v)
+            avg = round(sum(vals) / len(vals), 2) if vals else None
+            result.append({"date": td, "avg_chg": avg})
+        return result
+
+    group_stocks_map: dict[int, list[str]] = {}
+    ungrouped_codes: list[str] = []
+    for s in stocks:
+        gid = s.get("group_id")
+        if gid is not None:
+            group_stocks_map.setdefault(gid, []).append(s["stock_code"])
+        else:
+            ungrouped_codes.append(s["stock_code"])
+
+    groups_out = []
+    gs_list, _ = await user_data.get_groups(uid)
+    for g in gs_list:
+        codes = group_stocks_map.get(g["id"], [])
+        daily = _daily_avg(codes) if codes else [{"date": td, "avg_chg": None} for td in dates]
+        groups_out.append({
+            "id": g["id"],
+            "name": g["name"],
+            "stock_count": len(codes),
+            "daily_chg": daily,
+        })
+
+    ungrouped = None
+    if ungrouped_codes:
+        ungrouped = {
+            "stock_count": len(ungrouped_codes),
+            "daily_chg": _daily_avg(ungrouped_codes),
+        }
+
+    return APIResponse(data={"groups": groups_out, "ungrouped": ungrouped, "dates": dates}, timestamp=int(time.time()))
 
 
 # ── 预警配置 ──

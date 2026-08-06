@@ -199,7 +199,17 @@ async def reorder_favorites(user_id: int, ordered_codes: list[str]) -> bool:
                 rows[code].sort_order = i
 
         await session.commit()
-        return True
+
+    # 同步更新 JSON
+    data = _read_json(user_id, "favorites.json")
+    stocks = data.get("stocks", [])
+    for s in stocks:
+        code = s.get("stock_code", "")
+        if code in {code: i for i, code in enumerate(ordered_codes)}:
+            s["sort_order"] = {code: i for i, code in enumerate(ordered_codes)}[code]
+    _write_json(user_id, "favorites.json", data)
+
+    return True
 
 
 # ── 分组操作 ──
@@ -347,29 +357,6 @@ async def move_to_group(user_id: int, stock_code: str, group_id: int | None) -> 
         await session.commit()
         return True
 
-
-async def get_favorites_by_group(user_id: int, group_id: int | None = None) -> list[dict]:
-    """获取指定分组的自选股列表。group_id=None 获取未分组。"""
-    async with async_session() as session:
-        if group_id is None:
-            cond = UserFavorite.user_id == user_id, UserFavorite.group_id.is_(None)
-        else:
-            cond = UserFavorite.user_id == user_id, UserFavorite.group_id == group_id
-        r = await session.execute(
-            select(UserFavorite).where(*cond)
-            .order_by(UserFavorite.sort_order, UserFavorite.created_at)
-        )
-        rows = r.scalars().all()
-        return [
-            {
-                "stock_code": row.ts_code,
-                "stock_name": row.stock_name or "",
-                "added_at": row.created_at.isoformat() if row.created_at else "",
-                "sort_order": row.sort_order or 0,
-                "group_id": row.group_id,
-            }
-            for row in rows
-        ]
 
 
 async def get_favorite_codes(user_id: int) -> list[str]:
