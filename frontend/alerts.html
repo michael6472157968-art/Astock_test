@@ -62,11 +62,11 @@
 
 /* ── Card ── */
 .fav-card {
-  display: flex; align-items: stretch; padding: 8px 10px;
+  display: flex; flex-direction: column; padding: 8px 10px;
   background: var(--color-surface); border: 1px solid var(--color-border);
   border-radius: 8px; margin: 4px 8px;
   cursor: grab; transition: box-shadow 0.15s;
-  gap: 8px;
+  gap: 6px;
 }
 .fav-card:first-child { margin-top: 6px; }
 .fav-card:last-child { margin-bottom: 6px; }
@@ -74,14 +74,15 @@
 .fav-card.dragging { opacity: 0.4; }
 .fav-card.drag-over { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary); }
 .fav-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.fav-card .fav-top-row { display: flex; align-items: center; gap: 8px; }
 .fav-card .fav-left { display: flex; align-items: center; flex-shrink: 0; }
 .fav-card .drag-handle { color: var(--color-text-muted); font-size: 0.85rem; cursor: grab; user-select: none; padding: 0 2px; }
 .fav-card .fav-info { flex: 0 0 95px; min-width: 0; display: flex; flex-direction: column; justify-content: center; cursor: default; }
 .fav-card .fav-code { font-size: 0.67rem; color: var(--color-text-muted); }
 .fav-card .fav-name { font-size: 0.84rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fav-card .fav-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 4px; }
-.fav-card .fav-sparkline { flex-shrink: 0; width: 90px; height: 38px; }
-.fav-card .fav-signals { display: flex; flex-wrap: wrap; gap: 3px; align-content: start; }
+.fav-card .fav-mid { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.fav-card .fav-sparkline { flex-shrink: 0; width: 120px; height: 40px; }
+.fav-card .fav-signals { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 3px; align-content: center; }
 .fav-card .signal-chip {
   font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; white-space: nowrap;
   background: var(--color-border-light); color: var(--color-text-secondary);
@@ -91,6 +92,19 @@
 .fav-card .fav-quote { flex-shrink: 0; text-align: right; display: flex; flex-direction: column; justify-content: center; min-width: 70px; }
 .fav-card .fav-price { font-size: 0.88rem; font-weight: 500; }
 .fav-card .fav-pct { font-size: 0.78rem; font-weight: 500; }
+.fav-card .fav-bot-row {
+  display: flex; align-items: center; gap: 8px;
+  padding-top: 2px; border-top: 1px solid var(--color-border-light);
+}
+.fav-card .fav-diag-btn {
+  font-size: 0.72rem; font-weight: 500; text-decoration: none;
+  padding: 3px 10px; border-radius: 4px;
+  color: var(--color-primary); border: 1px solid var(--color-primary);
+  transition: background 0.15s, color 0.15s;
+}
+.fav-card .fav-diag-btn:hover { background: var(--color-primary); color: #fff; }
+.fav-card .fav-del { font-size: 0.7rem; color: var(--color-text-muted); background: none; border: none; cursor: pointer; padding: 3px 8px; border-radius: 4px; margin-left: auto; }
+.fav-card .fav-del:hover { color: var(--color-danger); background: rgba(239,68,68,0.1); }
 .fav-card .fav-score-badge {
   flex-shrink: 0; width: 36px; height: 36px; border-radius: 6px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -107,16 +121,8 @@
 .risk-mid { background: rgba(245,158,11,0.12); color: #d97706; }
 .risk-mid-high { background: rgba(249,115,22,0.12); color: #ea580c; }
 .risk-high { background: rgba(239,68,68,0.12); color: #dc2626; }
-.fav-card .fav-del { flex-shrink: 0; align-self: center; color: var(--color-text-muted); background: none; border: none; font-size: 1rem; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
-.fav-card .fav-del:hover { color: var(--color-danger); background: rgba(239,68,68,0.1); }
-.fav-card .fav-diag-btn {
-  flex-shrink: 0; align-self: center;
-  font-size: 0.85rem; text-decoration: none;
-  padding: 4px 6px; border-radius: 4px;
-  color: var(--color-text-muted); opacity: 0.6;
-  transition: opacity 0.15s, background 0.15s;
-}
-.fav-card .fav-diag-btn:hover { opacity: 1; background: rgba(59,130,246,0.1); }
+.fav-card .fav-score-badge, .fav-card .fav-risk-tag { display: none; }
+.fav-card > .fav-del, .fav-card > .fav-diag-btn { display: none; }
 
 /* ── Drop Indicator ── */
 .drop-indicator {
@@ -311,23 +317,27 @@ function renderCards(items, pageOffset, groupKey) {
   h += '<div class="fav-cards-inner">';
   batch.forEach(function(f) {
     h += '<div class="fav-card" draggable="true" data-code="' + f.stock_code + '" data-group-id="' + (f.group_id || '') + '" ondragstart="handleCardDragStart(event)" ondragover="handleCardDragOver(event)" ondragleave="handleCardDragLeave(event)" ondrop="handleCardDrop(event)" ondragend="handleCardDragEnd(event)">';
+    h += '<div class="fav-top-row">';
     h += '<div class="fav-left"><span class="drag-handle" title="拖拽排序">⋮⋮</span></div>';
     h += '<div class="fav-info">';
     h += '<div class="fav-name">' + escHtml(f.stock_name || f.stock_code) + '</div>';
     h += '<div class="fav-code">' + f.stock_code + '</div>';
     h += '</div>';
     h += '<div class="fav-mid">';
-    h += '<svg class="fav-sparkline" viewBox="0 0 90 38" data-code="' + f.stock_code + '"><polyline fill="none" stroke="var(--color-border)" stroke-width="1.5" points=""/></svg>';
+    h += '<svg class="fav-sparkline" viewBox="0 0 120 40" data-code="' + f.stock_code + '"><polyline fill="none" stroke="var(--color-border)" stroke-width="1.5" points=""/></svg>';
     h += '<div class="fav-signals" data-code="' + f.stock_code + '"></div>';
     h += '</div>';
     h += '<div class="fav-score-badge" data-code="' + f.stock_code + '">--<span class="score-label">分</span></div>';
     h += '<div class="fav-risk-tag" data-code="' + f.stock_code + '">--</div>';
-    h += '<a class="fav-diag-btn" href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '" onclick="event.stopPropagation();" title="诊股">🔬</a>';
     h += '<div class="fav-quote">';
     h += '<div class="fav-price">--</div>';
     h += '<div class="fav-pct">--</div>';
     h += '</div>';
-    h += '<button class="fav-del" onclick="event.stopPropagation();removeFav(\'' + f.stock_code + '\')" title="删除">✕</button>';
+    h += '</div>';
+    h += '<div class="fav-bot-row">';
+    h += '<a class="fav-diag-btn" href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '" onclick="event.stopPropagation();">诊股</a>';
+    h += '<button class="fav-del" onclick="event.stopPropagation();removeFav(\'' + f.stock_code + '\')" title="删除自选">✕ 移除</button>';
+    h += '</div>';
     h += '</div>';
   });
   h += '</div>';
@@ -372,7 +382,7 @@ function loadQuotesForVisible() {
             var min = Math.min.apply(null, closes);
             var max = Math.max.apply(null, closes);
             var range = max - min || 1;
-            var w = 90, h = 38, pad = 2;
+            var w = 120, h = 40, pad = 2;
             var pts = closes.map(function(v, i) {
               var x = pad + (i / (closes.length - 1)) * (w - pad * 2);
               var y = pad + (1 - (v - min) / range) * (h - pad * 2);
