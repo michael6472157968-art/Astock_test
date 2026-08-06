@@ -12,10 +12,63 @@ from sqlalchemy import text
 
 from app.core.database import async_session
 from app.models.orm.models import LimitListRecord, MarginRecord, Sector, Stock, StockDaily
-from app.services.tushare_client import (get_all_daily, get_daily_basic, get_limit_list, get_margin,
+from app.services.tushare_client import (get_all_daily, get_daily_basic, get_index_daily, get_limit_list, get_margin,
                                           get_moneyflow_hsgt, get_sector_list, get_stock_basic)
 
 logger = logging.getLogger("sync")
+
+# 4大指数——同步到 stock_daily，供日历着色等使用
+INDEX_CODES = [
+    ("000001.SH", "上证指数"),
+    ("399001.SZ", "深证成指"),
+    ("399006.SZ", "创业板指"),
+    ("000688.SH", "科创50"),
+]
+
+
+async def sync_index_daily(trade_date: str = "") -> int:
+    """同步4大指数日线到 stock_daily 表。每次调4次 index_daily API。"""
+    if not trade_date:
+        from app.utils.trading_calendar import get_latest_trade_date
+        trade_date = await get_latest_trade_date()
+
+    total = 0
+    for code, _name in INDEX_CODES:
+        try:
+            rows = await get_index_daily(code, trade_date, trade_date)
+            if not rows:
+                continue
+            async with async_session() as session:
+                for row in rows:
+                    try:
+                        await session.execute(text("""
+                            INSERT OR REPLACE INTO stock_daily
+                                (ts_code, trade_date, open, high, low, close, pre_close,
+                                 change, pct_chg, volume, amount)
+                            VALUES (:ts_code, :trade_date, :open, :high, :low, :close,
+                                    :pre_close, :change, :pct_chg, :volume, :amount)
+                        """), {
+                            "ts_code": code,
+                            "trade_date": str(row.get("trade_date", trade_date)),
+                            "open": float(row.get("open", 0) or 0),
+                            "high": float(row.get("high", 0) or 0),
+                            "low": float(row.get("low", 0) or 0),
+                            "close": float(row.get("close", 0) or 0),
+                            "pre_close": float(row.get("pre_close", 0) or 0),
+                            "change": float(row.get("change", 0) or 0),
+                            "pct_chg": float(row.get("pct_chg", 0) or 0),
+                            "volume": float(row.get("vol", 0) or 0),
+                            "amount": float(row.get("amount", 0) or 0),
+                        })
+                        total += 1
+                    except Exception:
+                        continue
+                await session.commit()
+        except Exception as e:
+            logger.warning(f"sync_index_daily {code}: {e}")
+
+    logger.info(f"Index daily synced: {total} records for {trade_date}")
+    return total
 
 
 async def sync_stock_basic() -> int:

@@ -73,7 +73,7 @@ def _sync_daily_wrapper():
 
 async def _sync_daily_all():
     """所有收盘后同步+计算合并到一个event loop中执行，避免跨loop连接泄漏。"""
-    from app.services.data_sync import sync_daily_data, sync_limit_list, sync_margin, sync_stock_basic, sync_daily_basic, sync_moneyflow_hsgt
+    from app.services.data_sync import sync_daily_data, sync_index_daily, sync_limit_list, sync_margin, sync_stock_basic, sync_daily_basic, sync_moneyflow_hsgt
     from app.services.stock_pool_engine import StockPoolEngine
     from app.services.short_term_engine import ShortTermEngine
     from app.services.sector_analysis import SectorAnalysisEngine
@@ -85,6 +85,7 @@ async def _sync_daily_all():
     for name, fn in [
         ("stock_basic", sync_stock_basic),
         ("daily_data", sync_daily_data),
+        ("index_daily", sync_index_daily),
         ("daily_basic", sync_daily_basic),
         ("limit_list", sync_limit_list),
         ("margin", sync_margin),

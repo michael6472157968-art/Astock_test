@@ -8,6 +8,11 @@
       "port": 8000,
       "cwd": "D:/Astock_DetaTest/backend",
       "autoPort": false
+    },
+    {
+      "name": "Astock-preview",
+      "url": "http://localhost:8000",
+      "port": 8000
     }
   ]
 }

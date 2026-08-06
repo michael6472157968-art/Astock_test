@@ -441,7 +441,12 @@
         });
         el.querySelector('.spc-list').innerHTML = html;
         // 按钮渲染完成后，用已加载的收藏缓存刷新状态
-        if (_favCache.length > 0) refreshFavBtns(el);
+        if (_favCache.length > 0) {
+          el.querySelectorAll('.spc-fav-btn').forEach(function(btn) {
+            var c = btn.getAttribute('data-code');
+            if (_favCache.indexOf(c) >= 0) setFavBtnAdded(btn);
+          });
+        }
       }).catch(function() {
         el.querySelector('.spc-list').innerHTML = '<div style="color:var(--color-text-muted);font-size:0.75rem;padding:8px;">加载失败</div>';
       });
