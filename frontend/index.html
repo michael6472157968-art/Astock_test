@@ -704,7 +704,7 @@
           var pct = qd.pct_chg || 0;
           var cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
           html += '<div class="fav-row" style="display:flex;align-items:center;padding:6px 0;border-bottom:1px solid var(--color-border-light);cursor:pointer;font-size:0.8rem;" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '\'">';
-          html += '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (qd.name || f.stock_code) + '</span>';
+          html += '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (f.stock_name || f.stock_code) + '</span>';
           html += '<span style="width:50px;text-align:right;margin-right:8px;">' + (qd.close || '--') + '</span>';
           html += '<span class="' + cls + '" style="width:52px;text-align:right;font-weight:500;">' + (pct > 0 ? '+' : '') + pct + '%</span>';
           html += '</div>';

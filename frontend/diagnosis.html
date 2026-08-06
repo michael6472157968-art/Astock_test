@@ -758,7 +758,7 @@ function addFavorite(code, name) {
   var btn = document.getElementById('favBtn');
   if (!btn) return;
   btn.disabled = true; btn.textContent = '添加中...';
-  API.post('/alerts/favorites', { stock_code: code }).then(function() {
+  API.post('/alerts/favorites', { stock_code: code, stock_name: name || code }).then(function() {
     btn.textContent = '✓ 已自选'; btn.className = 'btn btn-sm btn-outline'; btn.disabled = false;
   }).catch(function(e) {
     if (e.code === 401) { location.href = 'login.html'; return; }

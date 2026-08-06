@@ -273,6 +273,7 @@ async def _attach_risk_data(quotes: dict, code_list: list[str]) -> None:
 
 class AddFavRequest(BaseModel):
     stock_code: str = Field(..., min_length=1)
+    stock_name: str = ""
 
 
 @router.post("/favorites")
@@ -281,7 +282,8 @@ async def add_favorite(req: AddFavRequest, user: dict = Depends(require_auth)):
     if not uid:
         raise HTTPException(401, "请先登录")
 
-    ok, msg = await user_data.add_favorite(uid, req.stock_code, "", tier)
+    stock_name = req.stock_name.strip() if req.stock_name else req.stock_code
+    ok, msg = await user_data.add_favorite(uid, req.stock_code, stock_name, tier)
     if not ok:
         raise HTTPException(400, msg)
 

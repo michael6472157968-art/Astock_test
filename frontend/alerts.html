@@ -76,12 +76,12 @@
 .fav-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .fav-card .fav-left { display: flex; align-items: center; flex-shrink: 0; }
 .fav-card .drag-handle { color: var(--color-text-muted); font-size: 0.85rem; cursor: grab; user-select: none; padding: 0 2px; }
-.fav-card .fav-info { flex: 0 0 90px; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.fav-card .fav-info { flex: 0 0 95px; min-width: 0; display: flex; flex-direction: column; justify-content: center; cursor: default; }
 .fav-card .fav-code { font-size: 0.67rem; color: var(--color-text-muted); }
-.fav-card .fav-name { font-size: 0.84rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-.fav-card .fav-mid { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
-.fav-card .fav-sparkline { flex-shrink: 0; width: 70px; height: 32px; }
-.fav-card .fav-signals { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 3px; align-content: center; }
+.fav-card .fav-name { font-size: 0.84rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fav-card .fav-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 0 4px; }
+.fav-card .fav-sparkline { flex-shrink: 0; width: 90px; height: 38px; }
+.fav-card .fav-signals { display: flex; flex-wrap: wrap; gap: 3px; align-content: start; }
 .fav-card .signal-chip {
   font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; white-space: nowrap;
   background: var(--color-border-light); color: var(--color-text-secondary);
@@ -109,6 +109,14 @@
 .risk-high { background: rgba(239,68,68,0.12); color: #dc2626; }
 .fav-card .fav-del { flex-shrink: 0; align-self: center; color: var(--color-text-muted); background: none; border: none; font-size: 1rem; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
 .fav-card .fav-del:hover { color: var(--color-danger); background: rgba(239,68,68,0.1); }
+.fav-card .fav-diag-btn {
+  flex-shrink: 0; align-self: center;
+  font-size: 0.85rem; text-decoration: none;
+  padding: 4px 6px; border-radius: 4px;
+  color: var(--color-text-muted); opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+.fav-card .fav-diag-btn:hover { opacity: 1; background: rgba(59,130,246,0.1); }
 
 /* ── Drop Indicator ── */
 .drop-indicator {
@@ -305,15 +313,16 @@ function renderCards(items, pageOffset, groupKey) {
     h += '<div class="fav-card" draggable="true" data-code="' + f.stock_code + '" data-group-id="' + (f.group_id || '') + '" ondragstart="handleCardDragStart(event)" ondragover="handleCardDragOver(event)" ondragleave="handleCardDragLeave(event)" ondrop="handleCardDrop(event)" ondragend="handleCardDragEnd(event)">';
     h += '<div class="fav-left"><span class="drag-handle" title="拖拽排序">⋮⋮</span></div>';
     h += '<div class="fav-info">';
-    h += '<div class="fav-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '\'">' + escHtml(f.stock_name || f.stock_code) + '</div>';
+    h += '<div class="fav-name">' + escHtml(f.stock_name || f.stock_code) + '</div>';
     h += '<div class="fav-code">' + f.stock_code + '</div>';
     h += '</div>';
     h += '<div class="fav-mid">';
-    h += '<svg class="fav-sparkline" viewBox="0 0 70 32" data-code="' + f.stock_code + '"><polyline fill="none" stroke="var(--color-border)" stroke-width="1.5" points=""/></svg>';
+    h += '<svg class="fav-sparkline" viewBox="0 0 90 38" data-code="' + f.stock_code + '"><polyline fill="none" stroke="var(--color-border)" stroke-width="1.5" points=""/></svg>';
     h += '<div class="fav-signals" data-code="' + f.stock_code + '"></div>';
     h += '</div>';
     h += '<div class="fav-score-badge" data-code="' + f.stock_code + '">--<span class="score-label">分</span></div>';
     h += '<div class="fav-risk-tag" data-code="' + f.stock_code + '">--</div>';
+    h += '<a class="fav-diag-btn" href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '" onclick="event.stopPropagation();" title="诊股">🔬</a>';
     h += '<div class="fav-quote">';
     h += '<div class="fav-price">--</div>';
     h += '<div class="fav-pct">--</div>';
@@ -345,9 +354,6 @@ function loadQuotesForVisible() {
       cards.forEach(function(card) {
         var code = card.getAttribute('data-code');
         var qd = quotes[code] || {};
-        // Name
-        var nameEl = card.querySelector('.fav-name');
-        if (nameEl && qd.name) nameEl.textContent = qd.name;
         // Price & pct
         var priceEl = card.querySelector('.fav-price');
         var pctEl = card.querySelector('.fav-pct');
@@ -366,7 +372,7 @@ function loadQuotesForVisible() {
             var min = Math.min.apply(null, closes);
             var max = Math.max.apply(null, closes);
             var range = max - min || 1;
-            var w = 70, h = 32, pad = 2;
+            var w = 90, h = 38, pad = 2;
             var pts = closes.map(function(v, i) {
               var x = pad + (i / (closes.length - 1)) * (w - pad * 2);
               var y = pad + (1 - (v - min) / range) * (h - pad * 2);
@@ -399,7 +405,11 @@ function loadQuotesForVisible() {
         }
         // Risk tag
         var riskEl = card.querySelector('.fav-risk-tag');
-        if (riskEl && qd.risk) {
+        var riskTags = qd.risk_tags || [];
+        if (riskEl && riskTags.length) {
+          riskEl.textContent = riskTags[0];
+          riskEl.className = 'fav-risk-tag risk-high';
+        } else if (riskEl && qd.risk) {
           var risk = qd.risk;
           riskEl.textContent = risk;
           riskEl.className = 'fav-risk-tag ' + (
@@ -408,12 +418,6 @@ function loadQuotesForVisible() {
             risk === '中风险' ? 'risk-mid' :
             risk === '中高风险' || risk === '高风险(ST)' ? 'risk-mid-high' :
             'risk-high');
-        }
-        // Risk tags (DB scan results)
-        var riskTags = qd.risk_tags || [];
-        if (riskEl && riskTags.length) {
-          riskEl.textContent = riskTags[0];
-          riskEl.className = 'fav-risk-tag risk-high';
         }
       });
     });
