@@ -239,6 +239,20 @@ class MembershipCode(Base):
     used_at = Column(DateTime, nullable=True)
 
 
+class UserFavoriteGroup(Base):
+    __tablename__ = "user_favorite_groups"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    name = Column(String(30), nullable=False)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_now)
+
+    __table_args__ = (
+        Index("ix_fav_groups_user_order", "user_id", "sort_order"),
+    )
+
+
 class UserFavorite(Base):
     __tablename__ = "user_favorites"
 
@@ -246,12 +260,14 @@ class UserFavorite(Base):
     user_id = Column(Integer, nullable=False, index=True)
     ts_code = Column(String(20), nullable=False)
     stock_name = Column(String(50), default="")
+    group_id = Column(Integer, nullable=True, default=None)
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=_now)
 
     __table_args__ = (
         Index("ix_user_favorites_user_stock_unique", "user_id", "ts_code", unique=True),
         Index("ix_user_favorites_user_order", "user_id", "sort_order"),
+        Index("ix_user_favorites_group", "user_id", "group_id"),
     )
 
 

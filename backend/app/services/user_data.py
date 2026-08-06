@@ -69,6 +69,7 @@ async def get_favorites(user_id: int, offset: int = 0, limit: int = 0) -> list[d
                     "stock_name": row.stock_name or "",
                     "added_at": row.created_at.isoformat() if row.created_at else "",
                     "sort_order": row.sort_order or 0,
+                    "group_id": row.group_id,
                 }
                 for row in rows
             ]
@@ -199,6 +200,176 @@ async def reorder_favorites(user_id: int, ordered_codes: list[str]) -> bool:
 
         await session.commit()
         return True
+
+
+# ── 分组操作 ──
+
+async def get_groups(user_id: int) -> list[dict]:
+    """获取用户所有分组，含每组股票数量。"""
+    async with async_session() as session:
+        from sqlalchemy import func
+        from app.models.orm.models import UserFavoriteGroup
+
+        r = await session.execute(
+            select(UserFavoriteGroup).where(UserFavoriteGroup.user_id == user_id)
+            .order_by(UserFavoriteGroup.sort_order, UserFavoriteGroup.id)
+        )
+        groups = r.scalars().all()
+
+        result = []
+        for g in groups:
+            cnt_r = await session.execute(
+                select(func.count(UserFavorite.id)).where(
+                    UserFavorite.user_id == user_id, UserFavorite.group_id == g.id
+                )
+            )
+            result.append({
+                "id": g.id, "name": g.name, "sort_order": g.sort_order,
+                "stock_count": cnt_r.scalar() or 0,
+            })
+
+        # 未分组数量
+        ungrouped_r = await session.execute(
+            select(func.count(UserFavorite.id)).where(
+                UserFavorite.user_id == user_id,
+                UserFavorite.group_id.is_(None),
+            )
+        )
+        return result, (ungrouped_r.scalar() or 0)
+
+
+async def create_group(user_id: int, name: str) -> tuple[bool, str, int | None]:
+    """创建分组。返回(success, message, group_id)。"""
+    from app.models.orm.models import UserFavoriteGroup
+
+    async with async_session() as session:
+        exist_r = await session.execute(
+            select(UserFavoriteGroup).where(
+                UserFavoriteGroup.user_id == user_id,
+                UserFavoriteGroup.name == name,
+            )
+        )
+        if exist_r.scalar_one_or_none():
+            return False, "分组名已存在", None
+
+        max_r = await session.execute(
+            select(UserFavoriteGroup.sort_order).where(
+                UserFavoriteGroup.user_id == user_id
+            ).order_by(UserFavoriteGroup.sort_order.desc())
+        )
+        max_order = max_r.scalar() or -1
+
+        g = UserFavoriteGroup(user_id=user_id, name=name, sort_order=max_order + 1)
+        session.add(g)
+        await session.commit()
+        await session.refresh(g)
+        return True, "已创建", g.id
+
+
+async def rename_group(user_id: int, group_id: int, name: str) -> bool:
+    """重命名分组。"""
+    from app.models.orm.models import UserFavoriteGroup
+
+    async with async_session() as session:
+        r = await session.execute(
+            select(UserFavoriteGroup).where(
+                UserFavoriteGroup.id == group_id,
+                UserFavoriteGroup.user_id == user_id,
+            )
+        )
+        g = r.scalar_one_or_none()
+        if not g:
+            return False
+        g.name = name
+        await session.commit()
+        return True
+
+
+async def delete_group(user_id: int, group_id: int) -> bool:
+    """删除分组，组内股票 group_id 置 NULL。"""
+    from app.models.orm.models import UserFavoriteGroup
+
+    async with async_session() as session:
+        r = await session.execute(
+            select(UserFavoriteGroup).where(
+                UserFavoriteGroup.id == group_id,
+                UserFavoriteGroup.user_id == user_id,
+            )
+        )
+        g = r.scalar_one_or_none()
+        if not g:
+            return False
+
+        # 组内股票取消分组
+        favs = await session.execute(
+            select(UserFavorite).where(
+                UserFavorite.user_id == user_id,
+                UserFavorite.group_id == group_id,
+            )
+        )
+        for f in favs.scalars().all():
+            f.group_id = None
+
+        await session.delete(g)
+        await session.commit()
+        return True
+
+
+async def reorder_groups(user_id: int, ordered_ids: list[int]) -> bool:
+    """更新分组排序。"""
+    async with async_session() as session:
+        from app.models.orm.models import UserFavoriteGroup
+
+        r = await session.execute(
+            select(UserFavoriteGroup).where(UserFavoriteGroup.user_id == user_id)
+        )
+        rows = {g.id: g for g in r.scalars().all()}
+        for i, gid in enumerate(ordered_ids):
+            if gid in rows:
+                rows[gid].sort_order = i
+        await session.commit()
+        return True
+
+
+async def move_to_group(user_id: int, stock_code: str, group_id: int | None) -> bool:
+    """将股票移入/移出分组。group_id=None 表示取消分组。"""
+    async with async_session() as session:
+        r = await session.execute(
+            select(UserFavorite).where(
+                UserFavorite.user_id == user_id,
+                UserFavorite.ts_code == stock_code,
+            )
+        )
+        fav = r.scalar_one_or_none()
+        if not fav:
+            return False
+        fav.group_id = group_id
+        await session.commit()
+        return True
+
+
+async def get_favorites_by_group(user_id: int, group_id: int | None = None) -> list[dict]:
+    """获取指定分组的自选股列表。group_id=None 获取未分组。"""
+    async with async_session() as session:
+        if group_id is None:
+            cond = UserFavorite.user_id == user_id, UserFavorite.group_id.is_(None)
+        else:
+            cond = UserFavorite.user_id == user_id, UserFavorite.group_id == group_id
+        r = await session.execute(
+            select(UserFavorite).where(*cond)
+            .order_by(UserFavorite.sort_order, UserFavorite.created_at)
+        )
+        rows = r.scalars().all()
+        return [
+            {
+                "stock_code": row.ts_code,
+                "stock_name": row.stock_name or "",
+                "added_at": row.created_at.isoformat() if row.created_at else "",
+                "sort_order": row.sort_order or 0,
+                "group_id": row.group_id,
+            }
+            for row in rows
+        ]
 
 
 async def get_favorite_codes(user_id: int) -> list[str]:

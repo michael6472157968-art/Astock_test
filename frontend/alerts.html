@@ -20,15 +20,60 @@
 .quota-ok { background: var(--color-primary); }
 .quota-warn { background: var(--color-warning); }
 .quota-full { background: var(--color-danger); }
+
+/* ── Group ── */
+.fav-group {
+  margin-bottom: 8px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: 8px; overflow: hidden;
+}
+.fav-group-header {
+  display: flex; align-items: center; padding: 8px 12px;
+  cursor: pointer; user-select: none;
+  background: var(--color-border-light);
+  transition: background 0.15s;
+}
+.fav-group-header:hover { background: var(--color-border); }
+.fav-group-header .group-chevron {
+  width: 16px; font-size: 0.7rem; color: var(--color-text-muted);
+  transition: transform 0.2s; flex-shrink: 0;
+}
+.fav-group-header .group-chevron.open { transform: rotate(90deg); }
+.fav-group-header .group-drag-handle {
+  color: var(--color-text-muted); margin: 0 6px; font-size: 0.85rem;
+  cursor: grab; user-select: none; flex-shrink: 0;
+}
+.fav-group-header .group-name {
+  flex: 1; font-size: 0.88rem; font-weight: 500;
+}
+.fav-group-header .group-count {
+  font-size: 0.75rem; color: var(--color-text-muted); margin-right: 8px;
+}
+.fav-group-header .group-action {
+  font-size: 0.7rem; color: var(--color-text-muted); background: none;
+  border: none; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+  margin-left: 2px;
+}
+.fav-group-header .group-action:hover { color: var(--color-primary); background: rgba(59,130,246,0.1); }
+.fav-group-header .group-action.danger:hover { color: var(--color-danger); background: rgba(239,68,68,0.1); }
+
+.fav-group-body { display: none; }
+.fav-group-body.open { display: block; }
+
+/* ── Card ── */
 .fav-card {
   display: flex; align-items: center; padding: 10px 12px;
   background: var(--color-surface); border: 1px solid var(--color-border);
-  border-radius: 8px; margin-bottom: 6px; cursor: grab;
-  transition: box-shadow 0.15s, transform 0.1s;
+  border-radius: 8px; margin: 4px 8px;
+  cursor: grab; transition: transform 0.2s ease, box-shadow 0.15s;
 }
+.fav-card:first-child { margin-top: 6px; }
+.fav-card:last-child { margin-bottom: 6px; }
 .fav-card:active { cursor: grabbing; }
 .fav-card.dragging { opacity: 0.4; box-shadow: 0 0 0 2px var(--color-primary); }
 .fav-card.drag-over { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary); }
+.fav-card.swap-up { transform: translateY(-60px); }
+.fav-card.swap-down { transform: translateY(60px); }
 .fav-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .fav-card .drag-handle { color: var(--color-text-muted); margin-right: 8px; font-size: 0.85rem; cursor: grab; user-select: none; }
 .fav-card .fav-info { flex: 1; min-width: 0; }
@@ -39,11 +84,56 @@
 .fav-card .fav-pct { font-size: 0.78rem; font-weight: 500; }
 .fav-card .fav-del { margin-left: 12px; color: var(--color-text-muted); background: none; border: none; font-size: 1rem; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
 .fav-card .fav-del:hover { color: var(--color-danger); background: rgba(239,68,68,0.1); }
+
+/* ── Drop Indicator ── */
+.drop-indicator {
+  height: 3px; background: var(--color-primary); border-radius: 2px;
+  margin: 0 8px; transition: all 0.15s;
+}
+
+/* ── Group Drop Highlight ── */
+.fav-group-header.drop-target {
+  background: var(--color-primary) !important; color: #fff !important;
+}
+.fav-group-header.drop-target .group-chevron,
+.fav-group-header.drop-target .group-count,
+.fav-group-header.drop-target .group-action,
+.fav-group-header.drop-target .group-drag-handle { color: rgba(255,255,255,0.8) !important; }
+.fav-group-header.drop-target .group-name { color: #fff !important; }
+
+/* ── New Group Input ── */
+.new-group-wrap {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  margin-bottom: 8px;
+}
+.new-group-wrap input {
+  flex: 1; padding: 6px 10px; border: 1px dashed var(--color-border);
+  border-radius: 6px; font-size: 0.82rem; background: var(--color-surface);
+  color: var(--color-text);
+}
+.new-group-wrap input:focus { outline: none; border-color: var(--color-primary); }
+.new-group-wrap button {
+  padding: 6px 12px; border: none; border-radius: 6px;
+  background: var(--color-primary); color: #fff; cursor: pointer;
+  font-size: 0.82rem;
+}
+.new-group-wrap button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Group Rename Input ── */
+.group-name-input {
+  flex: 1; font-size: 0.88rem; font-weight: 500;
+  padding: 2px 6px; border: 1px solid var(--color-primary);
+  border-radius: 4px; background: var(--color-surface);
+  color: var(--color-text); outline: none;
+}
+
+/* ── More Button ── */
 .fav-more-btn {
-  display: block; width: 100%; padding: 8px; text-align: center;
+  display: block; width: calc(100% - 16px); margin: 4px 8px 6px;
+  padding: 6px; text-align: center;
   background: var(--color-surface); border: 1px dashed var(--color-border);
-  border-radius: 8px; color: var(--color-primary); cursor: pointer;
-  font-size: 0.82rem; margin-top: 8px;
+  border-radius: 6px; color: var(--color-primary); cursor: pointer;
+  font-size: 0.78rem;
 }
 .fav-more-btn:hover { background: var(--color-border-light); }
 </style>
@@ -58,8 +148,9 @@
     <span id="quotaText">0/0</span>
   </div>
   <div id="content" style="width:100%;"><p class="state-loading">加载中...</p></div>
-  <div id="loadMore" style="display:none;">
-    <button class="fav-more-btn" id="loadMoreBtn" onclick="loadMore()">查看更多</button>
+  <div class="new-group-wrap" id="newGroupWrap" style="display:none;">
+    <input type="text" id="newGroupInput" placeholder="输入分组名称，按 Enter 创建" maxlength="30" onkeydown="handleNewGroupKey(event)" />
+    <button onclick="createNewGroup()">+ 新建</button>
   </div>
 </main>
 <script src="/js/app.js?v=5"></script>
@@ -68,14 +159,21 @@ if (!Session.loggedIn()) {
   document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用自选功能</p>';
   document.getElementById('quotaDesc').textContent = '登录后管理自选股票';
 } else {
-  loadFavorites();
+  loadAll();
 }
 
 var _allItems = [];
-var _pageSize = 10;
-var _currentOffset = 0;
+var _groups = [];
+var _ungroupedCount = 0;
 var _quotaMax = 0;
 var _quotaCurrent = 0;
+var _expandedGroups = {};
+var _groupPage = {};       // groupId → current offset
+var _pageSize = 10;
+var _dragSrc = null;
+var _dragSrcGroupId = null;
+
+// ── Quota ──
 
 function updateQuotaBar() {
   var bar = document.getElementById('quotaBar');
@@ -88,12 +186,19 @@ function updateQuotaBar() {
   document.getElementById('quotaText').textContent = _quotaCurrent + '/' + _quotaMax;
 }
 
-function loadFavorites() {
-  API.get('/alerts/favorites').then(function(r) {
-    _allItems = r.data.items || [];
-    _quotaCurrent = r.data.quota ? r.data.quota.current : _allItems.length;
-    _quotaMax = r.data.quota ? r.data.quota.max : 0;
-    _currentOffset = 0;
+// ── Load ──
+
+function loadAll() {
+  Promise.all([
+    API.get('/alerts/favorites'),
+    API.get('/alerts/favorites/groups')
+  ]).then(function(results) {
+    var favR = results[0], grpR = results[1];
+    _allItems = favR.data.items || [];
+    _quotaCurrent = favR.data.quota ? favR.data.quota.current : _allItems.length;
+    _quotaMax = favR.data.quota ? favR.data.quota.max : 0;
+    _groups = grpR.data.groups || [];
+    _ungroupedCount = grpR.data.ungrouped_count || 0;
 
     updateQuotaBar();
     var tier = Session.tier();
@@ -101,134 +206,416 @@ function loadFavorites() {
     document.getElementById('quotaDesc').textContent =
       (tierNames[tier] || '免费用户') + ' · 自选额度 ' + _quotaCurrent + '/' + (_quotaMax >= 999 ? '无限' : _quotaMax);
 
-    if (!_allItems.length) {
+    if (!_allItems.length && !_groups.length) {
       document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无自选，请在<a href="diagnosis.html">诊股页面</a>搜索股票并点击「+ 自选」按钮添加。</p></div></div>';
-    } else {
-      renderPage(0);
+      return;
     }
+    document.getElementById('newGroupWrap').style.display = 'flex';
+    renderAll();
     loadNotifications();
   }).catch(function() {
     document.getElementById('content').innerHTML = '<p class="state-error">加载失败</p>';
   });
 }
 
-function renderPage(offset) {
-  var batch = _allItems.slice(offset, offset + _pageSize);
-  var codes = batch.map(function(f){return f.stock_code;}).join(',');
+// ── Render ──
 
-  API.get('/alerts/favorites-quotes?codes=' + encodeURIComponent(codes)).then(function(qr) {
-    var quotes = qr.data.quotes || {};
-    var html = offset === 0 ? '' : document.getElementById('content').innerHTML;
+function itemsForGroup(groupId) {
+  return _allItems.filter(function(f) { return (f.group_id || null) === (groupId || null); });
+}
 
-    batch.forEach(function(f, i) {
-      var qd = quotes[f.stock_code] || {};
-      var pct = qd.pct_chg || 0;
-      var color = pct > 0 ? 'color:var(--color-danger)' : (pct < 0 ? 'color:var(--color-success)' : '');
-      html += '<div class="fav-card" draggable="true" data-code="' + f.stock_code + '" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)" ondragend="handleDragEnd(event)">';
-      html += '<span class="drag-handle" title="拖拽排序">⋮⋮</span>';
-      html += '<div class="fav-info">';
-      html += '<div class="fav-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '\'">' + (qd.name || f.stock_code) + '</div>';
-      html += '<div class="fav-code">' + f.stock_code + '</div>';
-      html += '</div>';
-      html += '<div class="fav-quote">';
-      html += '<div class="fav-price">' + (qd.close || '--') + '</div>';
-      html += '<div class="fav-pct" style="' + color + '">' + (pct > 0 ? '+' : '') + pct + '%</div>';
-      html += '</div>';
-      html += '<button class="fav-del" onclick="removeFav(\'' + f.stock_code + '\')" title="删除">✕</button>';
-      html += '</div>';
+function renderAll() {
+  var html = '';
+  html += renderUngroupedSection();
+  _groups.forEach(function(g) {
+    html += renderGroupSection(g);
+  });
+  document.getElementById('content').innerHTML = html;
+}
+
+function renderUngroupedSection() {
+  var items = itemsForGroup(null);
+  if (!items.length && _groups.length > 0) return '';
+  var groupId = '__ungrouped__';
+  var pg = _groupPage[groupId] || 0;
+  var collapsed = _expandedGroups[groupId] === false;
+  var h = '<div class="fav-group" data-group-id="' + groupId + '">';
+  h += '<div class="fav-group-header" onclick="toggleGroup(\'' + groupId + '\')" data-drop-group="' + groupId + '" ondragover="handleGroupDragOver(event)" ondragleave="handleGroupDragLeave(event)" ondrop="handleGroupDrop(event)">';
+  h += '<span class="group-chevron' + (collapsed ? '' : ' open') + '">▶</span>';
+  h += '<span class="group-name">未分组</span>';
+  h += '<span class="group-count">' + items.length + '只</span>';
+  h += '</div>';
+  h += '<div class="fav-group-body' + (collapsed ? '' : ' open') + '">';
+  h += renderCards(items, pg, groupId);
+  h += '</div></div>';
+  return h;
+}
+
+function renderGroupSection(g) {
+  var items = itemsForGroup(g.id);
+  var groupId = 'g_' + g.id;
+  var pg = _groupPage[groupId] || 0;
+  var collapsed = _expandedGroups[groupId] === false;
+  var h = '<div class="fav-group" data-group-id="' + g.id + '">';
+  h += '<div class="fav-group-header" data-drop-group="' + g.id + '" ondragover="handleGroupDragOver(event)" ondragleave="handleGroupDragLeave(event)" ondrop="handleGroupDrop(event)" draggable="true" ondragstart="handleGroupHeaderDragStart(event)" ondragend="handleGroupHeaderDragEnd(event)">';
+  h += '<span class="group-chevron' + (collapsed ? '' : ' open') + '" onclick="event.stopPropagation();toggleGroup(\'' + groupId + '\')">▶</span>';
+  h += '<span class="group-drag-handle" title="拖拽排序分组">⋮⋮</span>';
+  h += '<span class="group-name" id="groupName_' + g.id + '" ondblclick="startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')">' + escHtml(g.name) + '</span>';
+  h += '<span class="group-count">' + items.length + '只</span>';
+  h += '<button class="group-action" onclick="event.stopPropagation();startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')" title="重命名">✎</button>';
+  h += '<button class="group-action danger" onclick="event.stopPropagation();deleteGroupConfirm(' + g.id + ')" title="删除分组">✕</button>';
+  h += '</div>';
+  h += '<div class="fav-group-body' + (collapsed ? '' : ' open') + '">';
+  h += renderCards(items, pg, groupId);
+  h += '</div></div>';
+  return h;
+}
+
+function renderCards(items, pageOffset, groupKey) {
+  var batch = items.slice(pageOffset, pageOffset + _pageSize);
+  var codes = batch.map(function(f){return f.stock_code;});
+  var h = '<div class="fav-cards-container" data-codes="' + codes.join(',') + '" data-group-key="' + groupKey + '" data-page-offset="' + pageOffset + '">';
+  h += '<div class="fav-cards-inner">';
+  batch.forEach(function(f) {
+    h += '<div class="fav-card" draggable="true" data-code="' + f.stock_code + '" data-group-id="' + (f.group_id || '') + '" ondragstart="handleCardDragStart(event)" ondragover="handleCardDragOver(event)" ondragleave="handleCardDragLeave(event)" ondrop="handleCardDrop(event)" ondragend="handleCardDragEnd(event)">';
+    h += '<span class="drag-handle" title="拖拽排序">⋮⋮</span>';
+    h += '<div class="fav-info">';
+    h += '<div class="fav-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '\'">' + escHtml(f.stock_name || f.stock_code) + '</div>';
+    h += '<div class="fav-code">' + f.stock_code + '</div>';
+    h += '</div>';
+    h += '<div class="fav-quote">';
+    h += '<div class="fav-price">--</div>';
+    h += '<div class="fav-pct">--</div>';
+    h += '</div>';
+    h += '<button class="fav-del" onclick="event.stopPropagation();removeFav(\'' + f.stock_code + '\')" title="删除">✕</button>';
+    h += '</div>';
+  });
+  h += '</div>'; // fav-cards-inner
+
+  var remaining = items.length - pageOffset - batch.length;
+  if (remaining > 0) {
+    h += '<button class="fav-more-btn" onclick="loadGroupMore(\'' + groupKey + '\')">查看更多（剩余' + remaining + '只）</button>';
+  }
+  h += '</div>'; // fav-cards-container
+  return h;
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// ── Quotes Load ──
+
+function loadQuotesForVisible() {
+  var containers = document.querySelectorAll('.fav-cards-container');
+  containers.forEach(function(ctr) {
+    var codes = ctr.getAttribute('data-codes');
+    if (!codes) return;
+    API.get('/alerts/favorites-quotes?codes=' + encodeURIComponent(codes)).then(function(qr) {
+      var quotes = qr.data.quotes || {};
+      var cards = ctr.querySelectorAll('.fav-card');
+      cards.forEach(function(card) {
+        var code = card.getAttribute('data-code');
+        var qd = quotes[code] || {};
+        var priceEl = card.querySelector('.fav-price');
+        var pctEl = card.querySelector('.fav-pct');
+        if (priceEl) priceEl.textContent = qd.close || '--';
+        if (pctEl) {
+          var pct = qd.pct_chg || 0;
+          pctEl.textContent = (pct > 0 ? '+' : '') + pct + '%';
+          pctEl.style.color = pct > 0 ? 'var(--color-danger)' : (pct < 0 ? 'var(--color-success)' : '');
+        }
+      });
     });
-
-    document.getElementById('content').innerHTML = html;
-    _currentOffset = offset + batch.length;
-
-    var remaining = _allItems.length - _currentOffset;
-    if (remaining > 0) {
-      document.getElementById('loadMore').style.display = 'block';
-      document.getElementById('loadMoreBtn').textContent = '查看更多（剩余' + remaining + '只）';
-    } else {
-      document.getElementById('loadMore').style.display = 'none';
-    }
-  }).catch(function() {
-    document.getElementById('content').innerHTML = '<p class="state-error">加载行情失败</p>';
   });
 }
 
-function loadMore() {
-  renderPage(_currentOffset);
+// ── Group Toggle ──
+
+function toggleGroup(groupKey) {
+  _expandedGroups[groupKey] = _expandedGroups[groupKey] === false ? true : false;
+  var groupId = groupKey === '__ungrouped__' ? '__ungrouped__' : parseInt(groupKey.replace('g_',''));
+  var groupEl = document.querySelector('[data-group-id="' + (groupKey === '__ungrouped__' ? '__ungrouped__' : groupId) + '"]');
+  if (!groupEl) return;
+  var chevron = groupEl.querySelector('.group-chevron');
+  var body = groupEl.querySelector('.fav-group-body');
+  if (chevron) chevron.classList.toggle('open', _expandedGroups[groupKey] !== false);
+  if (body) body.classList.toggle('open', _expandedGroups[groupKey] !== false);
 }
 
-// ── 拖拽排序 ──
-var _dragSrc = null;
+// ── Group Drag (header reorder) ──
 
-function handleDragStart(e) {
+var _groupDragSrc = null;
+
+function handleGroupHeaderDragStart(e) {
+  _groupDragSrc = e.target.closest('.fav-group-header');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', 'group-header');
+}
+
+function handleGroupHeaderDragEnd(e) {
+  if (_groupDragSrc) _groupDragSrc.style.opacity = '';
+  _groupDragSrc = null;
+}
+
+// ── Group CRUD ──
+
+function handleNewGroupKey(e) {
+  if (e.key === 'Enter') createNewGroup();
+}
+
+function createNewGroup() {
+  var input = document.getElementById('newGroupInput');
+  var name = input.value.trim();
+  if (!name) return;
+  API.post('/alerts/favorites/groups', { name: name }).then(function(r) {
+    input.value = '';
+    reloadGroups();
+  });
+}
+
+function startRenameGroup(gid, currentName) {
+  var el = document.getElementById('groupName_' + gid);
+  if (!el) return;
+  var input = document.createElement('input');
+  input.type = 'text'; input.value = currentName; input.maxLength = 30;
+  input.className = 'group-name-input';
+  input.onblur = function() { finishRenameGroup(gid, input.value.trim()); };
+  input.onkeydown = function(e) {
+    if (e.key === 'Enter') finishRenameGroup(gid, input.value.trim());
+    if (e.key === 'Escape') reloadGroups();
+  };
+  el.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+function finishRenameGroup(gid, name) {
+  if (!name) { reloadGroups(); return; }
+  API.put('/alerts/favorites/groups/' + gid, { name: name }).then(function() { reloadGroups(); });
+}
+
+function deleteGroupConfirm(gid) {
+  if (!confirm('确定删除此分组？组内股票将移至"未分组"。')) return;
+  API.del('/alerts/favorites/groups/' + gid).then(function() { reloadGroups(); });
+}
+
+function reloadGroups() {
+  API.get('/alerts/favorites/groups').then(function(r) {
+    _groups = r.data.groups || [];
+    _ungroupedCount = r.data.ungrouped_count || 0;
+    renderAll();
+    loadQuotesForVisible();
+  });
+}
+
+// ── Card Drag (Part A: CSS translate animation) ──
+
+function handleCardDragStart(e) {
   _dragSrc = e.target.closest('.fav-card');
   if (!_dragSrc) return;
+  _dragSrcGroupId = _dragSrc.getAttribute('data-group-id') || null;
   _dragSrc.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', _dragSrc.getAttribute('data-code'));
 }
 
-function handleDragOver(e) {
+function handleCardDragOver(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
+  // Look for the nearest fav-card or fav-group-header
+  var container = e.target.closest('.fav-cards-container');
+  if (!container) return;
+  // Remove previous indicator & swap classes
+  clearDragState(container);
   var card = e.target.closest('.fav-card');
   if (card && card !== _dragSrc) {
+    // Determine direction: if dragSrc is before card, target moves up (swap-up);
+    // if dragSrc is after card, target moves down (swap-down)
+    var cards = Array.from(container.querySelectorAll('.fav-card'));
+    var srcIdx = cards.indexOf(_dragSrc);
+    var tgtIdx = cards.indexOf(card);
+    if (srcIdx >= 0 && tgtIdx >= 0) {
+      if (srcIdx < tgtIdx) {
+        card.classList.add('swap-up');
+      } else {
+        card.classList.add('swap-down');
+      }
+    }
     card.classList.add('drag-over');
   }
 }
 
-function handleDragLeave(e) {
+function handleCardDragLeave(e) {
   var card = e.target.closest('.fav-card');
-  if (card) card.classList.remove('drag-over');
+  if (card) {
+    card.classList.remove('drag-over', 'swap-up', 'swap-down');
+  }
 }
 
-function handleDrop(e) {
+function handleCardDrop(e) {
   e.preventDefault();
-  var target = e.target.closest('.fav-card');
-  if (!target || !_dragSrc || target === _dragSrc) return;
-  target.classList.remove('drag-over');
+  clearAllDragState();
 
-  var container = document.getElementById('content');
-  var cards = Array.from(container.querySelectorAll('.fav-card'));
+  var targetCard = e.target.closest('.fav-card');
+  var targetContainer = e.target.closest('.fav-cards-container');
+
+  // Check if dropped on a group header
+  var targetHeader = e.target.closest('.fav-group-header');
+  if (targetHeader && _dragSrc) {
+    var targetGroupId = targetHeader.getAttribute('data-drop-group');
+    if (targetGroupId === '__ungrouped__') targetGroupId = null;
+    else targetGroupId = parseInt(targetGroupId);
+    var srcCode = _dragSrc.getAttribute('data-code');
+    if (srcCode && String(targetGroupId) !== String(_dragSrcGroupId || '')) {
+      moveStockToGroup(srcCode, targetGroupId);
+    }
+    resetDrag();
+    return;
+  }
+
+  if (!targetCard || !_dragSrc || targetCard === _dragSrc) { resetDrag(); return; }
+  if (!targetContainer) { resetDrag(); return; }
+
+  var groupKey = targetContainer.getAttribute('data-group-key');
+  var cards = Array.from(targetContainer.querySelectorAll('.fav-card'));
   var srcIdx = cards.indexOf(_dragSrc);
-  var tgtIdx = cards.indexOf(target);
-  if (srcIdx < 0 || tgtIdx < 0) return;
+  var tgtIdx = cards.indexOf(targetCard);
+  if (srcIdx < 0 || tgtIdx < 0) { resetDrag(); return; }
 
-  // 更新_allItems数组
-  var globalSrcIdx = _currentOffset - cards.length + srcIdx;
-  var globalTgtIdx = _currentOffset - cards.length + tgtIdx;
-  var moved = _allItems.splice(globalSrcIdx, 1)[0];
-  _allItems.splice(globalTgtIdx, 0, moved);
+  // Update _allItems
+  var srcCode = _dragSrc.getAttribute('data-code');
+  var tgtCode = targetCard.getAttribute('data-code');
+  var globalSrcIdx = _allItems.findIndex(function(f){return f.stock_code === srcCode;});
+  var globalTgtIdx = _allItems.findIndex(function(f){return f.stock_code === tgtCode;});
+  if (globalSrcIdx >= 0 && globalTgtIdx >= 0) {
+    var moved = _allItems.splice(globalSrcIdx, 1)[0];
+    _allItems.splice(globalTgtIdx, 0, moved);
+  }
 
-  // 重新渲染当前页
-  var pageStart = _currentOffset - cards.length;
-  renderPage(pageStart);
+  // Repaint group
+  refreshGroupSection(groupKey);
 
-  // 持久化
+  // Persist global ordering
   var ordered = _allItems.map(function(f){return f.stock_code;});
-  API.put('/alerts/favorites/reorder', { ordered_codes: ordered }).catch(function() {});
+  API.put('/alerts/favorites/reorder', { ordered_codes: ordered }).catch(function(){});
+
+  resetDrag();
 }
 
-function handleDragEnd(e) {
-  if (_dragSrc) _dragSrc.classList.remove('dragging');
-  document.querySelectorAll('.fav-card.drag-over').forEach(function(c) { c.classList.remove('drag-over'); });
-  _dragSrc = null;
+function handleCardDragEnd(e) {
+  clearAllDragState();
+  resetDrag();
 }
+
+function clearDragState(container) {
+  if (!container) return;
+  container.querySelectorAll('.fav-card.swap-up, .fav-card.swap-down').forEach(function(c) {
+    c.classList.remove('swap-up', 'swap-down');
+  });
+}
+
+function clearAllDragState() {
+  document.querySelectorAll('.fav-card.drag-over, .fav-card.swap-up, .fav-card.swap-down').forEach(function(c) {
+    c.classList.remove('drag-over', 'swap-up', 'swap-down');
+  });
+  document.querySelectorAll('.fav-group-header.drop-target').forEach(function(h) {
+    h.classList.remove('drop-target');
+  });
+}
+
+function resetDrag() {
+  if (_dragSrc) _dragSrc.classList.remove('dragging');
+  _dragSrc = null;
+  _dragSrcGroupId = null;
+}
+
+// ── Group Header Drop Target (for cross-group moves) ──
+
+function handleGroupDragOver(e) {
+  if (!_dragSrc) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  var header = e.target.closest('.fav-group-header');
+  if (header) header.classList.add('drop-target');
+}
+
+function handleGroupDragLeave(e) {
+  var header = e.target.closest('.fav-group-header');
+  if (header) header.classList.remove('drop-target');
+}
+
+function handleGroupDrop(e) {
+  e.preventDefault();
+  var header = e.target.closest('.fav-group-header');
+  if (!header || !_dragSrc) { clearAllDragState(); resetDrag(); return; }
+  header.classList.remove('drop-target');
+
+  var targetGroupId = header.getAttribute('data-drop-group');
+  if (targetGroupId === '__ungrouped__') targetGroupId = null;
+  else targetGroupId = parseInt(targetGroupId);
+
+  var srcCode = _dragSrc.getAttribute('data-code');
+  if (srcCode && String(targetGroupId) !== String(_dragSrcGroupId || '')) {
+    moveStockToGroup(srcCode, targetGroupId);
+  }
+  resetDrag();
+}
+
+function moveStockToGroup(code, groupId) {
+  API.put('/alerts/favorites/' + encodeURIComponent(code) + '/move', { group_id: groupId }).then(function() {
+    // Update local state
+    var item = _allItems.find(function(f){return f.stock_code === code;});
+    if (item) item.group_id = groupId;
+    reloadGroups();
+  });
+}
+
+// ── Group More ──
+
+function loadGroupMore(groupKey) {
+  var currentPg = _groupPage[groupKey] || 0;
+  _groupPage[groupKey] = currentPg + _pageSize;
+  refreshGroupSection(groupKey);
+  loadQuotesForVisible();
+}
+
+function refreshGroupSection(groupKey) {
+  var groupId, isUngrouped;
+  if (groupKey === '__ungrouped__') {
+    groupId = '__ungrouped__'; isUngrouped = true;
+  } else {
+    groupId = parseInt(groupKey.replace('g_', ''));
+    isUngrouped = false;
+  }
+  var groupEl = document.querySelector('[data-group-id="' + groupId + '"]');
+  if (!groupEl) return;
+  var body = groupEl.querySelector('.fav-group-body');
+  if (!body) return;
+
+  var items = itemsForGroup(isUngrouped ? null : groupId);
+  var pg = _groupPage[groupKey] || 0;
+  body.innerHTML = renderCards(items, pg, groupKey);
+  // Update count
+  var countEl = groupEl.querySelector('.group-count');
+  if (countEl) countEl.textContent = items.length + '只';
+}
+
+// ── Remove ──
 
 function removeFav(code) {
   API.del('/alerts/favorites/' + encodeURIComponent(code)).then(function() {
     _allItems = _allItems.filter(function(f) { return f.stock_code !== code; });
     _quotaCurrent = Math.max(0, _quotaCurrent - 1);
     updateQuotaBar();
-    _currentOffset = 0;
+    renderAll();
     if (!_allItems.length) {
       document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无自选</p></div></div>';
-      document.getElementById('loadMore').style.display = 'none';
-    } else {
-      renderPage(0);
+      document.getElementById('newGroupWrap').style.display = 'none';
     }
+    loadQuotesForVisible();
   });
 }
+
+// ── Notifications ──
 
 function loadNotifications() {
   API.get('/alerts/notifications').then(function(r) {
@@ -254,6 +641,9 @@ function loadNotifications() {
     container.insertAdjacentHTML('beforeend', html);
   });
 }
+
+// Load quotes after DOM render
+setTimeout(loadQuotesForVisible, 100);
 </script>
 </body>
 </html>
