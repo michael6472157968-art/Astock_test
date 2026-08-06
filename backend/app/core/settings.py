@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     default_page_size: int = 20
     max_page_size: int = 100
 
+    # ── 自选股配额（按 tier）──
+    favorite_quota: dict = {0: 0, 1: 10, 2: 20, 3: 30, 99: 999}
+    favorite_page_size: int = 10
+
     @model_validator(mode="after")
     def _validate_production(self):
         if not self.debug and not self.jwt_secret_key:

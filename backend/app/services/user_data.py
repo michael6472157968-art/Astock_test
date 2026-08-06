@@ -20,6 +20,12 @@ from app.models.orm.models import UserFavorite
 logger = logging.getLogger("user_data")
 _settings = get_settings()
 
+FAVORITE_QUOTA: dict[int, int] = _settings.favorite_quota  # {0:0, 1:10, 2:20, 3:30, 99:999}
+
+
+def get_quota(tier: int) -> int:
+    return FAVORITE_QUOTA.get(tier, 0)
+
 
 def _ensure_user_dir(user_id: int) -> str:
     path = os.path.join(_settings.user_data_dir, str(user_id))
@@ -47,42 +53,66 @@ def _write_json(user_id: int, filename: str, data: dict) -> None:
 
 # ── 自选股操作 ──
 
-async def get_favorites(user_id: int) -> list[dict]:
-    """读取用户自选股列表，优先SQLite，降级JSON并自动回填。"""
+async def get_favorites(user_id: int, offset: int = 0, limit: int = 0) -> list[dict]:
+    """读取用户自选股列表，优先SQLite，降级JSON并自动回填。
+    按 sort_order, created_at 排序。"""
     async with async_session() as session:
         r = await session.execute(
-            select(UserFavorite).where(UserFavorite.user_id == user_id).order_by(UserFavorite.created_at)
+            select(UserFavorite).where(UserFavorite.user_id == user_id)
+            .order_by(UserFavorite.sort_order, UserFavorite.created_at)
         )
         rows = r.scalars().all()
         if rows:
-            return [
+            items = [
                 {
                     "stock_code": row.ts_code,
                     "stock_name": row.stock_name or "",
                     "added_at": row.created_at.isoformat() if row.created_at else "",
+                    "sort_order": row.sort_order or 0,
                 }
                 for row in rows
             ]
+            if offset > 0 or limit > 0:
+                items = items[offset:(offset + limit) if limit else None]
+            return items
 
     # SQLite为空，从JSON降级读取
     data = _read_json(user_id, "favorites.json")
     stocks = data.get("stocks", [])
     if stocks:
-        # 自动回填到SQLite
         await _backfill_sqlite(user_id, stocks)
 
+    if offset > 0 or limit > 0:
+        return stocks[offset:(offset + limit) if limit else None]
     return stocks
 
 
-async def add_favorite(user_id: int, stock_code: str, stock_name: str = "") -> bool:
-    """添加自选股，JSON+SQLite双写，任一边失败则回滚。"""
+async def count_favorites(user_id: int) -> int:
+    """统计用户自选股数量。"""
+    async with async_session() as session:
+        r = await session.execute(
+            select(UserFavorite).where(UserFavorite.user_id == user_id)
+        )
+        return len(r.scalars().all())
+
+
+async def add_favorite(user_id: int, stock_code: str, stock_name: str = "", tier: int = 0) -> tuple[bool, str]:
+    """添加自选股，JSON+SQLite双写。返回(success, message)。"""
+    quota = get_quota(tier)
+    if quota <= 0:
+        return False, "当前用户等级不支持自选功能，请升级会员"
+
+    current = await count_favorites(user_id)
+    if current >= quota:
+        return False, f"自选额度已满（{current}/{quota}），请升级会员或删除部分自选"
+
     now = datetime.now()
     stocks_data = _read_json(user_id, "favorites.json")
     stocks = stocks_data.get("stocks", [])
 
     existing = [s for s in stocks if s.get("stock_code") == stock_code]
     if existing:
-        return False
+        return False, "已在自选列表中"
 
     async with async_session() as session:
         r = await session.execute(
@@ -91,9 +121,13 @@ async def add_favorite(user_id: int, stock_code: str, stock_name: str = "") -> b
             )
         )
         if r.scalar_one_or_none():
-            return False
+            return False, "已在自选列表中"
 
-        fav = UserFavorite(user_id=user_id, ts_code=stock_code, stock_name=stock_name, created_at=now)
+        next_order = current  # 0-based: max current index
+        fav = UserFavorite(
+            user_id=user_id, ts_code=stock_code, stock_name=stock_name,
+            sort_order=next_order, created_at=now,
+        )
         session.add(fav)
 
         try:
@@ -101,20 +135,20 @@ async def add_favorite(user_id: int, stock_code: str, stock_name: str = "") -> b
                 "stock_code": stock_code,
                 "stock_name": stock_name,
                 "added_at": now.isoformat(),
+                "sort_order": next_order,
             })
             stocks_data["stocks"] = stocks
             _write_json(user_id, "favorites.json", stocks_data)
         except Exception:
-            # JSON写入失败，回滚SQLite
             await session.rollback()
-            return False
+            return False, "添加失败"
 
         await session.commit()
-        return True
+        return True, "已添加"
 
 
 async def remove_favorite(user_id: int, stock_code: str) -> bool:
-    """删除自选股，JSON+SQLite同步删除。"""
+    """删除自选股，JSON+SQLite同步删除，并整理sort_order防止空洞。"""
     data = _read_json(user_id, "favorites.json")
     stocks = data.get("stocks", [])
     new_stocks = [s for s in stocks if s.get("stock_code") != stock_code]
@@ -132,6 +166,13 @@ async def remove_favorite(user_id: int, stock_code: str) -> bool:
 
         if fav:
             await session.delete(fav)
+            # 重新编号 sort_order 防止空洞
+            remaining = await session.execute(
+                select(UserFavorite).where(UserFavorite.user_id == user_id)
+                .order_by(UserFavorite.sort_order, UserFavorite.created_at)
+            )
+            for i, row in enumerate(remaining.scalars().all()):
+                row.sort_order = i
 
         data["stocks"] = new_stocks
         try:
@@ -139,6 +180,22 @@ async def remove_favorite(user_id: int, stock_code: str) -> bool:
         except Exception:
             await session.rollback()
             return False
+
+        await session.commit()
+        return True
+
+
+async def reorder_favorites(user_id: int, ordered_codes: list[str]) -> bool:
+    """按传入顺序更新 sort_order，拖拽排序后调用。"""
+    async with async_session() as session:
+        r = await session.execute(
+            select(UserFavorite).where(UserFavorite.user_id == user_id)
+        )
+        rows = {row.ts_code: row for row in r.scalars().all()}
+
+        for i, code in enumerate(ordered_codes):
+            if code in rows:
+                rows[code].sort_order = i
 
         await session.commit()
         return True
@@ -154,7 +211,7 @@ async def _backfill_sqlite(user_id: int, stocks: list[dict]) -> None:
     """将JSON数据回填到SQLite。"""
     async with async_session() as session:
         count = 0
-        for s in stocks:
+        for i, s in enumerate(stocks):
             code = s.get("stock_code", "")
             if not code:
                 continue
@@ -174,6 +231,7 @@ async def _backfill_sqlite(user_id: int, stocks: list[dict]) -> None:
                 user_id=user_id,
                 ts_code=code,
                 stock_name=s.get("stock_name", ""),
+                sort_order=s.get("sort_order", i),
                 created_at=created_at,
             ))
             count += 1

@@ -246,10 +246,12 @@ class UserFavorite(Base):
     user_id = Column(Integer, nullable=False, index=True)
     ts_code = Column(String(20), nullable=False)
     stock_name = Column(String(50), default="")
+    sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=_now)
 
     __table_args__ = (
         Index("ix_user_favorites_user_stock_unique", "user_id", "ts_code", unique=True),
+        Index("ix_user_favorites_user_order", "user_id", "sort_order"),
     )
 
 

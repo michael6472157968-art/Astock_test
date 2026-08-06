@@ -119,6 +119,17 @@
       </div>
     </div>
 
+    <!-- 自选速览 -->
+    <div class="mood-panel" id="favQuickPanel" style="margin-bottom:16px;">
+      <div class="mood-header"><span class="mood-title">自选速览</span><span class="mood-date" id="favQuickCount">0只</span></div>
+      <div class="mood-body" style="flex-direction:column;padding:4px 16px 8px;" id="favQuickBody">
+        <div style="text-align:center;padding:12px;color:var(--color-text-muted);font-size:0.8rem;" id="favQuickEmpty">加载中...</div>
+      </div>
+      <div id="favQuickMore" style="display:none;text-align:center;padding:6px 0 10px;">
+        <a href="alerts.html" style="font-size:0.78rem;color:var(--color-primary);text-decoration:none;">查看全部(<span id="favQuickTotal">0</span>只) →</a>
+      </div>
+    </div>
+
     <!-- 大盘竞猜 -->
     <div class="mood-panel" id="guessPanel" style="margin-bottom:16px;">
       <div class="mood-header"><span class="mood-title">大盘竞猜</span><span class="mood-date" id="guessSubtitle">猜今日涨跌</span></div>
@@ -437,14 +448,14 @@
         items.forEach(function(s) {
           var pct = s.change_pct || 0;
           var cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
-          html += '<div class="spc-item"><span class="spc-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + (s.stock_name || s.stock_code) + '</span><button class="spc-fav-btn" data-code="' + escAttr(s.stock_code) + '" onclick="event.stopPropagation();toggleFav(this,\'' + escAttr(s.stock_code) + '\',\'' + escAttr(s.stock_name || s.stock_code) + '\')" title="添加自选">+</button><span class="spc-pct ' + cls + '" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + fmtSign(pct) + '%</span></div>';
+          html += '<div class="spc-item"><span class="spc-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + (s.stock_name || s.stock_code) + '</span><button class="spc-fav-btn" data-code="' + escAttr(s.stock_code) + '" onclick="event.stopPropagation();FavStore.toggle(this,\'' + escAttr(s.stock_code) + '\',\'' + escAttr(s.stock_name || s.stock_code) + '\')" title="添加自选">+</button><span class="spc-pct ' + cls + '" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + fmtSign(pct) + '%</span></div>';
         });
         el.querySelector('.spc-list').innerHTML = html;
         // 按钮渲染完成后，用已加载的收藏缓存刷新状态
-        if (_favCache.length > 0) {
+        if (FavStore._cache.length > 0) {
           el.querySelectorAll('.spc-fav-btn').forEach(function(btn) {
             var c = btn.getAttribute('data-code');
-            if (_favCache.indexOf(c) >= 0) setFavBtnAdded(btn);
+            if (FavStore._cache.indexOf(c) >= 0) FavStore.setBtnAdded(btn);
           });
         }
       }).catch(function() {
@@ -670,49 +681,49 @@
 
   window.submitGuess = submitGuess;
 
-  // ── 自选按钮通用逻辑 ──
-  var _favCache = [];
-  function loadFavCache() {
-    if (!Session.loggedIn()) return;
+  // ── 自选速览 ──
+  function loadFavQuickView() {
+    if (!Session.loggedIn()) {
+      document.getElementById('favQuickEmpty').textContent = '登录后可查看自选股行情';
+      return;
+    }
     API.get('/alerts/favorites').then(function(r) {
-      _favCache = (r.data.items || []).map(function(f) { return f.stock_code; });
-      // 刷新所有已渲染的按钮状态
-      document.querySelectorAll('.spc-fav-btn').forEach(function(btn) {
-        var code = btn.getAttribute('data-code');
-        if (_favCache.indexOf(code) >= 0) setFavBtnAdded(btn);
-      });
-    }).catch(function() {});
-  }
-
-  function setFavBtnAdded(btn) {
-    btn.textContent = '✓';
-    btn.classList.add('added');
-    btn.title = '已自选';
-    btn.disabled = true;
-  }
-
-  function toggleFav(btn, code, name) {
-    if (!Session.loggedIn()) { location.href = 'login.html'; return; }
-    if (btn.classList.contains('added')) return;
-    btn.disabled = true;
-    API.post('/alerts/favorites', { stock_code: code }).then(function() {
-      _favCache.push(code);
-      setFavBtnAdded(btn);
-    }).catch(function(e) {
-      if (e.code === 401) { location.href = 'login.html'; return; }
-      if (e.message === '已在自选列表中') {
-        _favCache.push(code);
-        setFavBtnAdded(btn);
-      } else {
-        btn.disabled = false;
-        showToast(e.message || '添加失败');
+      var items = r.data.items || [];
+      var total = r.data.total || items.length;
+      document.getElementById('favQuickCount').textContent = total + '只';
+      if (!items.length) {
+        document.getElementById('favQuickEmpty').textContent = '暂无自选，在诊股页搜索并添加';
+        return;
       }
+      var codes = items.map(function(f) { return f.stock_code; }).join(',');
+      API.get('/alerts/favorites-quotes?codes=' + encodeURIComponent(codes)).then(function(qr) {
+        var quotes = qr.data.quotes || {};
+        var html = '';
+        items.slice(0, 10).forEach(function(f) {
+          var qd = quotes[f.stock_code] || {};
+          var pct = qd.pct_chg || 0;
+          var cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+          html += '<div class="fav-row" style="display:flex;align-items:center;padding:6px 0;border-bottom:1px solid var(--color-border-light);cursor:pointer;font-size:0.8rem;" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '\'">';
+          html += '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (qd.name || f.stock_code) + '</span>';
+          html += '<span style="width:50px;text-align:right;margin-right:8px;">' + (qd.close || '--') + '</span>';
+          html += '<span class="' + cls + '" style="width:52px;text-align:right;font-weight:500;">' + (pct > 0 ? '+' : '') + pct + '%</span>';
+          html += '</div>';
+        });
+        document.getElementById('favQuickBody').innerHTML = html;
+        if (total > 10) {
+          document.getElementById('favQuickMore').style.display = 'block';
+          document.getElementById('favQuickTotal').textContent = total;
+        }
+      }).catch(function() {
+        document.getElementById('favQuickEmpty').textContent = '加载行情失败';
+      });
+    }).catch(function() {
+      document.getElementById('favQuickEmpty').textContent = '加载失败';
     });
   }
-  window.toggleFav = toggleFav;
-  window.setFavBtnAdded = setFavBtnAdded;
 
-  loadFavCache();
+  FavStore.loadCache();
+  loadFavQuickView();
 })();
 </script>
 </body>

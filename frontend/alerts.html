@@ -5,53 +5,228 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>我的自选 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=3" />
+<style>
+.fav-quota-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; margin-bottom: 12px;
+  background: var(--color-surface); border-radius: 8px; border: 1px solid var(--color-border);
+  font-size: 0.82rem; color: var(--color-text-secondary);
+}
+.fav-quota-bar .quota-bar-wrap {
+  flex: 1; height: 6px; background: var(--color-border-light); border-radius: 3px;
+  margin: 0 12px; overflow: hidden;
+}
+.fav-quota-bar .quota-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.quota-ok { background: var(--color-primary); }
+.quota-warn { background: var(--color-warning); }
+.quota-full { background: var(--color-danger); }
+.fav-card {
+  display: flex; align-items: center; padding: 10px 12px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: 8px; margin-bottom: 6px; cursor: grab;
+  transition: box-shadow 0.15s, transform 0.1s;
+}
+.fav-card:active { cursor: grabbing; }
+.fav-card.dragging { opacity: 0.4; box-shadow: 0 0 0 2px var(--color-primary); }
+.fav-card.drag-over { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary); }
+.fav-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.fav-card .drag-handle { color: var(--color-text-muted); margin-right: 8px; font-size: 0.85rem; cursor: grab; user-select: none; }
+.fav-card .fav-info { flex: 1; min-width: 0; }
+.fav-card .fav-code { font-size: 0.72rem; color: var(--color-text-muted); }
+.fav-card .fav-name { font-size: 0.88rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.fav-card .fav-quote { text-align: right; }
+.fav-card .fav-price { font-size: 0.88rem; font-weight: 500; }
+.fav-card .fav-pct { font-size: 0.78rem; font-weight: 500; }
+.fav-card .fav-del { margin-left: 12px; color: var(--color-text-muted); background: none; border: none; font-size: 1rem; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
+.fav-card .fav-del:hover { color: var(--color-danger); background: rgba(239,68,68,0.1); }
+.fav-more-btn {
+  display: block; width: 100%; padding: 8px; text-align: center;
+  background: var(--color-surface); border: 1px dashed var(--color-border);
+  border-radius: 8px; color: var(--color-primary); cursor: pointer;
+  font-size: 0.82rem; margin-top: 8px;
+}
+.fav-more-btn:hover { background: var(--color-border-light); }
+</style>
 </head>
 <body>
 <main class="main-content" data-chrome>
   <h2 class="page-title">我的自选</h2>
-  <p class="page-desc">管理自选股票，查看异动预警</p>
+  <p class="page-desc" id="quotaDesc">加载中...</p>
+  <div class="fav-quota-bar" id="quotaBar" style="display:none;">
+    <span id="quotaLabel">自选额度</span>
+    <div class="quota-bar-wrap"><div class="quota-bar-fill" id="quotaFill"></div></div>
+    <span id="quotaText">0/0</span>
+  </div>
   <div id="content" style="width:100%;"><p class="state-loading">加载中...</p></div>
+  <div id="loadMore" style="display:none;">
+    <button class="fav-more-btn" id="loadMoreBtn" onclick="loadMore()">查看更多</button>
+  </div>
 </main>
 <script src="/js/app.js?v=5"></script>
 <script>
 if (!Session.loggedIn()) {
   document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用自选功能</p>';
+  document.getElementById('quotaDesc').textContent = '登录后管理自选股票';
 } else {
   loadFavorites();
 }
 
+var _allItems = [];
+var _pageSize = 10;
+var _currentOffset = 0;
+var _quotaMax = 0;
+var _quotaCurrent = 0;
+
+function updateQuotaBar() {
+  var bar = document.getElementById('quotaBar');
+  if (_quotaMax === 0 || _quotaMax >= 999) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  var ratio = _quotaCurrent / _quotaMax;
+  var fill = document.getElementById('quotaFill');
+  fill.style.width = (ratio * 100) + '%';
+  fill.className = 'quota-bar-fill ' + (ratio >= 1 ? 'quota-full' : ratio >= 0.8 ? 'quota-warn' : 'quota-ok');
+  document.getElementById('quotaText').textContent = _quotaCurrent + '/' + _quotaMax;
+}
+
 function loadFavorites() {
   API.get('/alerts/favorites').then(function(r) {
-    var items = r.data.items || [];
-    if (!items.length) {
+    _allItems = r.data.items || [];
+    _quotaCurrent = r.data.quota ? r.data.quota.current : _allItems.length;
+    _quotaMax = r.data.quota ? r.data.quota.max : 0;
+    _currentOffset = 0;
+
+    updateQuotaBar();
+    var tier = Session.tier();
+    var tierNames = {0:'游客', 1:'注册用户', 2:'月度VIP', 3:'年度VIP', 99:'管理员'};
+    document.getElementById('quotaDesc').textContent =
+      (tierNames[tier] || '免费用户') + ' · 自选额度 ' + _quotaCurrent + '/' + (_quotaMax >= 999 ? '无限' : _quotaMax);
+
+    if (!_allItems.length) {
       document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无自选，请在<a href="diagnosis.html">诊股页面</a>搜索股票并点击「+ 自选」按钮添加。</p></div></div>';
-      loadNotifications();
     } else {
-      var codes = items.map(function(f){return f.stock_code;}).join(',');
-      API.get('/alerts/favorites-quotes?codes=' + encodeURIComponent(codes)).then(function(qr) {
-        var quotes = qr.data.quotes || {};
-        var tableHtml = '<div class="card"><div class="card-header">我的自选股（' + items.length + '只）</div><div class="card-body"><table class="data-table" style="width:100%;"><thead><tr><th>代码</th><th>名称</th><th>现价</th><th>涨跌幅</th><th>操作</th></tr></thead><tbody>';
-        items.forEach(function(f) {
-          var qd = quotes[f.stock_code] || {};
-          var pct = qd.pct_chg || 0;
-          var color = pct > 0 ? 'color:var(--color-danger)' : (pct < 0 ? 'color:var(--color-success)' : '');
-          tableHtml += '<tr>';
-          tableHtml += '<td><a href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '">' + f.stock_code + '</a></td>';
-          tableHtml += '<td>' + (qd.name || '--') + '</td>';
-          tableHtml += '<td>' + (qd.close || '--') + '</td>';
-          tableHtml += '<td style="' + color + '">' + (pct > 0 ? '+' : '') + pct + '%</td>';
-          tableHtml += '<td><button class="btn btn-sm btn-outline" onclick="removeFav(\'' + f.stock_code + '\')">删除</button></td>';
-          tableHtml += '</tr>';
-        });
-        tableHtml += '</tbody></table></div></div>';
-        document.getElementById('content').innerHTML = tableHtml;
-        loadNotifications();
-      }).catch(function() {
-        document.getElementById('content').innerHTML = '<p class="state-error">加载行情失败</p>';
-      });
+      renderPage(0);
     }
+    loadNotifications();
   }).catch(function() {
     document.getElementById('content').innerHTML = '<p class="state-error">加载失败</p>';
+  });
+}
+
+function renderPage(offset) {
+  var batch = _allItems.slice(offset, offset + _pageSize);
+  var codes = batch.map(function(f){return f.stock_code;}).join(',');
+
+  API.get('/alerts/favorites-quotes?codes=' + encodeURIComponent(codes)).then(function(qr) {
+    var quotes = qr.data.quotes || {};
+    var html = offset === 0 ? '' : document.getElementById('content').innerHTML;
+
+    batch.forEach(function(f, i) {
+      var qd = quotes[f.stock_code] || {};
+      var pct = qd.pct_chg || 0;
+      var color = pct > 0 ? 'color:var(--color-danger)' : (pct < 0 ? 'color:var(--color-success)' : '');
+      html += '<div class="fav-card" draggable="true" data-code="' + f.stock_code + '" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)" ondragend="handleDragEnd(event)">';
+      html += '<span class="drag-handle" title="拖拽排序">⋮⋮</span>';
+      html += '<div class="fav-info">';
+      html += '<div class="fav-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '\'">' + (qd.name || f.stock_code) + '</div>';
+      html += '<div class="fav-code">' + f.stock_code + '</div>';
+      html += '</div>';
+      html += '<div class="fav-quote">';
+      html += '<div class="fav-price">' + (qd.close || '--') + '</div>';
+      html += '<div class="fav-pct" style="' + color + '">' + (pct > 0 ? '+' : '') + pct + '%</div>';
+      html += '</div>';
+      html += '<button class="fav-del" onclick="removeFav(\'' + f.stock_code + '\')" title="删除">✕</button>';
+      html += '</div>';
+    });
+
+    document.getElementById('content').innerHTML = html;
+    _currentOffset = offset + batch.length;
+
+    var remaining = _allItems.length - _currentOffset;
+    if (remaining > 0) {
+      document.getElementById('loadMore').style.display = 'block';
+      document.getElementById('loadMoreBtn').textContent = '查看更多（剩余' + remaining + '只）';
+    } else {
+      document.getElementById('loadMore').style.display = 'none';
+    }
+  }).catch(function() {
+    document.getElementById('content').innerHTML = '<p class="state-error">加载行情失败</p>';
+  });
+}
+
+function loadMore() {
+  renderPage(_currentOffset);
+}
+
+// ── 拖拽排序 ──
+var _dragSrc = null;
+
+function handleDragStart(e) {
+  _dragSrc = e.target.closest('.fav-card');
+  if (!_dragSrc) return;
+  _dragSrc.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', _dragSrc.getAttribute('data-code'));
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  var card = e.target.closest('.fav-card');
+  if (card && card !== _dragSrc) {
+    card.classList.add('drag-over');
+  }
+}
+
+function handleDragLeave(e) {
+  var card = e.target.closest('.fav-card');
+  if (card) card.classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  var target = e.target.closest('.fav-card');
+  if (!target || !_dragSrc || target === _dragSrc) return;
+  target.classList.remove('drag-over');
+
+  var container = document.getElementById('content');
+  var cards = Array.from(container.querySelectorAll('.fav-card'));
+  var srcIdx = cards.indexOf(_dragSrc);
+  var tgtIdx = cards.indexOf(target);
+  if (srcIdx < 0 || tgtIdx < 0) return;
+
+  // 更新_allItems数组
+  var globalSrcIdx = _currentOffset - cards.length + srcIdx;
+  var globalTgtIdx = _currentOffset - cards.length + tgtIdx;
+  var moved = _allItems.splice(globalSrcIdx, 1)[0];
+  _allItems.splice(globalTgtIdx, 0, moved);
+
+  // 重新渲染当前页
+  var pageStart = _currentOffset - cards.length;
+  renderPage(pageStart);
+
+  // 持久化
+  var ordered = _allItems.map(function(f){return f.stock_code;});
+  API.put('/alerts/favorites/reorder', { ordered_codes: ordered }).catch(function() {});
+}
+
+function handleDragEnd(e) {
+  if (_dragSrc) _dragSrc.classList.remove('dragging');
+  document.querySelectorAll('.fav-card.drag-over').forEach(function(c) { c.classList.remove('drag-over'); });
+  _dragSrc = null;
+}
+
+function removeFav(code) {
+  API.del('/alerts/favorites/' + encodeURIComponent(code)).then(function() {
+    _allItems = _allItems.filter(function(f) { return f.stock_code !== code; });
+    _quotaCurrent = Math.max(0, _quotaCurrent - 1);
+    updateQuotaBar();
+    _currentOffset = 0;
+    if (!_allItems.length) {
+      document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无自选</p></div></div>';
+      document.getElementById('loadMore').style.display = 'none';
+    } else {
+      renderPage(0);
+    }
   });
 }
 
@@ -78,10 +253,6 @@ function loadNotifications() {
     html += '</tbody></table></div></div>';
     container.insertAdjacentHTML('beforeend', html);
   });
-}
-
-function removeFav(code) {
-  API.del('/alerts/favorites/' + encodeURIComponent(code)).then(function() { loadFavorites(); });
 }
 </script>
 </body>

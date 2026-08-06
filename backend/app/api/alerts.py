@@ -19,18 +19,23 @@ router = APIRouter(prefix="/api/v1/alerts", tags=["预警"])
 _settings = get_settings()
 
 
-
 # ── 自选股 ──
 
 @router.get("/favorites")
 async def list_favorites(request: Request, user: dict = Depends(require_auth)):
     uid, tier = user["user_id"], user["tier"]
     if not uid:
-        return APIResponse(data={"total": 0, "items": []}, timestamp=int(time.time()))
+        return APIResponse(data={"total": 0, "items": [], "quota": {"current": 0, "max": 0}}, timestamp=int(time.time()))
 
     stocks = await user_data.get_favorites(uid)
-    items = [{"id": s.get("added_at", ""), "stock_code": s["stock_code"], "stock_name": s.get("stock_name", ""), "added_at": s.get("added_at", "")} for s in stocks]
-    return APIResponse(data={"total": len(items), "items": items}, timestamp=int(time.time()))
+    items = [{"id": s.get("added_at", ""), "stock_code": s["stock_code"],
+              "stock_name": s.get("stock_name", ""), "added_at": s.get("added_at", ""),
+              "sort_order": s.get("sort_order", 0)} for s in stocks]
+    quota_max = user_data.get_quota(tier)
+    return APIResponse(data={
+        "total": len(items), "items": items,
+        "quota": {"current": len(items), "max": quota_max},
+    }, timestamp=int(time.time()))
 
 
 @router.get("/favorites-quotes")
@@ -65,11 +70,11 @@ async def add_favorite(req: AddFavRequest, user: dict = Depends(require_auth)):
     if not uid:
         raise HTTPException(401, "请先登录")
 
-    added = await user_data.add_favorite(uid, req.stock_code, req.stock_name if hasattr(req, "stock_name") else "")
-    if not added:
-        return APIResponse(data={"message": "已在自选列表中"}, timestamp=int(time.time()))
+    ok, msg = await user_data.add_favorite(uid, req.stock_code, "", tier)
+    if not ok:
+        raise HTTPException(400, msg)
 
-    return APIResponse(data={"message": "已添加"}, timestamp=int(time.time()))
+    return APIResponse(data={"message": msg}, timestamp=int(time.time()))
 
 
 @router.delete("/favorites/{fav_id}")
@@ -82,6 +87,20 @@ async def remove_favorite(fav_id: str, user: dict = Depends(require_auth)):
     if not removed:
         raise HTTPException(404, "自选记录不存在")
     return APIResponse(data={"message": "已删除"}, timestamp=int(time.time()))
+
+
+class ReorderRequest(BaseModel):
+    ordered_codes: list[str] = Field(..., min_length=0)
+
+
+@router.put("/favorites/reorder")
+async def reorder_favorites(req: ReorderRequest, user: dict = Depends(require_auth)):
+    uid, tier = user["user_id"], user["tier"]
+    if not uid:
+        raise HTTPException(401, "请先登录")
+
+    await user_data.reorder_favorites(uid, req.ordered_codes)
+    return APIResponse(data={"message": "已更新排序"}, timestamp=int(time.time()))
 
 
 # ── 预警配置 ──

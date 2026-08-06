@@ -156,6 +156,84 @@ var Gate = {
   }
 };
 
+// ── 自选股共享逻辑 ──
+var FavStore = {
+  _cache: [],
+  _loaded: false,
+
+  loadCache: function() {
+    if (!Session.loggedIn()) return Promise.resolve([]);
+    var self = this;
+    return API.get('/alerts/favorites').then(function(r) {
+      self._cache = (r.data.items || []).map(function(f) { return f.stock_code; });
+      self._loaded = true;
+      self._refreshButtons();
+      return self._cache;
+    }).catch(function() { return []; });
+  },
+
+  isFav: function(code) {
+    return this._cache.indexOf(code) >= 0;
+  },
+
+  add: function(code) {
+    var self = this;
+    return API.post('/alerts/favorites', { stock_code: code }).then(function() {
+      if (self._cache.indexOf(code) < 0) self._cache.push(code);
+      self._refreshButtons();
+      return true;
+    }).catch(function(e) {
+      if (e.message === '已在自选列表中') {
+        if (self._cache.indexOf(code) < 0) self._cache.push(code);
+        self._refreshButtons();
+        return true;
+      }
+      throw e;
+    });
+  },
+
+  _refreshButtons: function() {
+    var self = this;
+    document.querySelectorAll('.spc-fav-btn').forEach(function(btn) {
+      var c = btn.getAttribute('data-code');
+      if (c && self._cache.indexOf(c) >= 0) {
+        btn.textContent = '✓';
+        btn.classList.add('added');
+        btn.title = '已自选';
+        btn.disabled = true;
+      }
+    });
+  },
+
+  // 设置单个按钮为已收藏状态
+  setBtnAdded: function(btn) {
+    btn.textContent = '✓';
+    btn.classList.add('added');
+    btn.title = '已自选';
+    btn.disabled = true;
+  },
+
+  toggle: function(btn, code, name) {
+    if (!Session.loggedIn()) { location.href = 'login.html'; return; }
+    if (btn.classList.contains('added')) return;
+    btn.disabled = true;
+    var self = this;
+    API.post('/alerts/favorites', { stock_code: code }).then(function() {
+      if (self._cache.indexOf(code) < 0) self._cache.push(code);
+      self.setBtnAdded(btn);
+    }).catch(function(e) {
+      if (e.code === 401) { location.href = 'login.html'; return; }
+      if (e.message === '已在自选列表中') {
+        if (self._cache.indexOf(code) < 0) self._cache.push(code);
+        self.setBtnAdded(btn);
+      } else {
+        btn.disabled = false;
+        showToast(e.message || '添加失败');
+      }
+    });
+  }
+};
+
 // 股票代码标准化 — 纯数字自动补后缀，带后缀直接使用，过滤空格和特殊字符
 function normalizeStockCode(raw) {
   if (!raw) return '';
