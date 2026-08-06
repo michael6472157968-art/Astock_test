@@ -411,8 +411,8 @@ function loadQuotesForVisible() {
           }
           dedup = dedup.slice(0, 4);
           if (dedup.length) {
-            var bullish = ['多头排列','量价齐升','RSI超卖','布林下轨'];
-            var bearish = ['空头排列','RSI超买','布林上轨','缩量回调'];
+            var bullish = ['多头排列','量价齐升','RSI超卖','布林下轨','站上MA5','缩量反弹','RSI偏弱','布林偏下轨'];
+            var bearish = ['空头排列','RSI超买','布林上轨','缩量回调','跌破MA5','放量滞涨','RSI偏强','布林偏上轨'];
             sigEl.innerHTML = dedup.map(function(sig) {
             var cls = bullish.indexOf(sig) >= 0 ? 'bullish' : (bearish.indexOf(sig) >= 0 ? 'bearish' : '');
             return '<span class="signal-chip ' + cls + '">' + escHtml(sig) + '</span>';

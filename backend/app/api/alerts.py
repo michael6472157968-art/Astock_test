@@ -127,11 +127,17 @@ def _compute_light_score(closes: list[float]) -> dict:
         if ma5 > ma10 > 0:
             signals.append("多头排列")
             score += 5
+        else:
+            signals.append("站上MA5")
+            score += 2
     else:
         score -= 8
         if ma5 < ma10 < 0:
             signals.append("空头排列")
             score -= 5
+        else:
+            signals.append("跌破MA5")
+            score -= 2
 
     # 涨跌趋势
     if n >= 5:
@@ -139,20 +145,32 @@ def _compute_light_score(closes: list[float]) -> dict:
         if chg5 > 5:
             signals.append(f"5日+{chg5:.1f}%")
             score += 5
+        elif chg5 > 3:
+            signals.append(f"5日偏强+{chg5:.1f}%")
+            score += 2
         elif chg5 < -5:
             signals.append(f"5日{chg5:.1f}%")
             score -= 5
+        elif chg5 < -3:
+            signals.append(f"5日偏弱{chg5:.1f}%")
+            score -= 2
 
     if n >= 10:
         chg10 = (closes[-1] / closes[-10] - 1) * 100 if closes[-10] else 0
         if chg10 > 10:
             signals.append(f"10日+{chg10:.1f}%")
             score += 4
+        elif chg10 > 7:
+            signals.append(f"10日偏强+{chg10:.1f}%")
+            score += 2
         elif chg10 < -10:
             signals.append(f"10日{chg10:.1f}%")
             score -= 4
+        elif chg10 < -7:
+            signals.append(f"10日偏弱{chg10:.1f}%")
+            score -= 2
 
-    # 量价关系（最近5日量增价升）
+    # 量价关系
     if n >= 5:
         vol_up = closes[-1] > closes[-5]
         price_up = closes[-1] > closes[-2] if n >= 2 else False
@@ -162,15 +180,27 @@ def _compute_light_score(closes: list[float]) -> dict:
         elif not vol_up and not price_up:
             signals.append("缩量回调")
             score -= 2
+        elif vol_up and not price_up:
+            signals.append("放量滞涨")
+            score -= 1
+        elif not vol_up and price_up:
+            signals.append("缩量反弹")
+            score += 1
 
     # RSI 快速估算
     rsi = _quick_rsi(closes[-8:]) if n >= 8 else 50
-    if rsi > 70:
+    if rsi > 75:
         signals.append(f"RSI超买{rsi:.0f}")
         score -= 5
-    elif rsi < 30:
+    elif rsi > 65:
+        signals.append("RSI偏强")
+        score -= 2
+    elif rsi < 25:
         signals.append(f"RSI超卖{rsi:.0f}")
         score += 8
+    elif rsi < 35:
+        signals.append("RSI偏弱")
+        score += 3
     elif rsi > 60:
         score += 3
     elif rsi < 40:
@@ -179,12 +209,18 @@ def _compute_light_score(closes: list[float]) -> dict:
     # 布林带位置
     boll_pos = _bollinger_position(closes)
     if boll_pos is not None:
-        if boll_pos > 0.9:
+        if boll_pos > 0.85:
             signals.append("布林上轨")
             score -= 4
-        elif boll_pos < 0.1:
+        elif boll_pos > 0.7:
+            signals.append("布林偏上轨")
+            score -= 1
+        elif boll_pos < 0.15:
             signals.append("布林下轨")
             score += 6
+        elif boll_pos < 0.3:
+            signals.append("布林偏下轨")
+            score += 2
 
     score = max(1, min(99, int(score)))
 
@@ -199,8 +235,7 @@ def _compute_light_score(closes: list[float]) -> dict:
     else:
         risk = "高风险"
 
-    # 去重 + 裁剪信号
-    return {"score": score, "signals": signals[:5], "risk": risk}
+    return {"score": score, "signals": signals[:6], "risk": risk}
 
 
 def _quick_rsi(closes: list[float]) -> float:
