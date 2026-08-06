@@ -744,7 +744,7 @@
           params.forEach(function(p) {
             var v = p.value;
             var s = allSeries[p.seriesIndex];
-            lines.push(p.marker + ' ' + p.seriesName + ' (' + (s ? s.stockCount : '?') + '只): ' + (v != null ? (v >= 0 ? '+' : '') + v + '%' : '--'));
+            lines.push(p.marker + ' ' + p.seriesName + ' (' + (s ? s.stockCount : '?') + '只): 均值 ' + (v != null ? (v >= 0 ? '+' : '') + v + '%' : '--'));
           });
           return lines.join('<br/>');
         }
@@ -768,8 +768,8 @@
         type: 'value',
         axisLabel: { color: '#8392A5', fontSize: 10, formatter: '{value}%' },
         splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } },
-        name: '涨跌幅',
-        nameTextStyle: { color: '#8392A5', fontSize: 10 }
+        name: '涨跌幅均值(%)',
+        nameTextStyle: { color: '#B0B8C4', fontSize: 11 }
       },
       series: seriesOpts
     });

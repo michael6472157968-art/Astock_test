@@ -1016,13 +1016,13 @@ function renderFavMainChart(groupData, dates) {
         var lines = ['<b>' + params[0].axisValue + '</b>'];
         params.forEach(function(p) {
           var v = p.value;
-          lines.push(p.marker + ' ' + p.seriesName + ': ' + (v != null ? (v >= 0 ? '+' : '') + v + '%' : '--'));
+          lines.push(p.marker + ' ' + p.seriesName + ': 均值 ' + (v != null ? (v >= 0 ? '+' : '') + v + '%' : '--'));
         });
         return lines.join('<br/>');
       }
     },
     legend: { type: 'scroll', bottom: 0, textStyle: { color: '#8392A5', fontSize: 11 }, itemWidth: 14, itemHeight: 10 },
-    grid: { left: 8, right: 12, top: 8, bottom: 36 },
+    grid: { left: 14, right: 12, top: 8, bottom: 36 },
     xAxis: {
       type: 'category', data: xLabels, boundaryGap: false,
       axisLabel: { color: '#8392A5', fontSize: 10 },
@@ -1033,7 +1033,7 @@ function renderFavMainChart(groupData, dates) {
       type: 'value',
       axisLabel: { color: '#8392A5', fontSize: 10, formatter: '{value}%' },
       splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } },
-      name: '涨跌幅', nameTextStyle: { color: '#8392A5', fontSize: 10 }
+      name: '涨跌幅均值(%)', nameTextStyle: { color: '#B0B8C4', fontSize: 11 }
     },
     series: seriesOpts
   });
