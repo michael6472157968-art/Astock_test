@@ -173,6 +173,8 @@ function normalizeStockCode(raw) {
 function filterStockInput(val) {
   return val.replace(/[^\w\.]/g, '').replace(/\s/g, '');
 }
+// HTML属性转义
+function escAttr(v) { return v.replace(/'/g, "\\'").replace(/"/g, "\\x22"); }
 function renderChrome() {
   var main = document.querySelector('.main-content[data-chrome]');
   if (!main) return;

@@ -437,7 +437,7 @@
         items.forEach(function(s) {
           var pct = s.change_pct || 0;
           var cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
-          html += '<div class="spc-item" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'"><span class="spc-name">' + (s.stock_name || s.stock_code) + '</span><span class="spc-pct ' + cls + '">' + fmtSign(pct) + '%</span></div>';
+          html += '<div class="spc-item"><span class="spc-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + (s.stock_name || s.stock_code) + '</span><button class="spc-fav-btn" onclick="event.stopPropagation();toggleFav(this,\'' + escAttr(s.stock_code) + '\',\'' + escAttr(s.stock_name || s.stock_code) + '\')" title="添加自选">+</button><span class="spc-pct ' + cls + '" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + fmtSign(pct) + '%</span></div>';
         });
         el.querySelector('.spc-list').innerHTML = html;
       }).catch(function() {
@@ -476,10 +476,28 @@
           if (day.is_trade_day) { cls += 'cal-day-trade '; }
           if (day.is_weekend) { cls += 'cal-day-weekend '; }
           var bg = '';
-          if (day.is_today) bg = 'background:var(--color-primary);color:#fff;font-weight:700;';
-          else if (day.is_trade_day) bg = 'background:var(--color-success);color:#fff;opacity:0.6;';
-          else if (!day.is_current_month) bg = 'color:var(--color-text-muted);opacity:0.3;';
-          else if (day.is_weekend) bg = 'color:var(--color-text-muted);opacity:0.4;';
+          if (day.is_today) {
+            bg = 'background:var(--color-primary);color:#fff;font-weight:700;';
+          } else if (day.index_pct !== undefined) {
+            // 历史交易日：根据上证指数涨跌着色
+            var intensity = Math.min(Math.abs(day.index_pct) / 5, 1); // 5%为满分
+            if (day.index_pct > 0) {
+              bg = 'background:rgba(' + Math.round(220*intensity + 26*(1-intensity)) + ',' + Math.round(68*intensity + 26*(1-intensity)) + ',' + Math.round(70*intensity + 26*(1-intensity)) + ',0.55);color:rgba(255,255,255,0.85);';
+            } else if (day.index_pct < 0) {
+              bg = 'background:rgba(' + Math.round(73*intensity + 26*(1-intensity)) + ',' + Math.round(170*intensity + 26*(1-intensity)) + ',' + Math.round(25*intensity + 26*(1-intensity)) + ',0.55);color:rgba(255,255,255,0.85);';
+            } else {
+              bg = 'background:rgba(38,38,38,0.5);color:rgba(255,255,255,0.6);';
+            }
+          } else if (day.is_trade_day && day.is_current_month) {
+            // 未来交易日：使用中性色（即将到来的交易日无涨跌数据）
+            bg = 'color:rgba(255,255,255,0.6);border:1px dashed rgba(255,255,255,0.15);';
+          } else if (!day.is_current_month) {
+            bg = 'color:var(--color-text-muted);opacity:0.25;';
+          } else if (day.is_weekend) {
+            bg = 'color:var(--color-text-muted);opacity:0.35;';
+          } else {
+            bg = 'color:var(--color-text-muted);opacity:0.35;';
+          }
           html += '<span style="flex:1;padding:4px 0;font-size:0.72rem;border-radius:4px;margin:1px;' + bg + '">' + day.date + '</span>';
         });
         html += '</div>';
@@ -644,6 +662,48 @@
   }
 
   window.submitGuess = submitGuess;
+
+  // ── 自选按钮通用逻辑 ──
+  var _favCache = [];
+  function loadFavCache() {
+    if (!Session.loggedIn()) return;
+    API.get('/alerts/favorites').then(function(r) {
+      _favCache = (r.data.items || []).map(function(f) { return f.stock_code; });
+      // 刷新所有已渲染的按钮状态
+      document.querySelectorAll('.spc-fav-btn').forEach(function(btn) {
+        var code = btn.getAttribute('data-code');
+        if (_favCache.indexOf(code) >= 0) setFavBtnAdded(btn);
+      });
+    }).catch(function() {});
+  }
+
+  function setFavBtnAdded(btn) {
+    btn.textContent = '✓';
+    btn.classList.add('added');
+    btn.title = '已自选';
+    btn.disabled = true;
+  }
+
+  function toggleFav(btn, code, name) {
+    if (!Session.loggedIn()) { location.href = 'login.html'; return; }
+    if (btn.classList.contains('added')) return;
+    btn.disabled = true;
+    API.post('/alerts/favorites', { stock_code: code }).then(function() {
+      _favCache.push(code);
+      setFavBtnAdded(btn);
+    }).catch(function(e) {
+      if (e.code === 401) { location.href = 'login.html'; return; }
+      if (e.message === '已在自选列表中') {
+        _favCache.push(code);
+        setFavBtnAdded(btn);
+      } else {
+        btn.disabled = false;
+        showToast(e.message || '添加失败');
+      }
+    });
+  }
+
+  loadFavCache();
 })();
 </script>
 </body>

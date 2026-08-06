@@ -576,10 +576,23 @@ body {
 }
 .spc-item:hover { background: var(--color-surface); }
 .spc-item .spc-name { flex: 1; font-weight: 500; color: #e0e0e0; }
-.spc-item .spc-pct { font-weight: 700; margin-left: 8px; }
+.spc-item .spc-pct { font-weight: 700; margin-left: 8px; cursor: pointer; }
 .spc-item .spc-pct.up { color: #ef4444; }
 .spc-item .spc-pct.down { color: #22c55e; }
 .spc-item .spc-pct.flat { color: #888; }
+
+/* +自选按钮 */
+.spc-fav-btn {
+  width: 22px; height: 22px; padding: 0; margin: 0 6px;
+  border: 1px solid var(--color-border); border-radius: 50%;
+  background: transparent; color: var(--color-text-muted);
+  font-size: 0.8rem; font-weight: 700; line-height: 20px;
+  cursor: pointer; flex-shrink: 0; text-align: center;
+  transition: all 0.15s;
+}
+.spc-fav-btn:hover { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-bg); }
+.spc-fav-btn.added { border-color: var(--color-success); color: var(--color-success); background: rgba(73,170,25,0.1); cursor: default; }
+.spc-fav-btn:disabled { opacity: 1; }
 
 /* ── Dashboard: Mood Panel ── */
 .mood-panel {
@@ -831,6 +844,21 @@ body {
   .mood-right { flex-direction:row; padding-left:0; border-left:none; border-top:1px solid var(--color-border); padding-top:14px; gap:20px; }
   .hot-stock-list { grid-template-columns: 1fr; }
   .status-bar { font-size:0.7rem; gap:8px; }
+
+  /* Short pool grid — 2 columns on mobile */
+  .short-pool-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .short-pool-col { padding: 8px 10px; min-height: auto; }
+  .spc-label { font-size: 0.74rem; }
+  .spc-item { font-size: 0.74rem; }
+  .spc-item .spc-name { font-size: 0.72rem; }
+  .spc-item .spc-pct { font-size: 0.72rem; }
+
+  /* Marquee — ensure visible on mobile portrait */
+  .marquee-section { padding: 10px 0; }
+  .marquee-section .marquee-header { padding: 0 10px 8px; }
+  .marquee-section .marquee-header .mh-label { font-size: 0.7rem; }
+  .marquee-wrap { border-top: 1px solid rgba(0,212,170,0.1); border-bottom: 1px solid rgba(0,212,170,0.1); }
+  .marquee-item { padding: 7px 12px; min-width: 160px; }
 
   /* Footer */
   .app-footer { padding: 10px 12px; font-size: 0.68rem; }

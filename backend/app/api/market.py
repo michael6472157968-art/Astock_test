@@ -1108,6 +1108,20 @@ async def market_calendar(user: dict = Depends(require_auth_optional)):
     except Exception:
         pass
 
+    # 获取当月历史交易日的大盘涨跌数据，用于日历着色
+    index_pct_map = {}
+    try:
+        from app.core.database import async_session
+        async with async_session() as sess:
+            r = await sess.execute(
+                text("SELECT trade_date, pct_chg FROM stock_daily WHERE ts_code='000001.SZ' AND trade_date BETWEEN :s AND :e"),
+                {"s": month_start.strftime("%Y%m%d"), "e": month_end.strftime("%Y%m%d")},
+            )
+            for row in r.fetchall():
+                index_pct_map[row[0]] = round(float(row[1]), 2) if row[1] else 0
+    except Exception:
+        pass
+
     # 构建当月日历（简化为周视图）
     weeks = []
     current = month_start
@@ -1119,14 +1133,17 @@ async def market_calendar(user: dict = Depends(require_auth_optional)):
         week = []
         for _ in range(7):
             ds = cursor.strftime("%Y%m%d")
-            week.append({
+            day_data = {
                 "date": cursor.day,
                 "date_str": ds,
                 "is_current_month": cursor.month == today.month,
                 "is_trade_day": ds in trade_days,
                 "is_today": ds == today_str,
                 "is_weekend": cursor.weekday() >= 5,
-            })
+            }
+            if ds in index_pct_map:
+                day_data["index_pct"] = index_pct_map[ds]
+            week.append(day_data)
             cursor += timedelta(days=1)
         weeks.append(week)
         if cursor > month_end and cursor.weekday() == 0:

@@ -164,13 +164,17 @@ function renderTable(items) {
   if (currentTradeDate && currentTradeDate.length === 8) {
     document.getElementById('statDate').textContent = currentTradeDate.substring(0,4) + '-' + currentTradeDate.substring(4,6) + '-' + currentTradeDate.substring(6,8);
   }
-  var html = '<table class="data-table"><thead><tr><th>排名</th><th>代码</th><th>名称</th><th>收盘价</th><th>涨跌幅</th><th>入选理由</th></tr></thead><tbody>';
+  var html = '<table class="data-table"><thead><tr><th>排名</th><th>代码</th><th>名称</th><th>收盘价</th><th>涨跌幅</th><th>入选理由</th><th>自选</th></tr></thead><tbody>';
   items.forEach(function(s, i) {
     var color = s.change_pct > 0 ? 'color:var(--color-danger)' : 'color:var(--color-success)';
-    html += '<tr style="cursor:pointer" onclick="location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'"><td>' + (i+1) + '</td><td>' + s.stock_code + '</td><td>' + s.stock_name + '</td><td>' + (s.close || '--') + '</td><td style="' + color + '">' + (s.change_pct || '--') + '%</td><td style="font-size:0.75rem;color:var(--color-text-muted)">' + (s.inclusion_reason || '') + '</td></tr>';
+    var rowCk = '<td style="cursor:pointer" onclick="location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">';
+    html += '<tr>' + rowCk + (i+1) + '</td>' + rowCk + s.stock_code + '</td>' + rowCk + s.stock_name + '</td>' + rowCk + (s.close || '--') + '</td>' + rowCk + '<span style="' + color + '">' + (s.change_pct || '--') + '%</span></td>' + rowCk + '<span style="font-size:0.75rem;color:var(--color-text-muted)">' + (s.inclusion_reason || '') + '</span></td>';
+    html += '<td><button class="spc-fav-btn" data-code="' + s.stock_code + '" onclick="event.stopPropagation();toggleFav(this,\'' + s.stock_code + '\',\'' + (s.stock_name || s.stock_code) + '\')" title="添加自选">+</button></td>';
+    html += '</tr>';
   });
   html += '</tbody></table>';
   content.innerHTML = html;
+  refreshFavButtons();
 }
 
 document.addEventListener('click', function(e) {
@@ -181,6 +185,54 @@ document.addEventListener('click', function(e) {
   }
 });
 
+// ── 自选按钮通用逻辑 ──
+var _favCache = [];
+
+function loadFavCache() {
+  if (!Session.loggedIn()) return;
+  API.get('/alerts/favorites').then(function(r) {
+    _favCache = (r.data.items || []).map(function(f) { return f.stock_code; });
+    refreshFavButtons();
+  }).catch(function() {});
+}
+
+function refreshFavButtons() {
+  document.querySelectorAll('.spc-fav-btn').forEach(function(btn) {
+    var code = btn.getAttribute('data-code');
+    if (code && _favCache.indexOf(code) >= 0) {
+      btn.textContent = '✓';
+      btn.classList.add('added');
+      btn.title = '已自选';
+      btn.disabled = true;
+    }
+  });
+}
+
+function toggleFav(btn, code, name) {
+  if (!Session.loggedIn()) { location.href = 'login.html'; return; }
+  if (btn.classList.contains('added')) return;
+  btn.disabled = true;
+  API.post('/alerts/favorites', { stock_code: code }).then(function() {
+    _favCache.push(code);
+    btn.textContent = '✓';
+    btn.classList.add('added');
+    btn.title = '已自选';
+  }).catch(function(e) {
+    if (e.code === 401) { location.href = 'login.html'; return; }
+    if (e.message === '已在自选列表中') {
+      _favCache.push(code);
+      btn.textContent = '✓';
+      btn.classList.add('added');
+      btn.title = '已自选';
+      btn.disabled = true;
+    } else {
+      btn.disabled = false;
+      showToast(e.message || '添加失败');
+    }
+  });
+}
+
+loadFavCache();
 renderTabs();
 loadPool('hot_leader');
 </script>
