@@ -400,17 +400,26 @@ function loadQuotesForVisible() {
           badgeEl.style.background = s >= 75 ? 'rgba(239,68,68,0.12)' : s >= 60 ? 'rgba(245,158,11,0.12)' : s >= 40 ? 'rgba(59,130,246,0.1)' : s >= 25 ? 'rgba(249,115,22,0.12)' : 'rgba(34,197,94,0.12)';
           badgeEl.style.color = s >= 75 ? '#dc2626' : s >= 60 ? '#d97706' : s >= 40 ? '#2563eb' : s >= 25 ? '#ea580c' : '#16a34a';
         }
-        // Signals
+        // Signals — 去重+限制最多4个
         var sigEl = card.querySelector('.fav-signals');
-        if (sigEl && qd.signals && qd.signals.length) {
-          var bullish = ['多头排列','量价齐升','RSI超卖','布林下轨'];
-          var bearish = ['空头排列','RSI超买','布林上轨','缩量回调'];
-          sigEl.innerHTML = qd.signals.map(function(sig) {
+        if (sigEl) {
+          var seen = {};
+          var raw = qd.signals || [];
+          var dedup = [];
+          for (var i = 0; i < raw.length; i++) {
+            if (!seen[raw[i]]) { seen[raw[i]] = true; dedup.push(raw[i]); }
+          }
+          dedup = dedup.slice(0, 4);
+          if (dedup.length) {
+            var bullish = ['多头排列','量价齐升','RSI超卖','布林下轨'];
+            var bearish = ['空头排列','RSI超买','布林上轨','缩量回调'];
+            sigEl.innerHTML = dedup.map(function(sig) {
             var cls = bullish.indexOf(sig) >= 0 ? 'bullish' : (bearish.indexOf(sig) >= 0 ? 'bearish' : '');
             return '<span class="signal-chip ' + cls + '">' + escHtml(sig) + '</span>';
           }).join('');
-        } else if (sigEl) {
-          sigEl.innerHTML = '';
+          } else {
+            sigEl.innerHTML = '';
+          }
         }
         // Risk tag
         var riskEl = card.querySelector('.fav-risk-tag');
