@@ -62,10 +62,11 @@
 
 /* ── Card ── */
 .fav-card {
-  display: flex; align-items: center; padding: 10px 12px;
+  display: flex; align-items: stretch; padding: 8px 10px;
   background: var(--color-surface); border: 1px solid var(--color-border);
   border-radius: 8px; margin: 4px 8px;
   cursor: grab; transition: box-shadow 0.15s;
+  gap: 8px;
 }
 .fav-card:first-child { margin-top: 6px; }
 .fav-card:last-child { margin-bottom: 6px; }
@@ -73,14 +74,40 @@
 .fav-card.dragging { opacity: 0.4; }
 .fav-card.drag-over { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary); }
 .fav-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
-.fav-card .drag-handle { color: var(--color-text-muted); margin-right: 8px; font-size: 0.85rem; cursor: grab; user-select: none; }
-.fav-card .fav-info { flex: 1; min-width: 0; }
-.fav-card .fav-code { font-size: 0.72rem; color: var(--color-text-muted); }
-.fav-card .fav-name { font-size: 0.88rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-.fav-card .fav-quote { text-align: right; }
+.fav-card .fav-left { display: flex; align-items: center; flex-shrink: 0; }
+.fav-card .drag-handle { color: var(--color-text-muted); font-size: 0.85rem; cursor: grab; user-select: none; padding: 0 2px; }
+.fav-card .fav-info { flex: 0 0 90px; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.fav-card .fav-code { font-size: 0.67rem; color: var(--color-text-muted); }
+.fav-card .fav-name { font-size: 0.84rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.fav-card .fav-mid { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.fav-card .fav-sparkline { flex-shrink: 0; width: 70px; height: 32px; }
+.fav-card .fav-signals { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 3px; align-content: center; }
+.fav-card .signal-chip {
+  font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; white-space: nowrap;
+  background: var(--color-border-light); color: var(--color-text-secondary);
+}
+.fav-card .signal-chip.bullish { background: rgba(239,68,68,0.1); color: var(--color-danger); }
+.fav-card .signal-chip.bearish { background: rgba(34,197,94,0.1); color: var(--color-success); }
+.fav-card .fav-quote { flex-shrink: 0; text-align: right; display: flex; flex-direction: column; justify-content: center; min-width: 70px; }
 .fav-card .fav-price { font-size: 0.88rem; font-weight: 500; }
 .fav-card .fav-pct { font-size: 0.78rem; font-weight: 500; }
-.fav-card .fav-del { margin-left: 12px; color: var(--color-text-muted); background: none; border: none; font-size: 1rem; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
+.fav-card .fav-score-badge {
+  flex-shrink: 0; width: 36px; height: 36px; border-radius: 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-size: 0.82rem; font-weight: 700; line-height: 1;
+  background: var(--color-border-light); color: var(--color-text-muted);
+}
+.fav-card .fav-score-badge .score-label { font-size: 0.48rem; font-weight: 400; }
+.fav-card .fav-risk-tag {
+  flex-shrink: 0; font-size: 0.62rem; padding: 2px 5px; border-radius: 3px; white-space: nowrap;
+  font-weight: 500;
+}
+.risk-low { background: rgba(34,197,94,0.12); color: #16a34a; }
+.risk-mid-low { background: rgba(59,130,246,0.1); color: #2563eb; }
+.risk-mid { background: rgba(245,158,11,0.12); color: #d97706; }
+.risk-mid-high { background: rgba(249,115,22,0.12); color: #ea580c; }
+.risk-high { background: rgba(239,68,68,0.12); color: #dc2626; }
+.fav-card .fav-del { flex-shrink: 0; align-self: center; color: var(--color-text-muted); background: none; border: none; font-size: 1rem; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
 .fav-card .fav-del:hover { color: var(--color-danger); background: rgba(239,68,68,0.1); }
 
 /* ── Drop Indicator ── */
@@ -276,11 +303,17 @@ function renderCards(items, pageOffset, groupKey) {
   h += '<div class="fav-cards-inner">';
   batch.forEach(function(f) {
     h += '<div class="fav-card" draggable="true" data-code="' + f.stock_code + '" data-group-id="' + (f.group_id || '') + '" ondragstart="handleCardDragStart(event)" ondragover="handleCardDragOver(event)" ondragleave="handleCardDragLeave(event)" ondrop="handleCardDrop(event)" ondragend="handleCardDragEnd(event)">';
-    h += '<span class="drag-handle" title="拖拽排序">⋮⋮</span>';
+    h += '<div class="fav-left"><span class="drag-handle" title="拖拽排序">⋮⋮</span></div>';
     h += '<div class="fav-info">';
     h += '<div class="fav-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '\'">' + escHtml(f.stock_name || f.stock_code) + '</div>';
     h += '<div class="fav-code">' + f.stock_code + '</div>';
     h += '</div>';
+    h += '<div class="fav-mid">';
+    h += '<svg class="fav-sparkline" viewBox="0 0 70 32" data-code="' + f.stock_code + '"><polyline fill="none" stroke="var(--color-border)" stroke-width="1.5" points=""/></svg>';
+    h += '<div class="fav-signals" data-code="' + f.stock_code + '"></div>';
+    h += '</div>';
+    h += '<div class="fav-score-badge" data-code="' + f.stock_code + '">--<span class="score-label">分</span></div>';
+    h += '<div class="fav-risk-tag" data-code="' + f.stock_code + '">--</div>';
     h += '<div class="fav-quote">';
     h += '<div class="fav-price">--</div>';
     h += '<div class="fav-pct">--</div>';
@@ -288,13 +321,12 @@ function renderCards(items, pageOffset, groupKey) {
     h += '<button class="fav-del" onclick="event.stopPropagation();removeFav(\'' + f.stock_code + '\')" title="删除">✕</button>';
     h += '</div>';
   });
-  h += '</div>'; // fav-cards-inner
-
+  h += '</div>';
   var remaining = items.length - pageOffset - batch.length;
   if (remaining > 0) {
     h += '<button class="fav-more-btn" onclick="loadGroupMore(\'' + groupKey + '\')">查看更多（剩余' + remaining + '只）</button>';
   }
-  h += '</div>'; // fav-cards-container
+  h += '</div>';
   return h;
 }
 
@@ -313,15 +345,75 @@ function loadQuotesForVisible() {
       cards.forEach(function(card) {
         var code = card.getAttribute('data-code');
         var qd = quotes[code] || {};
+        // Name
         var nameEl = card.querySelector('.fav-name');
+        if (nameEl && qd.name) nameEl.textContent = qd.name;
+        // Price & pct
         var priceEl = card.querySelector('.fav-price');
         var pctEl = card.querySelector('.fav-pct');
-        if (nameEl && qd.name) nameEl.textContent = qd.name;
         if (priceEl) priceEl.textContent = qd.close || '--';
         if (pctEl) {
           var pct = qd.pct_chg || 0;
           pctEl.textContent = (pct > 0 ? '+' : '') + pct + '%';
           pctEl.style.color = pct > 0 ? 'var(--color-danger)' : (pct < 0 ? 'var(--color-success)' : '');
+        }
+        // Sparkline
+        var sparkEl = card.querySelector('.fav-sparkline');
+        if (sparkEl && qd.sparkline && qd.sparkline.length) {
+          var polyline = sparkEl.querySelector('polyline');
+          if (polyline) {
+            var closes = qd.sparkline.map(function(d){return d.close;});
+            var min = Math.min.apply(null, closes);
+            var max = Math.max.apply(null, closes);
+            var range = max - min || 1;
+            var w = 70, h = 32, pad = 2;
+            var pts = closes.map(function(v, i) {
+              var x = pad + (i / (closes.length - 1)) * (w - pad * 2);
+              var y = pad + (1 - (v - min) / range) * (h - pad * 2);
+              return x.toFixed(1) + ',' + y.toFixed(1);
+            }).join(' ');
+            polyline.setAttribute('points', pts);
+            var trend = closes[closes.length-1] >= closes[0];
+            polyline.setAttribute('stroke', trend ? 'var(--color-danger)' : 'var(--color-success)');
+          }
+        }
+        // Score badge
+        var badgeEl = card.querySelector('.fav-score-badge');
+        if (badgeEl && qd.score != null) {
+          badgeEl.innerHTML = qd.score + '<span class="score-label">分</span>';
+          var s = qd.score;
+          badgeEl.style.background = s >= 75 ? 'rgba(239,68,68,0.12)' : s >= 60 ? 'rgba(245,158,11,0.12)' : s >= 40 ? 'rgba(59,130,246,0.1)' : s >= 25 ? 'rgba(249,115,22,0.12)' : 'rgba(34,197,94,0.12)';
+          badgeEl.style.color = s >= 75 ? '#dc2626' : s >= 60 ? '#d97706' : s >= 40 ? '#2563eb' : s >= 25 ? '#ea580c' : '#16a34a';
+        }
+        // Signals
+        var sigEl = card.querySelector('.fav-signals');
+        if (sigEl && qd.signals && qd.signals.length) {
+          var bullish = ['多头排列','量价齐升','RSI超卖','布林下轨'];
+          var bearish = ['空头排列','RSI超买','布林上轨','缩量回调'];
+          sigEl.innerHTML = qd.signals.map(function(sig) {
+            var cls = bullish.indexOf(sig) >= 0 ? 'bullish' : (bearish.indexOf(sig) >= 0 ? 'bearish' : '');
+            return '<span class="signal-chip ' + cls + '">' + escHtml(sig) + '</span>';
+          }).join('');
+        } else if (sigEl) {
+          sigEl.innerHTML = '';
+        }
+        // Risk tag
+        var riskEl = card.querySelector('.fav-risk-tag');
+        if (riskEl && qd.risk) {
+          var risk = qd.risk;
+          riskEl.textContent = risk;
+          riskEl.className = 'fav-risk-tag ' + (
+            risk === '低风险' ? 'risk-low' :
+            risk === '中低风险' ? 'risk-mid-low' :
+            risk === '中风险' ? 'risk-mid' :
+            risk === '中高风险' || risk === '高风险(ST)' ? 'risk-mid-high' :
+            'risk-high');
+        }
+        // Risk tags (DB scan results)
+        var riskTags = qd.risk_tags || [];
+        if (riskEl && riskTags.length) {
+          riskEl.textContent = riskTags[0];
+          riskEl.className = 'fav-risk-tag risk-high';
         }
       });
     });

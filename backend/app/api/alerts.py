@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -50,14 +51,224 @@ async def favorites_quotes(codes: str = "", user: dict = Depends(require_auth)):
         from sqlalchemy import text as _text
         for code in code_list:
             r = await session.execute(
-                _text("SELECT s.name, d.close, d.pct_chg FROM stock_daily d JOIN stocks s ON s.ts_code = d.ts_code WHERE d.ts_code = :code ORDER BY d.trade_date DESC LIMIT 1"),
+                _text("""SELECT s.name, d.close, d.pct_chg, d.open, d.high, d.low, d.volume
+                         FROM stock_daily d JOIN stocks s ON s.ts_code = d.ts_code
+                         WHERE d.ts_code = :code ORDER BY d.trade_date DESC LIMIT 1"""),
                 {"code": code}
             )
             row = r.fetchone()
-            if row:
-                quotes[code] = {"name": row[0], "close": round(float(row[1]), 2) if row[1] else None, "pct_chg": round(float(row[2]), 2) if row[2] else 0}
+            if not row:
+                quotes[code] = {"name": code, "close": None, "pct_chg": 0,
+                                "sparkline": [], "score": None, "signals": [], "risk": None}
+                continue
+
+            r2 = await session.execute(
+                _text("""SELECT trade_date, open, close, high, low, volume
+                         FROM stock_daily WHERE ts_code = :code
+                         ORDER BY trade_date DESC LIMIT 20"""),
+                {"code": code}
+            )
+            daily_rows = r2.fetchall()
+            daily_rows.reverse()
+
+            sparkline = [
+                {"date": d[0], "open": round(float(d[1]), 2), "close": round(float(d[2]), 2),
+                 "high": round(float(d[3]), 2), "low": round(float(d[4]), 2), "vol": int(d[5] or 0)}
+                for d in daily_rows
+            ]
+
+            closes = [d["close"] for d in sparkline]
+            tech = _compute_light_score(closes)
+
+            quotes[code] = {
+                "name": row[0], "close": round(float(row[1]), 2) if row[1] else None,
+                "pct_chg": round(float(row[2]), 2) if row[2] else 0,
+                "open": round(float(row[3]), 2) if row[3] else None,
+                "high": round(float(row[4]), 2) if row[4] else None,
+                "low": round(float(row[5]), 2) if row[5] else None,
+                "volume": int(row[6] or 0),
+                "sparkline": sparkline,
+                "score": tech["score"],
+                "signals": tech["signals"],
+                "risk": tech["risk"],
+            }
+
+    await _attach_risk_data(quotes, code_list)
 
     return APIResponse(data={"quotes": quotes}, timestamp=int(time.time()))
+
+
+# ── 轻量技术评分（纯Python，不依赖诊股引擎）──
+
+def _sma(values, n):
+    out = []
+    for i in range(len(values)):
+        if i < n - 1:
+            out.append(None)
+        else:
+            out.append(sum(values[i - n + 1:i + 1]) / n)
+    return out
+
+
+def _compute_light_score(closes: list[float]) -> dict:
+    """基于近20日收盘价计算技术评分、信号和风险等级。"""
+    n = len(closes)
+    if n < 10:
+        return {"score": None, "signals": [], "risk": None}
+
+    signals = []
+    score = 50
+
+    # 均线
+    ma5 = closes[-1] - (sum(closes[-5:]) / 5) if n >= 5 else 0
+    ma10 = closes[-1] - (sum(closes[-10:]) / 10) if n >= 10 else 0
+    if ma5 > 0:
+        score += 8
+        if ma5 > ma10 > 0:
+            signals.append("多头排列")
+            score += 5
+    else:
+        score -= 8
+        if ma5 < ma10 < 0:
+            signals.append("空头排列")
+            score -= 5
+
+    # 涨跌趋势
+    if n >= 5:
+        chg5 = (closes[-1] / closes[-5] - 1) * 100 if closes[-5] else 0
+        if chg5 > 5:
+            signals.append(f"5日+{chg5:.1f}%")
+            score += 5
+        elif chg5 < -5:
+            signals.append(f"5日{chg5:.1f}%")
+            score -= 5
+
+    if n >= 10:
+        chg10 = (closes[-1] / closes[-10] - 1) * 100 if closes[-10] else 0
+        if chg10 > 10:
+            signals.append(f"10日+{chg10:.1f}%")
+            score += 4
+        elif chg10 < -10:
+            signals.append(f"10日{chg10:.1f}%")
+            score -= 4
+
+    # 量价关系（最近5日量增价升）
+    if n >= 5:
+        vol_up = closes[-1] > closes[-5]
+        price_up = closes[-1] > closes[-2] if n >= 2 else False
+        if vol_up and price_up:
+            signals.append("量价齐升")
+            score += 3
+        elif not vol_up and not price_up:
+            signals.append("缩量回调")
+            score -= 2
+
+    # RSI 快速估算
+    rsi = _quick_rsi(closes[-8:]) if n >= 8 else 50
+    if rsi > 70:
+        signals.append(f"RSI超买{rsi:.0f}")
+        score -= 5
+    elif rsi < 30:
+        signals.append(f"RSI超卖{rsi:.0f}")
+        score += 8
+    elif rsi > 60:
+        score += 3
+    elif rsi < 40:
+        score -= 3
+
+    # 布林带位置
+    boll_pos = _bollinger_position(closes)
+    if boll_pos is not None:
+        if boll_pos > 0.9:
+            signals.append("布林上轨")
+            score -= 4
+        elif boll_pos < 0.1:
+            signals.append("布林下轨")
+            score += 6
+
+    score = max(1, min(99, int(score)))
+
+    if score >= 75:
+        risk = "低风险"
+    elif score >= 60:
+        risk = "中低风险"
+    elif score >= 40:
+        risk = "中风险"
+    elif score >= 25:
+        risk = "中高风险"
+    else:
+        risk = "高风险"
+
+    # 去重 + 裁剪信号
+    return {"score": score, "signals": signals[:5], "risk": risk}
+
+
+def _quick_rsi(closes: list[float]) -> float:
+    gains, losses = 0, 0
+    for i in range(1, len(closes)):
+        chg = closes[i] - closes[i - 1]
+        if chg > 0:
+            gains += chg
+        else:
+            losses += abs(chg)
+    if gains + losses == 0:
+        return 50
+    avg_gain = gains / len(closes)
+    avg_loss = losses / len(closes)
+    if avg_loss == 0:
+        return 100
+    rs = avg_gain / avg_loss
+    return round(100 - 100 / (1 + rs), 1)
+
+
+def _bollinger_position(closes: list[float]) -> float | None:
+    n = len(closes)
+    if n < 20:
+        return None
+    ma20 = sum(closes[-20:]) / 20
+    var = sum((c - ma20) ** 2 for c in closes[-20:]) / 20
+    std = math.sqrt(var)
+    upper = ma20 + 2 * std
+    lower = ma20 - 2 * std
+    if upper - lower == 0:
+        return None
+    return round((closes[-1] - lower) / (upper - lower), 3)
+
+
+async def _attach_risk_data(quotes: dict, code_list: list[str]) -> None:
+    """批量查询 risk_list_results 表，附加每个股票的最近风险记录。"""
+    from sqlalchemy import text as _text
+
+    for code in code_list:
+        if code not in quotes:
+            continue
+        try:
+            async with async_session() as session:
+                r = await session.execute(
+                    _text("""SELECT risk_category, risk_detail FROM risk_list_results
+                             WHERE ts_code = :code ORDER BY calc_date DESC LIMIT 2"""),
+                    {"code": code}
+                )
+                rows = r.fetchall()
+                if rows:
+                    cats = {row[0] for row in rows}
+                    if "st_risk" in cats:
+                        quotes[code]["risk"] = "高风险(ST)"
+                        quotes[code]["risk_tags"] = ["ST退市风险"]
+                    elif "surge_overheat" in cats:
+                        quotes[code]["risk"] = quotes[code].get("risk", "中风险")
+                        quotes[code]["risk_tags"] = quotes[code].get("risk_tags", []) + ["连板过热"]
+                    elif "cliff_drop" in cats:
+                        quotes[code]["risk"] = "中高风险"
+                        quotes[code]["risk_tags"] = quotes[code].get("risk_tags", []) + ["断崖下跌"]
+                    elif "high_turnover" in cats:
+                        quotes[code]["risk_tags"] = quotes[code].get("risk_tags", []) + ["高换手异动"]
+                    elif "volume_drain" in cats:
+                        quotes[code]["risk_tags"] = quotes[code].get("risk_tags", []) + ["缩量阴跌"]
+                    else:
+                        quotes[code]["risk_tags"] = quotes[code].get("risk_tags", []) + [rows[0][0]]
+        except Exception:
+            pass
 
 
 class AddFavRequest(BaseModel):
