@@ -64,7 +64,7 @@ class ShortTermEngine:
 
             # T+7低吸：排除所有高优先级池中的股票（超卖除外）
             t7d_candidates = await self._t7_dip_raw(session, trade_date, all_dates)
-            t7d = self._dedup_pool(t7d_candidates, excluded, "drawdown", 20)
+            t7d = self._dedup_pool(t7d_candidates, excluded, "drawdown", 20, "gte")
 
         pools = {
             "short_t3_momentum": t3m,
@@ -82,19 +82,27 @@ class ShortTermEngine:
         return pools
 
     def _dedup_pool(self, candidates: list, excluded: set, oversold_field: str | None,
-                    oversold_threshold: float | None) -> list:
-        """从候选中排除已在高优先级池中的股票，超卖信号可豁免，不足时从被排除项补位。"""
+                    oversold_threshold: float | None,
+                    oversold_direction: str = "lte") -> list:
+        """从候选中排除已在高优先级池中的股票，超卖信号可豁免，不足时从被排除项补位。
+
+        oversold_direction: "lte" (<=) 用于 dist_from_low（越小越超卖），
+                           "gte" (>=) 用于 drawdown（越大越超卖）。"""
         result = []
         skipped = []
         for item in candidates:
             code = item["stock_code"]
             if code in excluded:
-                # 超卖豁免检查
                 if oversold_field:
                     val = item.get("_raw_oversold_val", 0)
-                    if val is not None and val <= oversold_threshold:
-                        result.append(item)
-                        continue
+                    if val is not None:
+                        if oversold_direction == "gte":
+                            if val >= oversold_threshold:
+                                result.append(item)
+                                continue
+                        elif val <= oversold_threshold:
+                            result.append(item)
+                            continue
                 skipped.append(item)
             else:
                 result.append(item)
