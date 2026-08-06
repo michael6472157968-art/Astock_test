@@ -437,9 +437,11 @@
         items.forEach(function(s) {
           var pct = s.change_pct || 0;
           var cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
-          html += '<div class="spc-item"><span class="spc-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + (s.stock_name || s.stock_code) + '</span><button class="spc-fav-btn" onclick="event.stopPropagation();toggleFav(this,\'' + escAttr(s.stock_code) + '\',\'' + escAttr(s.stock_name || s.stock_code) + '\')" title="添加自选">+</button><span class="spc-pct ' + cls + '" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + fmtSign(pct) + '%</span></div>';
+          html += '<div class="spc-item"><span class="spc-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + (s.stock_name || s.stock_code) + '</span><button class="spc-fav-btn" data-code="' + escAttr(s.stock_code) + '" onclick="event.stopPropagation();toggleFav(this,\'' + escAttr(s.stock_code) + '\',\'' + escAttr(s.stock_name || s.stock_code) + '\')" title="添加自选">+</button><span class="spc-pct ' + cls + '" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + fmtSign(pct) + '%</span></div>';
         });
         el.querySelector('.spc-list').innerHTML = html;
+        // 按钮渲染完成后，用已加载的收藏缓存刷新状态
+        if (_favCache.length > 0) refreshFavBtns(el);
       }).catch(function() {
         el.querySelector('.spc-list').innerHTML = '<div style="color:var(--color-text-muted);font-size:0.75rem;padding:8px;">加载失败</div>';
       });
