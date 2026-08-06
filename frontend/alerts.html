@@ -3,19 +3,19 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>自选预警 - Stockwin 短线助手</title>
+<title>我的自选 - Stockwin 短线助手</title>
 <link rel="stylesheet" href="/css/app.css?v=3" />
 </head>
 <body>
 <main class="main-content" data-chrome>
-  <h2 class="page-title">自选股异动预警</h2>
-  <p class="page-desc">技术面信号：放量突破压力位、跌破支撑位、MACD金叉死叉、RSI超买超卖</p>
+  <h2 class="page-title">我的自选</h2>
+  <p class="page-desc">管理自选股票，查看异动预警</p>
   <div id="content" style="width:100%;"><p class="state-loading">加载中...</p></div>
 </main>
 <script src="/js/app.js?v=5"></script>
 <script>
 if (!Session.loggedIn()) {
-  document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用预警功能</p>';
+  document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用自选功能</p>';
 } else {
   loadFavorites();
 }

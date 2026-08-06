@@ -123,11 +123,18 @@ body {
 .header-left { display: flex; align-items: center; }
 .header-left h1 { font-size: 1.1rem; font-weight: 700; color: var(--color-primary); }
 .header-left a { text-decoration: none; color: var(--color-primary); display: flex; align-items: center; gap: 8px; }
-.nav-links { display: flex; gap: 4px; align-items: center; flex: 1; justify-content: center; }
+.nav-links {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+}
 .nav-links a {
-  padding: 6px 12px;
+  padding: 8px 16px;
   border-radius: 6px;
-  font-size: 0.8rem;
+  font-size: 0.88rem;
+  font-weight: 500;
   color: var(--color-text-muted);
   text-decoration: none;
   transition: all 0.15s;
@@ -503,8 +510,13 @@ body {
   gap: 0;
   width: max-content;
   animation: marqueeScroll 60s linear infinite;
+  animation-play-state: paused;
+}
+.marquee-track.marquee-running {
+  animation-play-state: running;
 }
 .marquee-wrap:hover .marquee-track { animation-play-state: paused; }
+.marquee-wrap:hover .marquee-track.marquee-running { animation-play-state: paused; }
 @keyframes marqueeScroll {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
@@ -742,8 +754,8 @@ body {
     width: 100%;
   }
   .header-nav .nav-links a {
-    padding: 12px 14px;
-    font-size: 0.9rem;
+    padding: 14px 16px;
+    font-size: 0.95rem;
     border-radius: 6px;
     min-height: 44px;
     display: flex;

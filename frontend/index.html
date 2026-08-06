@@ -414,6 +414,8 @@
           '</div>';
       }).join('');
       document.getElementById('marqueeTrack').innerHTML = html;
+      // CSS 动画初始暂停，填充内容后启动
+      document.getElementById('marqueeTrack').classList.add('marquee-running');
     }).catch(function() {});
   }
 

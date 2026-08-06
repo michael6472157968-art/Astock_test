@@ -148,9 +148,19 @@ function search() {
   var result = document.getElementById('result');
   showProgress(result);
   startProgress();
-  API.get('/diagnosis/' + encodeURIComponent(code)).then(function(r) {
+
+  // 并行拉取诊股数据 + 自选列表（用于判断是否已添加）
+  var diagPromise = API.get('/diagnosis/' + encodeURIComponent(code));
+  var favPromise = Session.loggedIn()
+    ? API.get('/alerts/favorites').then(function(r) { return (r.data.items || []).map(function(f) { return f.stock_code; }); }).catch(function() { return []; })
+    : Promise.resolve([]);
+
+  Promise.all([diagPromise, favPromise]).then(function(results) {
+    var r = results[0];
+    var favCodes = results[1];
+    var isFav = favCodes.indexOf(code) >= 0;
     finishProgress(100);
-    setTimeout(function() { renderDiagnosis(r, code); loadQuota(); showCacheBanner(r); }, 200);
+    setTimeout(function() { renderDiagnosis(r, code, isFav); loadQuota(); showCacheBanner(r); }, 200);
   }).catch(function(e) {
     finishProgress(-1);
     var container = document.getElementById('result');
@@ -186,11 +196,14 @@ function search() {
   });
 }
 
-function renderDiagnosis(r, code) {
+function renderDiagnosis(r, code, isFav) {
   var result = document.getElementById('result');
   var q = (r.data && r.data.quant) || {};
   var stockName = r.data.stock_name || code;
-  var html = '<h2 class="page-title" id="diagStockName">' + stockName + ' 量化诊股报告 <button class="btn btn-sm btn-primary" onclick="addFavorite(\'' + escAttr(code) + '\',\'' + escAttr(stockName) + '\')" id="favBtn">+ 自选</button></h2>';
+  var favBtnHtml = isFav
+    ? '<button class="btn btn-sm btn-outline" disabled id="favBtn">✓ 已自选</button>'
+    : '<button class="btn btn-sm btn-primary" onclick="addFavorite(\'' + escAttr(code) + '\',\'' + escAttr(stockName) + '\')" id="favBtn">+ 自选</button>';
+  var html = '<h2 class="page-title" id="diagStockName">' + stockName + ' 量化诊股报告 ' + favBtnHtml + '</h2>';
   html += '<div class="stat-grid" style="margin-bottom:20px">';
   html += '<div class="stat-card"><div class="stat-label">量化评分</div><div class="stat-value">' + (q.score || '--') + '</div></div>';
   html += '<div class="stat-card"><div class="stat-label">风险等级</div><div class="stat-value ' + riskClass(q.risk) + '">' + (q.risk || '--') + '</div></div>';
@@ -749,8 +762,11 @@ function addFavorite(code, name) {
     btn.textContent = '✓ 已自选'; btn.className = 'btn btn-sm btn-outline'; btn.disabled = false;
   }).catch(function(e) {
     if (e.code === 401) { location.href = 'login.html'; return; }
-    btn.textContent = e.message === '已在自选列表中' ? '✓ 已自选' : '+ 自选';
-    btn.className = 'btn btn-sm btn-outline'; btn.disabled = false;
+    if (e.message === '已在自选列表中') {
+      btn.textContent = '✓ 已自选'; btn.className = 'btn btn-sm btn-outline'; btn.disabled = true;
+    } else {
+      btn.textContent = '+ 自选'; btn.className = 'btn btn-sm btn-primary'; btn.disabled = false;
+    }
   });
 }
 </script>

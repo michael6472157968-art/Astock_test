@@ -211,7 +211,7 @@ function renderNav() {
     { href: 'review.html', label: '复盘' },
     { href: 'sector-rotation.html', label: '板块' },
     { href: 'risk-list.html', label: '风险' },
-    { href: 'alerts.html', label: '预警' },
+    { href: 'alerts.html', label: '自选' },
     { href: 'backtest.html', label: '回测' },
   ];
   if (Session.isAdmin()) {
