@@ -732,26 +732,6 @@
             { offset: 0, color: c + '30' },
             { offset: 1, color: c + '02' }
           ])
-        },
-        markPoint: {
-          data: [
-            { coord: [xLabels.length >= 7 ? xLabels.length - 7 : 0, s.data[xLabels.length >= 7 ? 0 : 0]], name: 'D-6' },
-            { coord: [xLabels.length >= 5 ? xLabels.length - 5 : 0, s.data[xLabels.length >= 5 ? 2 : 0]], name: 'D-4' },
-            { coord: [xLabels.length >= 3 ? xLabels.length - 3 : 0, s.data[xLabels.length >= 3 ? 4 : 0]], name: 'D-2' },
-          ].filter(function(mp) { return mp.coord[0] >= 0 && s.data[mp.coord[0]] != null; }),
-          symbol: 'pin',
-          symbolSize: 20,
-          label: { show: true, fontSize: 10, formatter: function(p) { return p.name; } }
-        },
-        markLine: {
-          silent: true,
-          symbol: 'none',
-          lineStyle: { type: 'dashed', color: '#8392A5', width: 1 },
-          data: [
-            { xAxis: xLabels.length >= 7 ? xLabels.length - 7 : 0, label: { formatter: 'D-6', fontSize: 10, color: '#8392A5' } },
-            { xAxis: xLabels.length >= 5 ? xLabels.length - 5 : 0, label: { formatter: 'D-4', fontSize: 10, color: '#8392A5' } },
-            { xAxis: xLabels.length >= 3 ? xLabels.length - 3 : 0, label: { formatter: 'D-2', fontSize: 10, color: '#8392A5' } },
-          ]
         }
       };
     });
