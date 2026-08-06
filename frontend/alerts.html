@@ -65,15 +65,13 @@
   display: flex; align-items: center; padding: 10px 12px;
   background: var(--color-surface); border: 1px solid var(--color-border);
   border-radius: 8px; margin: 4px 8px;
-  cursor: grab; transition: transform 0.2s ease, box-shadow 0.15s;
+  cursor: grab; transition: box-shadow 0.15s;
 }
 .fav-card:first-child { margin-top: 6px; }
 .fav-card:last-child { margin-bottom: 6px; }
 .fav-card:active { cursor: grabbing; }
-.fav-card.dragging { opacity: 0.4; box-shadow: 0 0 0 2px var(--color-primary); }
+.fav-card.dragging { opacity: 0.4; }
 .fav-card.drag-over { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary); }
-.fav-card.swap-up { transform: translateY(-60px); }
-.fav-card.swap-down { transform: translateY(60px); }
 .fav-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .fav-card .drag-handle { color: var(--color-text-muted); margin-right: 8px; font-size: 0.85rem; cursor: grab; user-select: none; }
 .fav-card .fav-info { flex: 1; min-width: 0; }
@@ -315,8 +313,10 @@ function loadQuotesForVisible() {
       cards.forEach(function(card) {
         var code = card.getAttribute('data-code');
         var qd = quotes[code] || {};
+        var nameEl = card.querySelector('.fav-name');
         var priceEl = card.querySelector('.fav-price');
         var pctEl = card.querySelector('.fav-pct');
+        if (nameEl && qd.name) nameEl.textContent = qd.name;
         if (priceEl) priceEl.textContent = qd.close || '--';
         if (pctEl) {
           var pct = qd.pct_chg || 0;
@@ -407,9 +407,22 @@ function reloadGroups() {
   });
 }
 
-// ── Card Drag (Part A: CSS translate animation) ──
+// ── Card Drag ──
 
-var _swapTarget = null;
+var _dragSrc = null;
+var _dragSrcGroupId = null;
+var _dropIndicator = null;
+
+// Block browser default text-drag globally on the alert page
+document.addEventListener('dragover', function(e) { e.preventDefault(); });
+document.addEventListener('drop', function(e) { e.preventDefault(); });
+
+function ensureDropIndicator() {
+  if (!_dropIndicator) {
+    _dropIndicator = document.createElement('div');
+    _dropIndicator.className = 'drop-indicator';
+  }
+}
 
 function handleCardDragStart(e) {
   _dragSrc = e.target.closest('.fav-card');
@@ -422,47 +435,48 @@ function handleCardDragStart(e) {
 
 function handleCardDragOver(e) {
   e.preventDefault();
+  e.stopPropagation();
   e.dataTransfer.dropEffect = 'move';
   var container = e.target.closest('.fav-cards-container');
   if (!container) return;
   var card = e.target.closest('.fav-card');
-  if (!card || card === _dragSrc || card === _swapTarget) return;
-
-  // Remove swap from previous target
-  if (_swapTarget) {
-    _swapTarget.classList.remove('swap-up', 'swap-down', 'drag-over');
+  if (!card || card === _dragSrc) {
+    removeDropIndicator();
+    return;
   }
 
-  var cards = Array.from(container.querySelectorAll('.fav-card'));
-  var srcIdx = cards.indexOf(_dragSrc);
-  var tgtIdx = cards.indexOf(card);
-  if (srcIdx >= 0 && tgtIdx >= 0) {
-    card.classList.add(srcIdx < tgtIdx ? 'swap-up' : 'swap-down');
+  // Remove old indicator
+  removeDropIndicator();
+
+  // Insert indicator above or below the target card
+  var rect = card.getBoundingClientRect();
+  var midY = rect.top + rect.height / 2;
+  ensureDropIndicator();
+  if (e.clientY < midY) {
+    card.parentNode.insertBefore(_dropIndicator, card);
+  } else {
+    card.parentNode.insertBefore(_dropIndicator, card.nextSibling);
   }
+
+  // Highlight the bordering card
+  clearAllCardHighlights();
   card.classList.add('drag-over');
-  _swapTarget = card;
 }
 
 function handleCardDragLeave(e) {
-  // Only clear when leaving the container entirely, not between cards
-  var container = e.target.closest('.fav-cards-container');
-  if (!container) return;
-  var related = e.relatedTarget;
-  if (related && container.contains(related)) return;
-  // Left the container
-  if (_swapTarget) {
-    _swapTarget.classList.remove('swap-up', 'swap-down', 'drag-over');
-    _swapTarget = null;
-  }
+  e.stopPropagation();
 }
 
 function handleCardDrop(e) {
   e.preventDefault();
-  clearAllDragState();
+  e.stopPropagation();
+  removeDropIndicator();
+  clearAllCardHighlights();
 
   var targetCard = e.target.closest('.fav-card');
   var targetContainer = e.target.closest('.fav-cards-container');
 
+  // Check group header drop
   var targetHeader = e.target.closest('.fav-group-header');
   if (targetHeader && _dragSrc) {
     var targetGroupId = targetHeader.getAttribute('data-drop-group');
@@ -479,21 +493,31 @@ function handleCardDrop(e) {
   if (!targetCard || !_dragSrc || targetCard === _dragSrc) { resetDrag(); return; }
   if (!targetContainer) { resetDrag(); return; }
 
-  var groupKey = targetContainer.getAttribute('data-group-key');
+  // Determine drop position relative to target
   var cards = Array.from(targetContainer.querySelectorAll('.fav-card'));
   var srcIdx = cards.indexOf(_dragSrc);
   var tgtIdx = cards.indexOf(targetCard);
   if (srcIdx < 0 || tgtIdx < 0) { resetDrag(); return; }
 
+  var rect = targetCard.getBoundingClientRect();
+  var midY = rect.top + rect.height / 2;
+  var insertAfter = e.clientY >= midY;
+
   var srcCode = _dragSrc.getAttribute('data-code');
-  var tgtCode = targetCard.getAttribute('data-code');
   var globalSrcIdx = _allItems.findIndex(function(f){return f.stock_code === srcCode;});
+
+  // Find global target index based on drop position
+  var tgtCode = targetCard.getAttribute('data-code');
   var globalTgtIdx = _allItems.findIndex(function(f){return f.stock_code === tgtCode;});
+  if (insertAfter) globalTgtIdx += 1;
+
   if (globalSrcIdx >= 0 && globalTgtIdx >= 0) {
     var moved = _allItems.splice(globalSrcIdx, 1)[0];
-    _allItems.splice(globalTgtIdx, 0, moved);
+    var insertAt = globalSrcIdx < globalTgtIdx ? globalTgtIdx - 1 : globalTgtIdx;
+    _allItems.splice(insertAt, 0, moved);
   }
 
+  var groupKey = targetContainer.getAttribute('data-group-key');
   refreshGroupSection(groupKey);
 
   var ordered = _allItems.map(function(f){return f.stock_code;});
@@ -503,25 +527,21 @@ function handleCardDrop(e) {
 }
 
 function handleCardDragEnd(e) {
-  clearAllDragState();
+  removeDropIndicator();
+  clearAllCardHighlights();
   resetDrag();
 }
 
-function clearDragState(container) {
-  if (!container) return;
-  container.querySelectorAll('.fav-card.swap-up, .fav-card.swap-down').forEach(function(c) {
-    c.classList.remove('swap-up', 'swap-down');
-  });
+function removeDropIndicator() {
+  if (_dropIndicator && _dropIndicator.parentNode) {
+    _dropIndicator.parentNode.removeChild(_dropIndicator);
+  }
 }
 
-function clearAllDragState() {
-  document.querySelectorAll('.fav-card.drag-over, .fav-card.swap-up, .fav-card.swap-down').forEach(function(c) {
-    c.classList.remove('drag-over', 'swap-up', 'swap-down');
+function clearAllCardHighlights() {
+  document.querySelectorAll('.fav-card.drag-over').forEach(function(c) {
+    c.classList.remove('drag-over');
   });
-  document.querySelectorAll('.fav-group-header.drop-target').forEach(function(h) {
-    h.classList.remove('drop-target');
-  });
-  _swapTarget = null;
 }
 
 function resetDrag() {
