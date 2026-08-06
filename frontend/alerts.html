@@ -188,10 +188,21 @@
     <span id="quotaText">0/0</span>
   </div>
   <div id="favMainChartPanel" class="mood-panel" style="margin-bottom:16px;display:none;">
-    <div class="mood-header"><span class="mood-title">自选速览</span><span class="mood-date" id="favMainDate">配置T日</span></div>
-    <div class="mood-body" style="flex-direction:column;padding:8px 12px;">
+    <div class="mood-header" style="flex-wrap:wrap;gap:6px;">
+      <div style="display:flex;align-items:center;gap:0;">
+        <span class="mood-title">自选速览</span>
+        <div class="tabs" style="margin:0 0 0 16px;border-bottom:none;" id="favChartTabs">
+          <button class="tab active" data-tab="avg_chg" onclick="switchFavTab('avg_chg')">涨跌幅均值(%)</button>
+          <button class="tab" data-tab="prices" onclick="switchFavTab('prices')">价格走势(元)</button>
+        </div>
+        <span style="font-size:0.72rem;color:var(--color-text-muted);margin-left:10px;" id="favTabSubtitle">组内涨跌幅均值(%)</span>
+      </div>
+      <span class="mood-date" id="favMainDate">配置T日</span>
+    </div>
+    <div class="mood-body" style="flex-direction:column;padding:0;">
       <div id="favMainChartWrap" style="width:100%;height:320px;"></div>
       <div id="favConfigRows"></div>
+      <div id="favPriceControls" style="display:none;"></div>
     </div>
   </div>
   <div id="content" style="width:100%;"><p class="state-loading">加载中...</p></div>
@@ -200,7 +211,7 @@
     <button onclick="createNewGroup()">+ 新建</button>
   </div>
 </main>
-<script src="/js/app.js?v=5"></script>
+<script src="/js/app.js?v=6"></script>
 <script>
 if (!Session.loggedIn()) {
   document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用自选功能</p>';
@@ -530,6 +541,17 @@ function reloadGroups() {
     _ungroupedCount = r.data.ungrouped_count || 0;
     renderAll();
     loadQuotesForVisible();
+
+    // 恢复上次标签页
+    var tab = FavStore.getChartTab();
+    if (tab === 'prices') {
+      switchFavTab('prices');
+    } else {
+      var gi = [];
+      _groups.forEach(function(g) { gi.push({ key: String(g.id), name: g.name, count: g.stock_count }); });
+      renderFavConfigRows(gi, FavStore.getTDates(), []);
+      loadFavMainChart();
+    }
   });
 }
 
@@ -943,6 +965,9 @@ function loadFavMainChart() {
     renderFavMainChart(groupData, allDates);
     renderFavConfigRows(groupInfos, tDates, allDates);
 
+    // 通知子图当前模式
+    FavStore.setChartTab('avg_chg');
+
     var viewForSub = { groups: [], ungrouped: null, dates: allDates };
     groupData.forEach(function(gd) {
       var entry = { name: gd.name, stock_count: gd.stockCount, daily_chg: gd.dailyChg };
@@ -953,7 +978,7 @@ function loadFavMainChart() {
         viewForSub.groups.push(entry);
       }
     });
-    try { localStorage.setItem('fav_stats_view', JSON.stringify(viewForSub)); } catch(e) {}
+    try { FavStore.setStatsView(viewForSub); } catch(e) {}
   }
 
   if (_favStatsReq) clearTimeout(_favStatsReq);
@@ -1022,7 +1047,7 @@ function renderFavMainChart(groupData, dates) {
       }
     },
     legend: { type: 'scroll', bottom: 0, textStyle: { color: '#8392A5', fontSize: 11 }, itemWidth: 14, itemHeight: 10 },
-    grid: { left: 14, right: 12, top: 8, bottom: 36 },
+    grid: { left: 18, right: 12, top: 8, bottom: 36 },
     xAxis: {
       type: 'category', data: xLabels, boundaryGap: false,
       axisLabel: { color: '#8392A5', fontSize: 10 },
@@ -1032,8 +1057,7 @@ function renderFavMainChart(groupData, dates) {
     yAxis: {
       type: 'value',
       axisLabel: { color: '#8392A5', fontSize: 10, formatter: '{value}%' },
-      splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } },
-      name: '涨跌幅均值(%)', nameTextStyle: { color: '#B0B8C4', fontSize: 11 }
+      splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } }
     },
     series: seriesOpts
   });
@@ -1077,6 +1101,221 @@ function onTDateChange(groupKey, inputEl, minDate, maxDate) {
 window.addEventListener('resize', function() {
   if (_favMainChart) _favMainChart.resize();
 });
+
+// ── 标签切换 ──
+var _priceColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
+var _favPriceReq = null;
+
+function switchFavTab(tabId) {
+  FavStore.setChartTab(tabId);
+  document.querySelectorAll('#favChartTabs .tab').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
+  });
+  var subtitle = document.getElementById('favTabSubtitle');
+  var configRows = document.getElementById('favConfigRows');
+  var priceCtrls = document.getElementById('favPriceControls');
+  var hasGroups = _groups && _groups.length > 0;
+
+  if (tabId === 'prices') {
+    if (subtitle) subtitle.textContent = '个股价格走势（元）';
+    if (configRows) configRows.style.display = 'none';
+    if (priceCtrls) priceCtrls.style.display = '';
+    loadFavPriceChart();
+  } else {
+    if (subtitle) subtitle.textContent = '组内涨跌幅均值(%)';
+    if (configRows) configRows.style.display = '';
+    if (priceCtrls) priceCtrls.style.display = 'none';
+    if (hasGroups) {
+      loadFavMainChart();
+    } else {
+      document.getElementById('favMainChartPanel').style.display = 'none';
+    }
+  }
+}
+
+// ── 价格走势模式 ──
+function loadFavPriceChart() {
+  var codes = FavStore.getPriceCodes();
+  if (!codes.length) {
+    // 默认选前5只
+    var allCodes = [];
+    (_allItems || []).forEach(function(item) { allCodes.push(item.stock_code); });
+    if (!allCodes.length) {
+      document.getElementById('favMainChartPanel').style.display = 'none';
+      return;
+    }
+    codes = allCodes.slice(0, 5);
+    FavStore.setPriceCodes(codes);
+  }
+
+  var tDates = FavStore.getTDates();
+  var sharedTDate = tDates['__price__'] || '';
+
+  document.getElementById('favMainChartPanel').style.display = '';
+
+  if (_favPriceReq) clearTimeout(_favPriceReq);
+  _favPriceReq = setTimeout(function() {
+    var qs = 'codes=' + encodeURIComponent(codes.join(','));
+    if (sharedTDate) qs += '&t_date=' + sharedTDate;
+    API.get('/alerts/favorites/stock-prices?' + qs).then(function(r) {
+      var data = r.data || { stocks: [], dates: [] };
+      renderFavPriceChart(data);
+      renderFavPriceControls(data, sharedTDate);
+
+      // 写入子图缓存
+      var viewForSub = { tab: 'prices', dates: data.dates || [], stocks: data.stocks || [] };
+      try { FavStore.setPriceView(viewForSub); } catch(e) {}
+    }).catch(function() {
+      document.getElementById('favMainChartPanel').style.display = 'none';
+    });
+  }, 300);
+}
+
+function renderFavPriceChart(data) {
+  var wrap = document.getElementById('favMainChartWrap');
+  if (!wrap) return;
+  var dates = data.dates || [];
+  var stocks = data.stocks || [];
+  var xLabels = dates.map(function(d) { return fmtDate(d); });
+
+  if (!xLabels.length || !stocks.length) {
+    if (_favMainChart) { _favMainChart.dispose(); _favMainChart = null; }
+    return;
+  }
+
+  if (_favMainChart) _favMainChart.dispose();
+  _favMainChart = echarts.init(wrap);
+
+  var seriesOpts = stocks.map(function(st, si) {
+    var closeMap = {};
+    (st.daily || []).forEach(function(d) { closeMap[d.date] = d.close; });
+    var values = dates.map(function(d) { return closeMap[d] !== undefined ? closeMap[d] : null; });
+    var ci = si % _priceColors.length;
+    return {
+      name: st.name + ' (' + st.ts_code + ')',
+      type: 'line',
+      data: values,
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 5,
+      lineStyle: { width: 2, color: _priceColors[ci] },
+      itemStyle: { color: _priceColors[ci] },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: _priceColors[ci] + '30' },
+          { offset: 1, color: _priceColors[ci] + '02' }
+        ])
+      }
+    };
+  });
+
+  _favMainChart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        var lines = ['<b>' + params[0].axisValue + '</b>'];
+        params.forEach(function(p) {
+          var v = p.value;
+          lines.push(p.marker + ' ' + p.seriesName + ': ' + (v != null ? v + '元' : '--'));
+        });
+        return lines.join('<br/>');
+      }
+    },
+    legend: { type: 'scroll', bottom: 0, textStyle: { color: '#8392A5', fontSize: 11 }, itemWidth: 14, itemHeight: 10 },
+    grid: { left: 18, right: 12, top: 8, bottom: 36 },
+    xAxis: {
+      type: 'category', data: xLabels, boundaryGap: false,
+      axisLabel: { color: '#8392A5', fontSize: 10 },
+      axisLine: { lineStyle: { color: 'rgba(128,128,128,0.15)' } },
+      axisTick: { show: false }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#8392A5', fontSize: 10 },
+      splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } }
+    },
+    series: seriesOpts
+  });
+}
+
+function renderFavPriceControls(data, sharedTDate) {
+  var ctrls = document.getElementById('favPriceControls');
+  if (!ctrls) return;
+
+  var stocks = data.stocks || [];
+  var dates = data.dates || [];
+  var minDate = dates.length > 0 ? date8toPicker(dates[0]) : '';
+  var maxDate = dates.length > 0 ? date8toPicker(dates[dates.length - 1]) : '';
+  var td = sharedTDate || maxDate.replace(/-/g, '');
+  var selCodes = FavStore.getPriceCodes();
+  var selSet = {};
+  selCodes.forEach(function(c) { selSet[c] = true; });
+
+  var html = '';
+  html += '<div class="fav-price-controls-wrap">';
+  html += '<span style="font-size:0.75rem;color:var(--color-text-muted);">T日</span>';
+  html += '<input type="date" value="' + date8toPicker(td) + '" min="' + minDate + '" max="' + maxDate + '" onchange="onPriceTDateChange(this,\'' + minDate + '\',\'' + maxDate + '\')" style="width:130px;" />';
+  html += '<span style="font-size:0.75rem;color:var(--color-text-muted);margin-left:8px;">点击选择股票（最多10只）</span>';
+  html += '</div>';
+  html += '<div class="fav-price-chips" id="favPriceChips">';
+
+  // 已选 stocks
+  var selected = [];
+  var unselected = [];
+  stocks.forEach(function(st, si) {
+    if (selSet[st.ts_code]) {
+      selected.push(st);
+    } else {
+      unselected.push(st);
+    }
+  });
+
+  function chipHtml(st, si, active) {
+    var ci = si % _priceColors.length;
+    return '<span class="fav-price-chip' + (active ? ' active' : '') + '" data-code="' + st.ts_code + '" onclick="togglePriceChip(this)" style="' + (active ? '' : 'border-color:transparent;') + '">'
+      + '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + _priceColors[ci] + ';flex-shrink:0;"></span>'
+      + st.name
+      + '</span>';
+  }
+
+  selected.forEach(function(st, i) { html += chipHtml(st, i, true); });
+  unselected.forEach(function(st, i) { html += chipHtml(st, selected.length + i, false); });
+
+  html += '</div>';
+
+  ctrls.innerHTML = html;
+}
+
+function togglePriceChip(chip) {
+  var code = chip.getAttribute('data-code');
+  var codes = FavStore.getPriceCodes();
+  var idx = codes.indexOf(code);
+  var isActive = idx >= 0;
+
+  if (isActive) {
+    codes.splice(idx, 1);
+  } else {
+    if (codes.length >= 10) {
+      showToast('最多选择10只股票');
+      return;
+    }
+    codes.push(code);
+  }
+  FavStore.setPriceCodes(codes);
+  loadFavPriceChart();
+}
+
+function onPriceTDateChange(inputEl, minDate, maxDate) {
+  var val = inputEl.value;
+  if (val < minDate || val > maxDate) {
+    alert('T日超出可选范围（' + minDate + ' ~ ' + maxDate + '）');
+    inputEl.value = inputEl.defaultValue;
+    return;
+  }
+  inputEl.defaultValue = val;
+  FavStore.setTDate('__price__', pickerToDate8(val));
+  loadFavPriceChart();
+}
 
 // ── 分组管理 ──
 

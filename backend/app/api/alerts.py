@@ -515,6 +515,78 @@ async def favorites_group_stats(
     return APIResponse(data={"groups": groups_out, "ungrouped": ungrouped, "dates": dates}, timestamp=int(time.time()))
 
 
+@router.get("/favorites/stock-prices")
+async def favorites_stock_prices(
+    codes: str = "",
+    t_date: str = "",
+    user: dict = Depends(require_auth),
+):
+    """个股收盘价走势 — 22交易日窗口，最多10只股票。"""
+    uid = user["user_id"]
+    if not uid:
+        raise HTTPException(401, "请先登录")
+
+    code_list = [c.strip() for c in codes.split(",") if c.strip()][:10] if codes else []
+    if not code_list:
+        return APIResponse(data={"stocks": [], "dates": []}, timestamp=int(time.time()))
+
+    async with async_session() as session:
+        base_date = t_date.strip() if t_date else None
+        if base_date:
+            r = await session.execute(
+                _text("""SELECT DISTINCT trade_date FROM stock_daily
+                         WHERE trade_date <= :td ORDER BY trade_date DESC LIMIT 22"""),
+                {"td": base_date}
+            )
+        else:
+            r = await session.execute(
+                _text("SELECT DISTINCT trade_date FROM stock_daily ORDER BY trade_DATE DESC LIMIT 22")
+            )
+        dates = [row[0] for row in r.fetchall()]
+        dates.reverse()
+
+        if not dates:
+            return APIResponse(data={"stocks": [], "dates": []}, timestamp=int(time.time()))
+
+        # 批量查 close + pct_chg
+        code_phs = ",".join([f":c{i}" for i in range(len(code_list))])
+        date_phs = ",".join([f":d{i}" for i in range(len(dates))])
+        params = {f"c{i}": code for i, code in enumerate(code_list)}
+        params.update({f"d{i}": d for i, d in enumerate(dates)})
+        r2 = await session.execute(
+            _text(f"""SELECT ts_code, trade_date, close, pct_chg FROM stock_daily
+                     WHERE ts_code IN ({code_phs}) AND trade_date IN ({date_phs})"""),
+            params
+        )
+        rows = r2.fetchall()
+        code_close: dict[str, dict[str, float]] = {}
+        code_pct: dict[str, dict[str, float]] = {}
+        for ts_code, td, close, pct in rows:
+            code_close.setdefault(ts_code, {})[td] = round(float(close), 2) if close is not None else None
+            code_pct.setdefault(ts_code, {})[td] = round(float(pct), 2) if pct is not None else None
+
+    stocks_out = []
+    async with async_session() as session:
+        for code in code_list:
+            r = await session.execute(
+                _text("SELECT name FROM stocks WHERE ts_code = :code LIMIT 1"),
+                {"code": code}
+            )
+            row = r.fetchone()
+            name = row[0] if row else code
+            daily_list = [
+                {
+                    "date": td,
+                    "close": code_close.get(code, {}).get(td, None),
+                    "pct_chg": code_pct.get(code, {}).get(td, None),
+                }
+                for td in dates
+            ]
+            stocks_out.append({"ts_code": code, "name": name, "daily": daily_list})
+
+    return APIResponse(data={"stocks": stocks_out, "dates": dates}, timestamp=int(time.time()))
+
+
 # ── 预警配置 ──
 
 @router.get("/configs")

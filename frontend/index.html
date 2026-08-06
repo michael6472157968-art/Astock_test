@@ -176,7 +176,7 @@
   </div>
 </div>
 
-<script src="/js/app.js?v=5"></script>
+<script src="/js/app.js?v=6"></script>
 <script src="/lib/echarts.js"></script>
 <script>
 (function() {
@@ -755,7 +755,7 @@
         textStyle: { color: '#8392A5', fontSize: 11 },
         itemWidth: 14, itemHeight: 10
       },
-      grid: { left: 8, right: 12, top: 8, bottom: 36 },
+      grid: { left: 18, right: 12, top: 8, bottom: 36 },
       xAxis: {
         type: 'category',
         data: xLabels,
@@ -767,9 +767,7 @@
       yAxis: {
         type: 'value',
         axisLabel: { color: '#8392A5', fontSize: 10, formatter: '{value}%' },
-        splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } },
-        name: '涨跌幅均值(%)',
-        nameTextStyle: { color: '#B0B8C4', fontSize: 11 }
+        splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } }
       },
       series: seriesOpts
     });
@@ -798,11 +796,26 @@
         document.getElementById('favGroupChartWrap').innerHTML = '';
         return;
       }
-      // 副图：优先读主图缓存，缓存空时fallback到API
+      // 副图：读用户绑定的缓存 + 根据fav_chart_tab分派模式
+      var chartTab = FavStore.getChartTab();
+
+      if (chartTab === 'prices') {
+        // 价格走势模式
+        var pv = FavStore.getPriceView();
+        if (pv && pv.stocks && pv.stocks.length > 0) {
+          document.getElementById('favQuickEmpty').style.display = 'none';
+          renderFavPriceSubChart(pv);
+        } else {
+          document.getElementById('favQuickEmpty').style.display = 'block';
+          document.getElementById('favQuickEmpty').textContent = '暂无价格数据';
+        }
+        return;
+      }
+
+      // avg_chg：涨跌幅均值模式
       try {
-        var raw = localStorage.getItem('fav_stats_view');
-        if (raw) {
-          var data = JSON.parse(raw);
+        var data = FavStore.getStatsView();
+        if (data) {
           var hasData = (data.groups || []).some(function(g) { return g.stock_count > 0; }) ||
                         (data.ungrouped && data.ungrouped.stock_count > 0);
           if (hasData) {
@@ -835,6 +848,76 @@
     }).catch(function() {
       document.getElementById('favQuickEmpty').style.display = 'block';
       document.getElementById('favQuickEmpty').textContent = '加载失败';
+    });
+  }
+
+  function renderFavPriceSubChart(data) {
+    var wrap = document.getElementById('favGroupChartWrap');
+    if (!wrap) return;
+
+    var dates = data.dates || [];
+    var stocks = data.stocks || [];
+    var xLabels = dates.map(function(d) { return fmtDate(d); });
+    var priceColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
+
+    if (!stocks.length || !xLabels.length) {
+      if (_favGroupChart) { _favGroupChart.dispose(); _favGroupChart = null; }
+      wrap.innerHTML = '';
+      return;
+    }
+
+    if (_favGroupChart) _favGroupChart.dispose();
+    _favGroupChart = echarts.init(wrap);
+
+    var seriesOpts = stocks.map(function(st, si) {
+      var closeMap = {};
+      (st.daily || []).forEach(function(d) { closeMap[d.date] = d.close; });
+      var values = dates.map(function(d) { return closeMap[d] !== undefined ? closeMap[d] : null; });
+      var ci = si % priceColors.length;
+      return {
+        name: st.name,
+        type: 'line',
+        data: values,
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: { width: 2, color: priceColors[ci] },
+        itemStyle: { color: priceColors[ci] },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: priceColors[ci] + '30' },
+            { offset: 1, color: priceColors[ci] + '02' }
+          ])
+        }
+      };
+    });
+
+    _favGroupChart.setOption({
+      tooltip: {
+        trigger: 'axis',
+        formatter: function(params) {
+          var lines = ['<b>' + params[0].axisValue + '</b>'];
+          params.forEach(function(p) {
+            var v = p.value;
+            lines.push(p.marker + ' ' + p.seriesName + ': ' + (v != null ? v + '元' : '--'));
+          });
+          return lines.join('<br/>');
+        }
+      },
+      legend: { type: 'scroll', bottom: 0, textStyle: { color: '#8392A5', fontSize: 11 }, itemWidth: 14, itemHeight: 10 },
+      grid: { left: 18, right: 12, top: 8, bottom: 36 },
+      xAxis: {
+        type: 'category', data: xLabels, boundaryGap: false,
+        axisLabel: { color: '#8392A5', fontSize: 10 },
+        axisLine: { lineStyle: { color: 'rgba(128,128,128,0.15)' } },
+        axisTick: { show: false }
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: { color: '#8392A5', fontSize: 10 },
+        splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } }
+      },
+      series: seriesOpts
     });
   }
 

@@ -161,6 +161,11 @@ var FavStore = {
   _cache: [],
   _loaded: false,
 
+  _ukey: function(base) {
+    var u = Session.get();
+    return base + '_' + (u ? u.id : 'guest');
+  },
+
   loadCache: function() {
     if (!Session.loggedIn()) return Promise.resolve([]);
     var self = this;
@@ -233,12 +238,20 @@ var FavStore = {
     });
   },
 
-  // ── T日配置（跨页面共享，localStorage key = fav_t_dates）──
+  // ── T日配置（用户绑定 + 旧键迁移）──
   getTDates: function() {
     try {
-      var raw = localStorage.getItem('fav_t_dates');
-      return raw ? JSON.parse(raw) : {};
-    } catch (e) { return {}; }
+      var newKey = this._ukey('fav_t_dates');
+      var raw = localStorage.getItem(newKey);
+      if (raw) return JSON.parse(raw);
+      var oldRaw = localStorage.getItem('fav_t_dates');
+      if (oldRaw) {
+        localStorage.setItem(newKey, oldRaw);
+        localStorage.removeItem('fav_t_dates');
+        return JSON.parse(oldRaw);
+      }
+    } catch (e) {}
+    return {};
   },
 
   setTDate: function(groupKey, dateStr) {
@@ -248,11 +261,56 @@ var FavStore = {
     } else {
       delete cfg[String(groupKey)];
     }
-    localStorage.setItem('fav_t_dates', JSON.stringify(cfg));
+    localStorage.setItem(this._ukey('fav_t_dates'), JSON.stringify(cfg));
   },
 
   clearTDates: function() {
-    localStorage.removeItem('fav_t_dates');
+    localStorage.removeItem(this._ukey('fav_t_dates'));
+  },
+
+  // ── 图表标签切换（用户绑定）──
+  getChartTab: function() {
+    return localStorage.getItem(this._ukey('fav_chart_tab')) || 'avg_chg';
+  },
+  setChartTab: function(tab) {
+    localStorage.setItem(this._ukey('fav_chart_tab'), tab);
+  },
+
+  // ── 价格模式选股（用户绑定）──
+  getPriceCodes: function() {
+    try { var raw = localStorage.getItem(this._ukey('fav_price_codes')); return raw ? JSON.parse(raw) : []; }
+    catch(e) { return []; }
+  },
+  setPriceCodes: function(codes) {
+    localStorage.setItem(this._ukey('fav_price_codes'), JSON.stringify(codes));
+  },
+
+  // ── 价格模式缓存（用户绑定）──
+  getPriceView: function() {
+    try { var raw = localStorage.getItem(this._ukey('fav_price_view')); return raw ? JSON.parse(raw) : null; }
+    catch(e) { return null; }
+  },
+  setPriceView: function(data) {
+    localStorage.setItem(this._ukey('fav_price_view'), JSON.stringify(data));
+  },
+
+  // ── 涨跌幅统计缓存（用户绑定 + 旧键迁移）──
+  getStatsView: function() {
+    try {
+      var newKey = this._ukey('fav_stats_view');
+      var raw = localStorage.getItem(newKey);
+      if (raw) return JSON.parse(raw);
+      var oldRaw = localStorage.getItem('fav_stats_view');
+      if (oldRaw) {
+        localStorage.setItem(newKey, oldRaw);
+        localStorage.removeItem('fav_stats_view');
+        return JSON.parse(oldRaw);
+      }
+    } catch(e) {}
+    return null;
+  },
+  setStatsView: function(data) {
+    localStorage.setItem(this._ukey('fav_stats_view'), JSON.stringify(data));
   }
 };
 
