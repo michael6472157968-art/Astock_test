@@ -11,7 +11,7 @@ import logging
 import os
 from datetime import datetime
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from app.core.database import async_session
 from app.core.settings import get_settings
