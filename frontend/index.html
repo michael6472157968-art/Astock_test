@@ -851,6 +851,13 @@
     });
   }
 
+  function _stockPctColorForCode(code) {
+    var colors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a'];
+    var hash = 0;
+    for (var i = 0; i < code.length; i++) { hash = ((hash << 5) - hash) + code.charCodeAt(i); hash |= 0; }
+    return colors[Math.abs(hash) % colors.length];
+  }
+
   function renderFavStockPctSubChart(data) {
     var wrap = document.getElementById('favGroupChartWrap');
     if (!wrap) return;
@@ -858,7 +865,6 @@
     var dates = data.dates || [];
     var stocks = data.stocks || [];
     var xLabels = dates.map(function(d) { return fmtDate(d); });
-    var stockPctColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
 
     if (!stocks.length || !xLabels.length) {
       if (_favGroupChart) { _favGroupChart.dispose(); _favGroupChart = null; }
@@ -869,12 +875,18 @@
     if (_favGroupChart) _favGroupChart.dispose();
     _favGroupChart = echarts.init(wrap);
 
-    var seriesOpts = stocks.map(function(st, si) {
+    var tDates = FavStore.getTDates();
+
+    var seriesOpts = stocks.map(function(st) {
+      var code = st.ts_code;
       var pctMap = {};
       (st.daily || []).forEach(function(d) { pctMap[d.date] = d.pct_chg; });
+      var tDateKey = '__sp_' + code;
+      var stockTDate = tDates[tDateKey] || dates[0];
       var cum = 0;
       var hasFirst = false;
       var values = dates.map(function(d) {
+        if (d < stockTDate) return null;
         var pct = pctMap[d];
         if (pct != null) {
           if (!hasFirst) { hasFirst = true; cum = 0; }
@@ -883,7 +895,7 @@
         }
         return hasFirst ? +cum.toFixed(2) : null;
       });
-      var ci = si % stockPctColors.length;
+      var color = _stockPctColorForCode(code);
       return {
         name: st.name,
         type: 'line',
@@ -891,12 +903,12 @@
         smooth: true,
         symbol: 'circle',
         symbolSize: 6,
-        lineStyle: { width: 2, color: stockPctColors[ci] },
-        itemStyle: { color: stockPctColors[ci] },
+        lineStyle: { width: 2, color: color },
+        itemStyle: { color: color },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: stockPctColors[ci] + '30' },
-            { offset: 1, color: stockPctColors[ci] + '02' }
+            { offset: 0, color: color + '30' },
+            { offset: 1, color: color + '02' }
           ])
         }
       };

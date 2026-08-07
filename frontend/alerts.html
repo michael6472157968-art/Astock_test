@@ -335,7 +335,7 @@ function renderUngroupedSection() {
   h += '<span class="group-name">未分组</span>';
   h += '<span class="group-count">' + items.length + '只</span>';
   h += '</div>';
-  h += '<div class="fav-group-body' + (collapsed ? '' : ' open') + '">';
+  h += '<div class="fav-group-body' + (collapsed ? '' : ' open') + '" data-drop-group="' + groupId + '" ondragover="handleGroupDragOver(event)" ondragleave="handleGroupDragLeave(event)" ondrop="handleGroupDrop(event)">';
   h += renderCards(items, pg, groupId);
   h += '</div></div>';
   return h;
@@ -356,7 +356,7 @@ function renderGroupSection(g) {
   h += '<button class="group-action" onclick="event.stopPropagation();startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')" title="重命名">✎</button>';
   h += '<button class="group-action danger" onclick="event.stopPropagation();deleteGroupConfirm(' + g.id + ')" title="删除分组">✕</button>';
   h += '</div>';
-  h += '<div class="fav-group-body' + (collapsed ? '' : ' open') + '">';
+  h += '<div class="fav-group-body' + (collapsed ? '' : ' open') + '" data-drop-group="' + g.id + '" ondragover="handleGroupDragOver(event)" ondragleave="handleGroupDragLeave(event)" ondrop="handleGroupDrop(event)">';
   h += renderCards(items, pg, groupId);
   h += '</div></div>';
   return h;
@@ -626,13 +626,10 @@ function getTouchDropGroup(e) {
   if (!el) return null;
   var header = el.closest('.fav-group-header');
   if (header) return header.getAttribute('data-drop-group');
+  var body = el.closest('.fav-group-body');
+  if (body) return body.getAttribute('data-drop-group');
   var card = el.closest('.fav-card');
   if (card) return card.getAttribute('data-group-id') || null;
-  var body = el.closest('.fav-group-body');
-  if (body) {
-    var hdr = body.parentElement.querySelector('.fav-group-header');
-    if (hdr) return hdr.getAttribute('data-drop-group');
-  }
   return null;
 }
 
@@ -675,8 +672,13 @@ document.addEventListener('touchmove', function(e) {
   document.querySelectorAll('.fav-group-header.drop-target').forEach(function(h) { h.classList.remove('drop-target'); });
   var groupId = getTouchDropGroup(touch);
   if (groupId !== null) {
-    var hdr = document.querySelector('.fav-group-header[data-drop-group=\"' + groupId + '\"]');
-    if (hdr) hdr.classList.add('drop-target');
+    var hdr = document.querySelector('[data-drop-group="' + groupId + '"]');
+    if (hdr) {
+      if (hdr.classList.contains('fav-group-body')) {
+        hdr = hdr.parentElement.querySelector('.fav-group-header');
+      }
+      if (hdr) hdr.classList.add('drop-target');
+    }
   }
 }, { passive: false });
 
@@ -836,28 +838,51 @@ function resetDrag() {
   _dragSrcGroupId = null;
 }
 
-// ── Group Header Drop Target (for cross-group moves) ──
+// ── Group Header/Body Drop Target (for cross-group moves) ──
 
 function handleGroupDragOver(e) {
   if (!_dragSrc) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
   var header = e.target.closest('.fav-group-header');
-  if (header) header.classList.add('drop-target');
+  if (header) { header.classList.add('drop-target'); return; }
+  var body = e.target.closest('.fav-group-body');
+  if (body) {
+    var hdr = body.parentElement.querySelector('.fav-group-header');
+    if (hdr) hdr.classList.add('drop-target');
+  }
 }
 
 function handleGroupDragLeave(e) {
   var header = e.target.closest('.fav-group-header');
-  if (header) header.classList.remove('drop-target');
+  if (header) { header.classList.remove('drop-target'); return; }
+  var body = e.target.closest('.fav-group-body');
+  if (body) {
+    var hdr = body.parentElement.querySelector('.fav-group-header');
+    if (hdr) hdr.classList.remove('drop-target');
+  }
 }
 
 function handleGroupDrop(e) {
   e.preventDefault();
-  var header = e.target.closest('.fav-group-header');
-  if (!header || !_dragSrc) { clearAllDragState(); resetDrag(); return; }
-  header.classList.remove('drop-target');
+  var targetGroupId = null;
 
-  var targetGroupId = header.getAttribute('data-drop-group');
+  var header = e.target.closest('.fav-group-header');
+  if (header) {
+    targetGroupId = header.getAttribute('data-drop-group');
+  } else {
+    var body = e.target.closest('.fav-group-body');
+    if (body) {
+      var hdr = body.parentElement.querySelector('.fav-group-header');
+      if (hdr) targetGroupId = hdr.getAttribute('data-drop-group');
+    }
+  }
+
+  if (!targetGroupId || !_dragSrc) { clearAllDragState(); resetDrag(); return; }
+
+  // Remove highlight from all headers
+  document.querySelectorAll('.fav-group-header.drop-target').forEach(function(h) { h.classList.remove('drop-target'); });
+
   if (targetGroupId === '__ungrouped__') targetGroupId = null;
   else targetGroupId = parseInt(targetGroupId);
 
@@ -885,6 +910,16 @@ function loadGroupMore(groupKey) {
   _groupPage[groupKey] = currentPg + _pageSize;
   refreshGroupSection(groupKey);
   loadQuotesForVisible();
+  // 增加页面高度，确保新加载的股票可见
+  setTimeout(function() {
+    var lastCard = document.querySelector('[data-group-id="' + (groupKey === '__ungrouped__' ? '__ungrouped__' : groupKey) + '"]');
+    if (lastCard) {
+      var rect = lastCard.getBoundingClientRect();
+      if (rect.bottom > window.innerHeight) {
+        window.scrollBy(0, Math.min(rect.bottom - window.innerHeight + 400, 800));
+      }
+    }
+  }, 100);
 }
 
 function refreshGroupSection(groupKey) {
@@ -938,7 +973,7 @@ function toggleObserveStock(btn, code) {
     btn.classList.remove('active');
     btn.textContent = '涨跌观测';
   } else {
-    if (codes.length >= 10) { showToast('最多观测10只股票'); return; }
+    if (codes.length >= 5) { showToast('最多观测5只股票'); return; }
     codes.push(code);
     btn.classList.add('active');
     btn.textContent = '观测中';
@@ -1189,7 +1224,13 @@ window.addEventListener('resize', function() {
 });
 
 // ── 标签切换 ──
-var _stockPctColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
+var _stockPctColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a'];
+
+function _stockPctColorForCode(code) {
+  var hash = 0;
+  for (var i = 0; i < code.length; i++) { hash = ((hash << 5) - hash) + code.charCodeAt(i); hash |= 0; }
+  return _stockPctColors[Math.abs(hash) % _stockPctColors.length];
+}
 var _favStockPctReq = null;
 
 function switchFavTab(tabId) {
@@ -1223,7 +1264,6 @@ function switchFavTab(tabId) {
 function loadFavStockPctChart() {
   var codes = FavStore.getStockPctCodes();
   if (!codes.length) {
-    // 默认选前5只
     var allCodes = [];
     (_allItems || []).forEach(function(item) { allCodes.push(item.stock_code); });
     if (!allCodes.length) {
@@ -1234,19 +1274,15 @@ function loadFavStockPctChart() {
     FavStore.setStockPctCodes(codes);
   }
 
-  var tDates = FavStore.getTDates();
-  var sharedTDate = tDates['__stock_pct__'] || '';
-
   document.getElementById('favMainChartPanel').style.display = '';
 
   if (_favStockPctReq) clearTimeout(_favStockPctReq);
   _favStockPctReq = setTimeout(function() {
     var qs = 'codes=' + encodeURIComponent(codes.join(','));
-    if (sharedTDate) qs += '&t_date=' + sharedTDate;
     API.get('/alerts/favorites/stock-prices?' + qs).then(function(r) {
       var data = r.data || { stocks: [], dates: [] };
       renderFavStockPctChart(data);
-      renderFavStockPctControls(data, sharedTDate);
+      renderFavStockPctControls(data);
 
       // 写入子图缓存
       var viewForSub = { tab: 'stock_pct', dates: data.dates || [], stocks: data.stocks || [] };
@@ -1272,34 +1308,43 @@ function renderFavStockPctChart(data) {
   if (_favMainChart) _favMainChart.dispose();
   _favMainChart = echarts.init(wrap);
 
-  var seriesOpts = stocks.map(function(st, si) {
+  var tDates = FavStore.getTDates();
+
+  var seriesOpts = stocks.map(function(st) {
+    var code = st.ts_code;
     var pctMap = {};
     (st.daily || []).forEach(function(d) { pctMap[d.date] = d.pct_chg; });
+
+    // 该个股的T日（若未设置则用窗口首日作起点）
+    var tDateKey = '__sp_' + code;
+    var stockTDate = tDates[tDateKey] || dates[0];
+
     var cum = 0;
     var hasFirst = false;
     var values = dates.map(function(d) {
+      if (d < stockTDate) return null;
       var pct = pctMap[d];
       if (pct != null) {
-        if (!hasFirst) { hasFirst = true; cum = 0; } // 第一个有效日开始累加
+        if (!hasFirst) { hasFirst = true; cum = 0; }
         cum += pct;
         return +cum.toFixed(2);
       }
-      return hasFirst ? +cum.toFixed(2) : null; // 首日之前无数据的保持null
+      return hasFirst ? +cum.toFixed(2) : null;
     });
-    var ci = si % _stockPctColors.length;
+    var color = _stockPctColorForCode(code);
     return {
-      name: st.name + ' (' + st.ts_code + ')',
+      name: st.name + ' (' + code + ')',
       type: 'line',
       data: values,
       smooth: true,
       symbol: 'circle',
       symbolSize: 5,
-      lineStyle: { width: 2, color: _stockPctColors[ci] },
-      itemStyle: { color: _stockPctColors[ci] },
+      lineStyle: { width: 2, color: color },
+      itemStyle: { color: color },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: _stockPctColors[ci] + '30' },
-          { offset: 1, color: _stockPctColors[ci] + '02' }
+          { offset: 0, color: color + '30' },
+          { offset: 1, color: color + '02' }
         ])
       }
     };
@@ -1334,7 +1379,7 @@ function renderFavStockPctChart(data) {
   });
 }
 
-function renderFavStockPctControls(data, sharedTDate) {
+function renderFavStockPctControls(data) {
   var ctrls = document.getElementById('favStockPctControls');
   if (!ctrls) return;
 
@@ -1342,23 +1387,17 @@ function renderFavStockPctControls(data, sharedTDate) {
   var dates = data.dates || [];
   var minDate = dates.length > 0 ? date8toPicker(dates[0]) : '';
   var maxDate = dates.length > 0 ? date8toPicker(dates[dates.length - 1]) : '';
-  var td = sharedTDate || maxDate.replace(/-/g, '');
+  var tDates = FavStore.getTDates();
   var selCodes = FavStore.getStockPctCodes();
   var selSet = {};
   selCodes.forEach(function(c) { selSet[c] = true; });
 
   var html = '';
-  html += '<div class="fav-stock-pct-ctrls">';
-  html += '<span style="font-size:0.75rem;color:var(--color-text-muted);">T日</span>';
-  html += '<input type="date" value="' + date8toPicker(td) + '" min="' + minDate + '" max="' + maxDate + '" onchange="onStockPctTDateChange(this,\'' + minDate + '\',\'' + maxDate + '\')" style="width:130px;" />';
-  html += '<span style="font-size:0.75rem;color:var(--color-text-muted);margin-left:8px;">点击选择股票（最多10只）</span>';
-  html += '</div>';
-  html += '<div class="fav-stock-pct-chips" id="favStockPctChips">';
+  html += '<div style="font-size:0.72rem;color:var(--color-text-muted);margin-bottom:8px;">观测个股 · 每只可独立设定T日（最多5只）</div>';
 
-  // 已选 stocks
   var selected = [];
   var unselected = [];
-  stocks.forEach(function(st, si) {
+  stocks.forEach(function(st) {
     if (selSet[st.ts_code]) {
       selected.push(st);
     } else {
@@ -1366,18 +1405,30 @@ function renderFavStockPctControls(data, sharedTDate) {
     }
   });
 
-  function chipHtml(st, si, active) {
-    var ci = si % _stockPctColors.length;
-    return '<span class="fav-stock-pct-chip' + (active ? ' active' : '') + '" data-code="' + st.ts_code + '" onclick="toggleStockPctChip(this)" style="' + (active ? '' : 'border-color:transparent;') + '">'
-      + '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + _stockPctColors[ci] + ';flex-shrink:0;"></span>'
-      + st.name
-      + '</span>';
+  selected.forEach(function(st) {
+    var code = st.ts_code;
+    var tDateKey = '__sp_' + code;
+    var td = tDates[tDateKey] || (dates.length > 0 ? dates[dates.length - 1] : '');
+    var color = _stockPctColorForCode(code);
+    html += '<div class="fav-stock-pct-row" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--color-border-light);">';
+    html += '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';flex-shrink:0;"></span>';
+    html += '<span style="flex:1;font-weight:500;font-size:0.82rem;">' + escHtml(st.name) + ' <span style="font-size:0.67rem;color:var(--color-text-muted);">' + code + '</span></span>';
+    html += '<span style="font-size:0.72rem;color:var(--color-text-muted);">T日</span>';
+    html += '<input type="date" value="' + date8toPicker(td) + '" min="' + minDate + '" max="' + maxDate + '" onchange="onStockPctTDateChange(\'' + code + '\', this, \'' + minDate + '\', \'' + maxDate + '\')" style="width:130px;" />';
+    html += '<button onclick="removeStockPctObserve(\'' + code + '\')" style="background:none;border:none;color:var(--color-text-muted);cursor:pointer;font-size:0.9rem;padding:2px 6px;" title="取消观测">✕</button>';
+    html += '</div>';
+  });
+
+  if (unselected.length > 0 && selected.length < 5) {
+    html += '<div style="margin-top:8px;font-size:0.7rem;color:var(--color-text-muted);margin-bottom:4px;">可添加（点击选择）</div>';
+    html += '<div class="fav-stock-pct-chips">';
+    unselected.forEach(function(st) {
+      html += '<span class="fav-stock-pct-chip" data-code="' + st.ts_code + '" onclick="toggleStockPctChip(this)" style="border-color:transparent;">'
+        + escHtml(st.name)
+        + '</span>';
+    });
+    html += '</div>';
   }
-
-  selected.forEach(function(st, i) { html += chipHtml(st, i, true); });
-  unselected.forEach(function(st, i) { html += chipHtml(st, selected.length + i, false); });
-
-  html += '</div>';
 
   ctrls.innerHTML = html;
 }
@@ -1386,13 +1437,12 @@ function toggleStockPctChip(chip) {
   var code = chip.getAttribute('data-code');
   var codes = FavStore.getStockPctCodes();
   var idx = codes.indexOf(code);
-  var isActive = idx >= 0;
 
-  if (isActive) {
+  if (idx >= 0) {
     codes.splice(idx, 1);
   } else {
-    if (codes.length >= 10) {
-      showToast('最多选择10只股票');
+    if (codes.length >= 5) {
+      showToast('最多观测5只股票');
       return;
     }
     codes.push(code);
@@ -1401,7 +1451,15 @@ function toggleStockPctChip(chip) {
   loadFavStockPctChart();
 }
 
-function onStockPctTDateChange(inputEl, minDate, maxDate) {
+function removeStockPctObserve(code) {
+  var codes = FavStore.getStockPctCodes();
+  var idx = codes.indexOf(code);
+  if (idx >= 0) codes.splice(idx, 1);
+  FavStore.setStockPctCodes(codes);
+  loadFavStockPctChart();
+}
+
+function onStockPctTDateChange(code, inputEl, minDate, maxDate) {
   var val = inputEl.value;
   if (val < minDate || val > maxDate) {
     alert('T日超出可选范围（' + minDate + ' ~ ' + maxDate + '）');
@@ -1409,7 +1467,7 @@ function onStockPctTDateChange(inputEl, minDate, maxDate) {
     return;
   }
   inputEl.defaultValue = val;
-  FavStore.setTDate('__stock_pct__', pickerToDate8(val));
+  FavStore.setTDate('__sp_' + code, pickerToDate8(val));
   loadFavStockPctChart();
 }
 

@@ -521,34 +521,27 @@ async def favorites_stock_prices(
     t_date: str = "",
     user: dict = Depends(require_auth),
 ):
-    """个股收盘价走势 — 22交易日窗口，最多10只股票。"""
+    """个股涨跌幅走势 — 近22交易日完整窗口，最多5只股票。t_date由前端按个股独立裁剪。"""
     uid = user["user_id"]
     if not uid:
         raise HTTPException(401, "请先登录")
 
-    code_list = [c.strip() for c in codes.split(",") if c.strip()][:10] if codes else []
+    code_list = [c.strip() for c in codes.split(",") if c.strip()][:5] if codes else []
     if not code_list:
         return APIResponse(data={"stocks": [], "dates": []}, timestamp=int(time.time()))
 
     async with async_session() as session:
-        base_date = t_date.strip() if t_date else None
-        if base_date:
-            r = await session.execute(
-                _text("""SELECT DISTINCT trade_date FROM stock_daily
-                         WHERE trade_date <= :td ORDER BY trade_date DESC LIMIT 22"""),
-                {"td": base_date}
-            )
-        else:
-            r = await session.execute(
-                _text("SELECT DISTINCT trade_date FROM stock_daily ORDER BY trade_DATE DESC LIMIT 22")
-            )
+        # 始终返回近22个交易日完整窗口
+        r = await session.execute(
+            _text("SELECT DISTINCT trade_date FROM stock_daily ORDER BY trade_date DESC LIMIT 22")
+        )
         dates = [row[0] for row in r.fetchall()]
         dates.reverse()
 
         if not dates:
             return APIResponse(data={"stocks": [], "dates": []}, timestamp=int(time.time()))
 
-        # 批量查 close + pct_chg
+        # 批量查 close + pct_chg（全窗口数据，前端按个股T日裁剪）
         code_phs = ",".join([f":c{i}" for i in range(len(code_list))])
         date_phs = ",".join([f":d{i}" for i in range(len(dates))])
         params = {f"c{i}": code for i, code in enumerate(code_list)}
@@ -559,10 +552,8 @@ async def favorites_stock_prices(
             params
         )
         rows = r2.fetchall()
-        code_close: dict[str, dict[str, float]] = {}
         code_pct: dict[str, dict[str, float]] = {}
         for ts_code, td, close, pct in rows:
-            code_close.setdefault(ts_code, {})[td] = round(float(close), 2) if close is not None else None
             code_pct.setdefault(ts_code, {})[td] = round(float(pct), 2) if pct is not None else None
 
     stocks_out = []
@@ -577,7 +568,6 @@ async def favorites_stock_prices(
             daily_list = [
                 {
                     "date": td,
-                    "close": code_close.get(code, {}).get(td, None),
                     "pct_chg": code_pct.get(code, {}).get(td, None),
                 }
                 for td in dates
