@@ -371,7 +371,7 @@ function renderGroupSection(g) {
   h += '<span class="group-drag-handle" title="拖拽排序分组">⋮⋮</span>';
   h += '<span class="group-name" id="groupName_' + g.id + '" ondblclick="startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')">' + escHtml(g.name) + '</span>';
   h += '<span class="group-count">' + items.length + '只</span>';
-  h += '<button class="group-obs-btn" onclick="event.stopPropagation();toggleObserveGroup(' + g.id + ',\'' + escHtml(escHtml(g.name)) + '\')" title="涨跌观测此分组">涨跌观测</button>';
+  h += '<button class="group-obs-btn' + (Session.canViewDashboard() ? '' : ' hidden') + '" onclick="event.stopPropagation();toggleObserveGroup(' + g.id + ',\'' + escHtml(escHtml(g.name)) + '\')" title="涨跌观测此分组">涨跌观测</button>';
   h += '<button class="group-action" onclick="event.stopPropagation();startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')" title="重命名">✎</button>';
   h += '<button class="group-action danger" onclick="event.stopPropagation();deleteGroupConfirm(' + g.id + ')" title="删除分组">✕</button>';
   h += '</div>';
@@ -410,7 +410,7 @@ function renderCards(items, totalVisible, groupKey) {
     h += '</div>';
     h += '<div class="fav-bot-row">';
     h += '<a class="fav-diag-btn" href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '" onclick="event.stopPropagation();">诊股</a>';
-    h += '<button class="fav-obs-btn" data-code="' + f.stock_code + '" onclick="event.stopPropagation();toggleObserveStock(this,\'' + f.stock_code + '\')">涨跌观测</button>';
+    h += '<button class="fav-obs-btn' + (Session.canViewDashboard() ? '' : ' hidden') + '" data-code="' + f.stock_code + '" onclick="event.stopPropagation();toggleObserveStock(this,\'' + f.stock_code + '\')">涨跌观测</button>';
     h += '<button class="fav-del" onclick="event.stopPropagation();removeFav(\'' + f.stock_code + '\')" title="删除自选">✕ 移除</button>';
     h += '</div>';
     h += '</div>';
