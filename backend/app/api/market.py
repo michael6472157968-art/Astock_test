@@ -1111,19 +1111,14 @@ async def market_calendar(user: dict = Depends(require_auth_optional)):
     # 获取当月历史交易日的大盘涨跌数据，用于日历着色
     index_pct_map = {}
     try:
-        # 计算日历来起始（回退到周一）和结束（推进到周日），覆盖所有显示的日期
         cal_start = month_start
         while cal_start.weekday() != 0:
             cal_start = cal_start - timedelta(days=1)
         cal_end = month_end + timedelta(days=(6 - month_end.weekday()))
-        from app.core.database import async_session
-        async with async_session() as sess:
-            r = await sess.execute(
-                text("SELECT trade_date, pct_chg FROM stock_daily WHERE ts_code='000001.SH' AND trade_date BETWEEN :s AND :e"),
-                {"s": cal_start.strftime("%Y%m%d"), "e": cal_end.strftime("%Y%m%d")},
-            )
-            for row in r.fetchall():
-                index_pct_map[row[0]] = round(float(row[1]), 2) if row[1] else 0
+        rows = await get_index_daily("000001.SH", cal_start.strftime("%Y%m%d"), cal_end.strftime("%Y%m%d"))
+        if rows:
+            for r in rows:
+                index_pct_map[str(r.get("trade_date", ""))] = round(float(r.get("pct_chg", 0) or 0), 2)
     except Exception:
         pass
 
