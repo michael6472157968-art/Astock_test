@@ -404,6 +404,8 @@ async def delete_group(group_id: int, user: dict = Depends(require_auth)):
     uid, tier = user["user_id"], user["tier"]
     if not uid:
         raise HTTPException(401, "请先登录")
+    if tier != 99:
+        raise HTTPException(403, "仅管理员可删除分组")
 
     ok = await user_data.delete_group(uid, group_id)
     if not ok:

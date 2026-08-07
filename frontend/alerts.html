@@ -477,7 +477,7 @@ function renderGroupSection(g) {
   h += '<span class="group-count">' + items.length + '只</span>';
   h += '<button class="group-obs-btn' + (Session.canViewDashboard() ? '' : ' hidden') + '" data-group-id="' + g.id + '" onclick="event.stopPropagation();toggleObserveGroup(' + g.id + ',\'' + escHtml(escHtml(g.name)) + '\')" title="涨跌观测此分组">涨跌观测</button>';
   h += '<button class="group-action" onclick="event.stopPropagation();startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')" title="重命名">✎</button>';
-  h += '<button class="group-action danger" onclick="event.stopPropagation();deleteGroupConfirm(' + g.id + ')" title="删除分组">✕</button>';
+  h += '<button class="group-action danger"' + (Session.isAdmin() ? '' : ' style="display:none"') + ' onclick="event.stopPropagation();deleteGroupConfirm(' + g.id + ')" title="删除分组">✕</button>';
   h += '</div>';
   h += '<div class="fav-group-body' + (collapsed ? '' : ' open') + '" data-drop-group="' + g.id + '" ondragover="handleGroupDragOver(event)" ondragleave="handleGroupDragLeave(event)" ondrop="handleGroupDrop(event)">';
   h += renderCards(items, pg, groupId);
