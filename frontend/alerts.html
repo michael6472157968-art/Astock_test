@@ -403,6 +403,7 @@ function loadAll() {
       document.getElementById('newGroupWrap').style.display = 'flex';
     }
     renderAll();
+    loadQuotesForVisible();
     if (Session.canViewDashboard()) {
       var savedTab = FavStore.getChartTab();
       if (savedTab === 'stock_pct') {
