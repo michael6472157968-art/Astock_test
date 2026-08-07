@@ -237,11 +237,10 @@
 </main>
 <script src="/js/app.js?v=10"></script>
 <script>
-if (!Session.loggedIn()) {
-  document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用自选功能</p>';
-  document.getElementById('quotaDesc').textContent = '登录后管理自选股票';
-} else {
+if (Session.loggedIn()) {
   loadAll();
+} else {
+  renderGuestAlertsPage();
 }
 
 var _allItems = [];
@@ -254,6 +253,110 @@ var _groupPage = {};       // groupId -> total visible count (0 = initial pageSi
 var _pageSize = 10;
 var _dragSrc = null;
 var _dragSrcGroupId = null;
+
+// ── Guest blur page ──
+
+function renderGuestAlertsPage() {
+  document.getElementById('quotaDesc').textContent = '游客 · 登录后管理自选股票';
+  document.getElementById('quotaBar').style.display = 'none';
+  document.getElementById('newGroupWrap').style.display = 'none';
+  renderMockFavContent();
+  renderFavMainChartBlurred();
+}
+
+function renderMockFavContent() {
+  var content = document.getElementById('content');
+  var mockGroups = [
+    { name: '科技龙头', color: '#1677ff', count: 3 },
+    { name: '消费白马', color: '#f59e0b', count: 2 }
+  ];
+  var mockStocks = [
+    { name: '贵州茅台', code: '600519' },
+    { name: '宁德时代', code: '300750' },
+    { name: '比亚迪', code: '002594' },
+    { name: '中芯国际', code: '688981' },
+    { name: '药明康德', code: '603259' }
+  ];
+
+  var html = '';
+  // 未分组部分
+  html += '<div class="fav-group" data-group-id="__ungrouped__">';
+  html += '<div class="fav-group-header">';
+  html += '<span class="group-chevron open">▶</span>';
+  html += '<span class="group-name">未分组</span>';
+  html += '<span class="group-count">2只</span>';
+  html += '</div>';
+  html += '<div class="fav-group-body open">';
+  html += '<div class="fav-cards-container" data-group-key="__ungrouped__">';
+  html += '<div class="fav-cards-inner">';
+  html += renderMockCard(mockStocks[0]);
+  html += renderMockCard(mockStocks[1]);
+  html += '</div></div>';
+  html += '</div></div>';
+  // 模拟分组
+  mockGroups.forEach(function(g) {
+    html += '<div class="fav-group" data-group-id="mock_' + g.name + '">';
+    html += '<div class="fav-group-header">';
+    html += '<span class="group-chevron open">▶</span>';
+    html += '<span class="group-name">' + g.name + '</span>';
+    html += '<span class="group-count">' + g.count + '只</span>';
+    html += '</div>';
+    html += '<div class="fav-group-body open">';
+    html += '<div class="fav-cards-container" data-group-key="mock_' + g.name + '">';
+    html += '<div class="fav-cards-inner">';
+    for (var i = 0; i < g.count; i++) {
+      html += renderMockCard({ name: mockStocks[i].name, code: mockStocks[i].code });
+    }
+    html += '</div></div>';
+    html += '</div></div>';
+  });
+
+  content.innerHTML = html;
+
+  var wrapper = document.createElement('div');
+  wrapper.className = 'fav-blur-wrapper';
+  while (content.firstChild) wrapper.appendChild(content.firstChild);
+  content.appendChild(wrapper);
+
+  var blContent = document.createElement('div');
+  blContent.className = 'fav-blur-content';
+  while (wrapper.firstChild) blContent.appendChild(wrapper.firstChild);
+  wrapper.appendChild(blContent);
+
+  var overlay = document.createElement('div');
+  overlay.className = 'fav-blur-overlay';
+  overlay.innerHTML = '<div class="lock-icon">&#x1f512;</div>' +
+    '<div class="lock-title">登录后查看自选股票</div>' +
+    '<div class="lock-desc">注册或登录后即可管理自选股票、<br/>创建分组并追踪行情走势</div>' +
+    '<a class="lock-cta" href="login.html">立即登录</a>';
+  wrapper.appendChild(overlay);
+}
+
+function renderMockCard(stock) {
+  return '<div class="fav-card">' +
+    '<div class="fav-top-row">' +
+    '<div class="fav-left"><span class="drag-handle">⋮⋮</span></div>' +
+    '<div class="fav-info">' +
+    '<div class="fav-name">' + escHtml(stock.name) + '</div>' +
+    '<div class="fav-code">' + stock.code + '</div>' +
+    '</div>' +
+    '<div class="fav-mid">' +
+    '<svg class="fav-sparkline" viewBox="0 0 120 40"><polyline fill="none" stroke="var(--color-border)" stroke-width="1.5" points=""/></svg>' +
+    '<div class="fav-signals"></div>' +
+    '</div>' +
+    '<div class="fav-score-badge">--<span class="score-label">分</span></div>' +
+    '<div class="fav-risk-tag">--</div>' +
+    '<div class="fav-quote">' +
+    '<div class="fav-price">--</div>' +
+    '<div class="fav-pct">--</div>' +
+    '</div>' +
+    '</div>' +
+    '<div class="fav-bot-row">' +
+    '<span class="fav-diag-btn" style="pointer-events:none;opacity:0.5;">诊股</span>' +
+    '<span class="fav-obs-btn" style="pointer-events:none;opacity:0.5;">涨跌观测</span>' +
+    '</div>' +
+    '</div>';
+}
 
 // ── Quota ──
 
@@ -371,7 +474,7 @@ function renderGroupSection(g) {
   h += '<span class="group-drag-handle" title="拖拽排序分组">⋮⋮</span>';
   h += '<span class="group-name" id="groupName_' + g.id + '" ondblclick="startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')">' + escHtml(g.name) + '</span>';
   h += '<span class="group-count">' + items.length + '只</span>';
-  h += '<button class="group-obs-btn" onclick="event.stopPropagation();toggleObserveGroup(' + g.id + ',\'' + escHtml(escHtml(g.name)) + '\')" title="涨跌观测此分组">涨跌观测</button>';
+  h += '<button class="group-obs-btn' + (Session.canViewDashboard() ? '' : ' hidden') + '" onclick="event.stopPropagation();toggleObserveGroup(' + g.id + ',\'' + escHtml(escHtml(g.name)) + '\')" title="涨跌观测此分组">涨跌观测</button>';
   h += '<button class="group-action" onclick="event.stopPropagation();startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')" title="重命名">✎</button>';
   h += '<button class="group-action danger" onclick="event.stopPropagation();deleteGroupConfirm(' + g.id + ')" title="删除分组">✕</button>';
   h += '</div>';
@@ -410,7 +513,7 @@ function renderCards(items, totalVisible, groupKey) {
     h += '</div>';
     h += '<div class="fav-bot-row">';
     h += '<a class="fav-diag-btn" href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '" onclick="event.stopPropagation();">诊股</a>';
-    h += '<button class="fav-obs-btn" data-code="' + f.stock_code + '" onclick="event.stopPropagation();toggleObserveStock(this,\'' + f.stock_code + '\')">涨跌观测</button>';
+    h += '<button class="fav-obs-btn' + (Session.canViewDashboard() ? '' : ' hidden') + '" data-code="' + f.stock_code + '" onclick="event.stopPropagation();toggleObserveStock(this,\'' + f.stock_code + '\')">涨跌观测</button>';
     h += '<button class="fav-del" onclick="event.stopPropagation();removeFav(\'' + f.stock_code + '\')" title="删除自选">✕ 移除</button>';
     h += '</div>';
     h += '</div>';
@@ -431,6 +534,7 @@ function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 // ── Quotes Load ──
 
 function loadQuotesForVisible() {
+  if (!Session.loggedIn()) return;
   var containers = document.querySelectorAll('.fav-cards-container');
   containers.forEach(function(ctr) {
     var codes = ctr.getAttribute('data-codes');

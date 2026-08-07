@@ -82,7 +82,7 @@ var Session = {
   clearAndRefresh: function() {
     this.clear();
     var page = window.location.pathname.split('/').pop() || 'index.html';
-    var needAuth = ['alerts.html', 'admin-trigger.html', 'stock-pool.html', 'sector.html', 'sector-rotation.html', 'backtest.html'];
+    var needAuth = ['admin-trigger.html', 'stock-pool.html', 'sector.html', 'sector-rotation.html', 'backtest.html'];
     if (needAuth.indexOf(page) === -1) {
       renderNav();
       return;
@@ -514,7 +514,7 @@ document.addEventListener('DOMContentLoaded', function() {
   Session.checkToken();
 
   // 需要登录的页面
-  var needAuth = ['alerts.html', 'admin-trigger.html', 'stock-pool.html', 'sector.html', 'sector-rotation.html', 'backtest.html'];
+  var needAuth = ['admin-trigger.html', 'stock-pool.html', 'sector.html', 'sector-rotation.html', 'backtest.html'];
   if (needAuth.indexOf(page) >= 0 && !Session.loggedIn()) {
     window.location.href = 'login.html?redirect=' + encodeURIComponent(page);
   }
