@@ -556,7 +556,7 @@ function handleNewGroupKey(e) {
 
 function createNewGroup() {
   if (!Session.canCreateGroup()) {
-    showToast('注册用户及以上才可创建分组，请先注册或登录');
+    showToast('注册用户及以上才可创建分组');
     return;
   }
   if (!Session.isAdmin() && _groups.length >= Session.getGroupCountLimit()) {
@@ -852,14 +852,7 @@ function handleCardDrop(e) {
       if (targetGroupId !== null && !Session.isAdmin()) {
         var dc = itemsForGroup(targetGroupId).length;
         if (dc >= Session.getGroupStockLimit()) {
-          showToast('该分组已满（最多' + Session.getGroupStockLimit() + '只），请先移出部分股票');
-          resetDrag();
-          return;
-        }
-      }
-      moveStockToGroup(srcCode, targetGroupId);
-    }
-    resetDrag();
+          showToast('单个分组内最多添加' + Session.getGroupStockLimit() + '只股票');
     return;
   }
 
@@ -869,13 +862,10 @@ function handleCardDrop(e) {
   // Cross-group: drop onto card in a different group
   var targetCardGroupId = targetCard.getAttribute('data-group-id') || null;
   if (String(targetCardGroupId) !== String(_dragSrcGroupId || '')) {
-    if (targetCardGroupId !== null && !Session.isAdmin()) {
-      var cc = itemsForGroup(targetCardGroupId).length;
-      if (cc >= Session.getGroupStockLimit()) {
-        showToast('该分组已满（最多' + Session.getGroupStockLimit() + '只），请先移出部分股票');
-        resetDrag();
-        return;
-      }
+    if (targetCardGroupId !== null && !Session.isAdmin() && itemsForGroup(targetCardGroupId).length >= Session.getGroupStockLimit()) {
+      showToast('单个分组内最多添加' + Session.getGroupStockLimit() + '只股票');
+      resetDrag();
+      return;
     }
     var _srcCode2 = _dragSrc.getAttribute('data-code');
     var _rect2 = targetCard.getBoundingClientRect();
@@ -1028,14 +1018,13 @@ function handleGroupDrop(e) {
 
 function moveStockToGroup(code, groupId) {
   if (!Session.canUseGroupFeature() && groupId !== null) {
-    showToast('注册用户及以上才可使用分组功能，请先注册或登录');
+    showToast('注册用户及以上才可使用分组功能');
     return;
   }
   if (groupId !== null && !Session.isAdmin()) {
-    var count = itemsForGroup(groupId).length;
     var limit = Session.getGroupStockLimit();
-    if (count >= limit) {
-      showToast('该分组已满（最多' + limit + '只），请先移出部分股票');
+    if (itemsForGroup(groupId).length >= limit) {
+      showToast('单个分组内最多添加' + limit + '只股票');
       return;
     }
   }
