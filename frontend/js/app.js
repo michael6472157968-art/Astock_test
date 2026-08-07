@@ -366,6 +366,14 @@ var FavStore = {
   },
   setStatsView: function(data) {
     localStorage.setItem(this._ukey('fav_stats_view'), JSON.stringify(data));
+  },
+
+  // ── 分组观测（涨跌幅均值图表中显示哪些分组）──
+  getObserveGroupIds: function() {
+    try { return JSON.parse(localStorage.getItem(this._ukey('fav_obs_groups')) || '[]'); } catch(e) { return []; }
+  },
+  setObserveGroupIds: function(ids) {
+    localStorage.setItem(this._ukey('fav_obs_groups'), JSON.stringify(ids));
   }
 };
 

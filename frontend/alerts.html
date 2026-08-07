@@ -474,7 +474,7 @@ function renderGroupSection(g) {
   h += '<span class="group-drag-handle" title="拖拽排序分组">⋮⋮</span>';
   h += '<span class="group-name" id="groupName_' + g.id + '" ondblclick="startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')">' + escHtml(g.name) + '</span>';
   h += '<span class="group-count">' + items.length + '只</span>';
-  h += '<button class="group-obs-btn' + (Session.canViewDashboard() ? '' : ' hidden') + '" onclick="event.stopPropagation();toggleObserveGroup(' + g.id + ',\'' + escHtml(escHtml(g.name)) + '\')" title="涨跌观测此分组">涨跌观测</button>';
+  h += '<button class="group-obs-btn' + (Session.canViewDashboard() ? '' : ' hidden') + '" data-group-id="' + g.id + '" onclick="event.stopPropagation();toggleObserveGroup(' + g.id + ',\'' + escHtml(escHtml(g.name)) + '\')" title="涨跌观测此分组">涨跌观测</button>';
   h += '<button class="group-action" onclick="event.stopPropagation();startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')" title="重命名">✎</button>';
   h += '<button class="group-action danger" onclick="event.stopPropagation();deleteGroupConfirm(' + g.id + ')" title="删除分组">✕</button>';
   h += '</div>';
@@ -1257,21 +1257,35 @@ function _refreshAllObserveButtons() {
       }
     }
   });
+  // 分组观测按钮状态同步
+  var obsGroupIds = FavStore.getObserveGroupIds();
+  var obsGroupSet = {};
+  obsGroupIds.forEach(function(id) { obsGroupSet[id] = true; });
+  document.querySelectorAll('.group-obs-btn').forEach(function(btn) {
+    var gid = parseInt(btn.getAttribute('data-group-id')) || null;
+    if (gid !== null && obsGroupSet[gid]) {
+      btn.classList.add('active');
+      btn.textContent = '观测中';
+    } else {
+      btn.classList.remove('active');
+      btn.textContent = '涨跌观测';
+    }
+  });
 }
 
 function toggleObserveGroup(gid, gname) {
-  var tab = FavStore.getChartTab();
-  // 先切换到涨跌幅均值标签页
-  if (tab !== 'avg_chg') switchFavTab('avg_chg');
-  // 默认展开对应的配置T日
-  var tDates = FavStore.getTDates();
-  if (!tDates['g_' + gid]) {
-    FavStore.setTDate('g_' + gid, '');
-    reloadGroups(); // 重建配置行
+  var codes = FavStore.getObserveGroupIds();
+  var idx = codes.indexOf(gid);
+  if (idx >= 0) {
+    codes.splice(idx, 1);
+  } else {
+    codes.push(gid);
   }
-  // 滚动到图表
-  document.getElementById('favMainChartPanel').scrollIntoView({ behavior: 'smooth' });
-  showToast('已切换到分组「' + gname + '」涨跌幅均值');
+  FavStore.setObserveGroupIds(codes);
+  _refreshAllObserveButtons();
+  var tab = FavStore.getChartTab();
+  if (tab !== 'avg_chg') switchFavTab('avg_chg');
+  else loadFavMainChart();
 }
 
 function fmtDate(d) {
@@ -1301,15 +1315,17 @@ function loadFavMainChart() {
   }
   var tDates = FavStore.getTDates();
 
+  var obsGroupIds = FavStore.getObserveGroupIds();
+  var obsGroupSet = {};
+  obsGroupIds.forEach(function(id) { obsGroupSet[id] = true; });
+  var hasObs = obsGroupIds.length > 0;
+
   var groupInfos = [];
   _groups.forEach(function(g) {
-    groupInfos.push({ key: String(g.id), name: g.name, count: g.stock_count });
+    if (!hasObs || obsGroupSet[g.id]) {
+      groupInfos.push({ key: String(g.id), name: g.name, count: g.stock_count });
+    }
   });
-
-  if (!groupInfos.length) {
-    document.getElementById('favMainChartPanel').style.display = 'none';
-    return;
-  }
 
   function renderFromData(data) {
     var allDates = data.dates || [];
@@ -1593,7 +1609,7 @@ function switchFavTab(tabId) {
     if (hasGroups) {
       loadFavMainChart();
     } else {
-      document.getElementById('favMainChartPanel').style.display = 'none';
+      loadFavMainChart();
     }
   }
 }
@@ -1602,14 +1618,9 @@ function switchFavTab(tabId) {
 function loadFavStockPctChart() {
   var codes = FavStore.getStockPctCodes();
   if (!codes.length) {
-    var allCodes = [];
-    (_allItems || []).forEach(function(item) { allCodes.push(item.stock_code); });
-    if (!allCodes.length) {
-      document.getElementById('favMainChartPanel').style.display = 'none';
-      return;
-    }
-    codes = allCodes.slice(0, 5);
-    FavStore.setStockPctCodes(codes);
+    document.getElementById('favMainChartPanel').style.display = '';
+    if (_favMainChart) { _favMainChart.dispose(); _favMainChart = null; }
+    return;
   }
 
   document.getElementById('favMainChartPanel').style.display = '';
