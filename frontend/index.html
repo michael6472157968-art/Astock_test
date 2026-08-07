@@ -121,7 +121,7 @@
 
     <!-- 自选速览 -->
     <div class="mood-panel" id="favQuickPanel" style="margin-bottom:16px;">
-      <div class="mood-header"><span class="mood-title">自选速览</span><span class="mood-date" id="favQuickCount">0只</span></div>
+      <div class="mood-header"><span class="mood-title">自选速览 <span class="tutorial-trigger" id="tutorialTrigger" title="使用说明">?</span></span><span class="mood-date" id="favQuickCount">0只</span></div>
       <div class="mood-body" style="flex-direction:column;padding:0 8px 8px;" id="favQuickBody">
         <div id="favGroupChartWrap" style="width:100%;height:300px;"></div>
         <div style="text-align:center;padding:12px;color:var(--color-text-muted);font-size:0.8rem;" id="favQuickEmpty">加载中...</div>
@@ -949,7 +949,166 @@
 
   FavStore.loadCache();
   loadFavGroupStats();
+
+  // ── 自选速览使用说明 ──
+  var _tutStep = 0;
+  var _tutTotal = 6;
+  function openTutorial() {
+    _tutStep = 0;
+    showTutSlide(0);
+    document.getElementById('tutorialOverlay').classList.add('show');
+  }
+  function closeTutorial() {
+    document.getElementById('tutorialOverlay').classList.remove('show');
+  }
+  function nextTutorial() {
+    if (_tutStep < _tutTotal - 1) showTutSlide(_tutStep + 1);
+    else closeTutorial();
+  }
+  function prevTutorial() {
+    if (_tutStep > 0) showTutSlide(_tutStep - 1);
+  }
+  function showTutSlide(n) {
+    _tutStep = n;
+    document.querySelectorAll('.tut-slide').forEach(function(s, i) { s.classList.toggle('active', i === n); });
+    document.getElementById('tutStepLabel').textContent = (n + 1) + '/' + _tutTotal;
+    document.getElementById('tutPrev').style.display = n === 0 ? 'none' : '';
+    document.getElementById('tutNext').style.display = n === _tutTotal - 1 ? 'none' : '';
+    document.getElementById('tutDone').style.display = n === _tutTotal - 1 ? '' : 'none';
+    var dots = '';
+    for (var i = 0; i < _tutTotal; i++) dots += '<span class="tut-dot' + (i === n ? ' active' : '') + '"></span>';
+    document.getElementById('tutDots').innerHTML = dots;
+    // 重置 SVG 动画：cloneNode 后替换，CSS 动画重播
+    var activeSlide = document.querySelector('.tut-slide.active');
+    if (activeSlide) {
+      activeSlide.querySelectorAll('.tut-svg').forEach(function(svg) {
+        svg.parentNode.replaceChild(svg.cloneNode(true), svg);
+      });
+    }
+  }
+  // 首次访问自动弹出
+  if (!localStorage.getItem('tutorial_seen')) {
+    setTimeout(function() { openTutorial(); localStorage.setItem('tutorial_seen', '1'); }, 1200);
+  }
 })();
 </script>
+
+<!-- ── 自选速览使用说明 ── -->
+<div class="tutorial-overlay" id="tutorialOverlay" onclick="closeTutorial()">
+  <div class="tutorial-dialog" onclick="event.stopPropagation()">
+    <div class="tutorial-header">
+      <span class="tutorial-title">自选速览使用说明</span>
+      <span class="tutorial-step" id="tutStepLabel">1/6</span>
+      <button class="tutorial-close" onclick="closeTutorial()">&times;</button>
+    </div>
+    <div class="tutorial-body">
+      <!-- 步骤1：什么是自选速览 -->
+      <div class="tut-slide" data-step="0">
+        <div class="tut-viz">
+          <svg viewBox="0 0 280 140" class="tut-svg">
+            <rect x="28" y="10" width="244" height="120" rx="4" fill="var(--color-surface)" stroke="rgba(255,255,255,0.06)"/>
+            <line x1="32" y1="30" x2="32" y2="118" stroke="rgba(255,255,255,0.1)"/>
+            <line x1="32" y1="118" x2="268" y2="118" stroke="rgba(255,255,255,0.1)"/>
+            <defs><linearGradient id="tg1"><stop offset="0%" stop-color="#1677ff" stop-opacity="0.18"/><stop offset="100%" stop-color="#1677ff" stop-opacity="0.01"/></linearGradient></defs>
+            <path d="M36,96c10,-18 22,-22 34,-12c12,10 22,16 34,4c12,-12 22,-30 34,-24c12,6 22,20 34,14c12,-6 22,-26 34,-22c12,4 24,14 34,8" stroke="#1677ff" stroke-width="1.8" fill="none" stroke-linecap="round" class="tut-line-draw"/>
+            <path d="M36,96c10,-18 22,-22 34,-12c12,10 22,16 34,4c12,-12 22,-30 34,-24c12,6 22,20 34,14c12,-6 22,-26 34,-22c12,4 24,14 34,8 L268,118 L36,118 Z" fill="url(#tg1)" opacity="0" class="tut-area-fade"/>
+            <circle cx="36" cy="96" r="2" fill="#1677ff" class="tut-dot-1"/><circle cx="70" cy="78" r="2" fill="#1677ff" class="tut-dot-2"/><circle cx="104" cy="84" r="2" fill="#1677ff" class="tut-dot-3"/>
+          </svg>
+        </div>
+        <p class="tut-desc">首页侧边栏的迷你行情图，<br/>展示自选股分组/个股的涨跌趋势。</p>
+      </div>
+
+      <!-- 步骤2：涨跌幅均值 -->
+      <div class="tut-slide" data-step="1">
+        <div class="tut-viz">
+          <svg viewBox="0 0 280 140" class="tut-svg">
+            <rect x="28" y="10" width="244" height="120" rx="4" fill="var(--color-surface)" stroke="rgba(255,255,255,0.06)"/>
+            <line x1="34" y1="30" x2="34" y2="118" stroke="rgba(255,255,255,0.1)"/>
+            <line x1="34" y1="118" x2="268" y2="118" stroke="rgba(255,255,255,0.1)"/>
+            <defs><linearGradient id="tg2a"><stop offset="0%" stop-color="#1677ff" stop-opacity="0.2"/><stop offset="100%" stop-color="#1677ff" stop-opacity="0.01"/></linearGradient><linearGradient id="tg2b"><stop offset="0%" stop-color="#f59e0b" stop-opacity="0.2"/><stop offset="100%" stop-color="#f59e0b" stop-opacity="0.01"/></linearGradient></defs>
+            <path d="M38,72c12,12 24,-8 36,-12c12,-4 24,8 36,-2c12,-10 24,-8 36,4c12,12 26,6 36,0c10,-6 24,-18 36,-14c12,4 24,14 36,6c10,-8 24,-20 24,-20" stroke="#1677ff" stroke-width="2" fill="none" stroke-linecap="round" class="tut-line-draw"/>
+            <path d="M38,100c12,-10 24,8 36,-4c12,-12 24,-6 36,2c12,8 26,-8 36,4c10,12 24,6 36,2c12,-4 24,-18 36,-10c10,8 24,2 24,2" stroke="#f59e0b" stroke-width="2" fill="none" stroke-linecap="round" class="tut-line-draw" style="animation-delay:0.3s"/>
+            <text x="240" y="46" fill="#1677ff" font-size="8" opacity="0" class="tut-label-pop" style="animation-delay:0.8s">分组A</text>
+            <text x="240" y="86" fill="#f59e0b" font-size="8" opacity="0" class="tut-label-pop" style="animation-delay:1.1s">分组B</text>
+          </svg>
+        </div>
+        <p class="tut-desc">每个<span class="tut-hl">分组</span>一条折线 = 该组内所有股票<br/>当日涨跌幅的<span class="tut-hl">平均值</span>，看哪个分组跑得好。</p>
+      </div>
+
+      <!-- 步骤3：个股涨跌幅 -->
+      <div class="tut-slide" data-step="2">
+        <div class="tut-viz">
+          <svg viewBox="0 0 280 140" class="tut-svg">
+            <rect x="28" y="10" width="244" height="120" rx="4" fill="var(--color-surface)" stroke="rgba(255,255,255,0.06)"/>
+            <line x1="34" y1="30" x2="34" y2="118" stroke="rgba(255,255,255,0.1)"/>
+            <line x1="34" y1="118" x2="268" y2="118" stroke="rgba(255,255,255,0.1)"/>
+            <path d="M38,80c14,-16 26,-10 38,4c12,14 24,-8 36,-14c12,-6 24,0 36,10c10,6 24,14 36,6c12,-8 24,-22 36,-8c12,14 24,12 24,12" stroke="#1677ff" stroke-width="1.6" fill="none" stroke-linecap="round" class="tut-line-draw"/>
+            <path d="M38,62c14,10 26,0 38,-8c12,-8 24,12 36,4c12,-8 24,-14 36,2c10,16 24,8 36,0c12,-8 24,-10 36,14c12,24 24,10 24,10" stroke="#a855f7" stroke-width="1.6" fill="none" stroke-linecap="round" class="tut-line-draw" style="animation-delay:0.35s"/>
+            <path d="M38,96c14,-8 26,14 38,2c12,-12 24,-4 36,8c12,12 24,-6 36,-2c12,4 26,0 36,10c12,10 24,-16 24,-16" stroke="#f59e0b" stroke-width="1.6" fill="none" stroke-linecap="round" class="tut-line-draw" style="animation-delay:0.7s"/>
+            <circle cx="38" cy="80" r="2.5" fill="#1677ff" class="tut-dot-pop" style="animation-delay:0s"/><circle cx="76" cy="96" r="2.5" fill="#a855f7" class="tut-dot-pop" style="animation-delay:0.15s"/><circle cx="38" cy="96" r="2.5" fill="#f59e0b" class="tut-dot-pop" style="animation-delay:0.3s"/>
+          </svg>
+        </div>
+        <p class="tut-desc">每只<span class="tut-hl">个股</span>一条折线 = 从 T 日起<br/><span class="tut-hl">累计收益率(%)</span>，看个股强弱走势。</p>
+      </div>
+
+      <!-- 步骤4：T日配置 -->
+      <div class="tut-slide" data-step="3">
+        <div class="tut-viz">
+          <svg viewBox="0 0 280 140" class="tut-svg">
+            <rect x="28" y="10" width="244" height="120" rx="4" fill="var(--color-surface)" stroke="rgba(255,255,255,0.06)"/>
+            <line x1="34" y1="30" x2="34" y2="118" stroke="rgba(255,255,255,0.1)"/>
+            <line x1="34" y1="118" x2="268" y2="118" stroke="rgba(255,255,255,0.1)"/>
+            <path d="M38,92c8,-6 16,-2 24,-2c8,0 16,4 24,-4l0,0" stroke="rgba(255,255,255,0.15)" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+            <path d="M86,86c8,4 16,-4 24,4c8,8 18,2 24,-4c6,-6 12,-10 18,-16c6,-6 12,-10 18,-8c6,2 14,8 18,14c4,6 12,10 12,2c0,-8 6,-22 14,-24c8,-2 16,6 20,12" stroke="#1677ff" stroke-width="2" fill="none" stroke-linecap="round" class="tut-line-draw"/>
+            <line x1="86" y1="126" x2="86" y2="28" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3,3" opacity="0"/>
+            <circle cx="86" cy="86" r="4" fill="#f59e0b" opacity="0"/>
+            <text x="64" y="16" fill="#f59e0b" font-size="9" font-weight="600" opacity="0" class="tut-label-pop">T日 06-15</text>
+          </svg>
+        </div>
+        <p class="tut-desc">可选定<span class="tut-hl">起始日期(T日)</span>，<br/>图表从该日起计算累计涨跌幅，默认近 22 个交易日。</p>
+      </div>
+
+      <!-- 步骤5：涨跌观测 -->
+      <div class="tut-slide" data-step="4">
+        <div class="tut-viz">
+          <svg viewBox="0 0 280 140" class="tut-svg">
+            <rect x="28" y="10" width="244" height="120" rx="4" fill="var(--color-surface)" stroke="rgba(255,255,255,0.06)"/>
+            <rect x="42" y="42" width="186" height="28" rx="4" fill="#1a1a1a" stroke="rgba(255,255,255,0.08)"/>
+            <text x="88" y="60" fill="rgba(255,255,255,0.7)" font-size="8">贵州茅台</text>
+            <text x="168" y="60" fill="rgba(255,255,255,0.35)" font-size="7">600519</text>
+            <rect x="195" y="47" width="26" height="18" rx="3" fill="none" stroke="#d89614" stroke-width="1"/>
+            <text x="208" y="60" fill="#d89614" font-size="7" text-anchor="middle" class="tut-btn-click">观测</text>
+            <line x1="210" y1="36" x2="190" y2="18" stroke="#d89614" stroke-width="0.8" opacity="0" class="tut-fly-line" stroke-dasharray="3,2"/>
+            <circle cx="190" cy="18" r="3" fill="#d89614" opacity="0" class="tut-fly-dot"/>
+          </svg>
+        </div>
+        <p class="tut-desc">在<span class="tut-hl">自选管理页</span>每只股票旁点<br/>「涨跌观测」按钮，最多选 <span class="tut-hl">5只</span>对比。</p>
+      </div>
+
+      <!-- 步骤6：快捷提示 -->
+      <div class="tut-slide" data-step="5">
+        <div class="tut-viz">
+          <svg viewBox="0 0 280 140" class="tut-svg">
+            <rect x="38" y="44" width="90" height="24" rx="4" fill="var(--color-surface)" stroke="rgba(255,255,255,0.1)"/>
+            <text x="83" y="60" fill="#1677ff" font-size="8" text-anchor="middle" font-weight="600">涨跌幅均值(%)</text>
+            <rect x="130" y="44" width="94" height="24" rx="4" fill="none" stroke="rgba(255,255,255,0.06)"/>
+            <text x="177" y="60" fill="rgba(255,255,255,0.35)" font-size="8" text-anchor="middle">个股涨跌幅(%)</text>
+            <path d="M173,66 C173,76 163,82 153,78" stroke="#1677ff" stroke-width="1.2" fill="none" opacity="0" class="tut-arrow-curve"/>
+            <polygon points="150,77 154,73 154,83" fill="#1677ff" opacity="0" class="tut-arrow-curve"/>
+          </svg>
+        </div>
+        <p class="tut-desc">标签页切换模式，<br/>颜色按股票确定<span class="tut-hl">固定不变</span>，<br/>浏览器缓存记住所有配置。</p>
+      </div>
+    </div>
+    <div class="tutorial-footer">
+      <div class="tut-dots" id="tutDots"></div>
+      <div class="tut-btns">
+        <button class="tut-btn tut-btn-prev" id="tutPrev" onclick="prevTutorial()">上一步</button>
+        <button class="tut-btn tut-btn-next" id="tutNext" onclick="nextTutorial()">下一步</button>
+        <button class="tut-btn tut-btn-done" id="tutDone" onclick="closeTutorial()">知道了</button>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>

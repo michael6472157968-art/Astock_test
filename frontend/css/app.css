@@ -891,3 +891,166 @@ body {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ── 自选速览使用说明 ── */
+.tutorial-trigger {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 1.5px solid var(--color-text-muted);
+  color: var(--color-text-muted); font-size: 0.68rem; font-weight: 700;
+  cursor: pointer; line-height: 1;
+  transition: all 0.2s;
+  vertical-align: middle; margin-left: 4px; position: relative; top: -1px;
+}
+.tutorial-trigger:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: rgba(22,119,255,0.08);
+}
+
+.tutorial-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.65);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s;
+}
+.tutorial-overlay.show { opacity: 1; pointer-events: auto; }
+
+.tutorial-dialog {
+  width: 400px; max-width: 92vw;
+  background: var(--color-surface);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.tutorial-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.tutorial-title { font-weight: 600; font-size: 0.95rem; flex: 1; }
+.tutorial-step { font-size: 0.72rem; color: var(--color-text-muted); }
+.tutorial-close {
+  background: none; border: none; color: var(--color-text-muted);
+  font-size: 1.4rem; cursor: pointer; padding: 0; line-height: 1;
+}
+.tutorial-close:hover { color: var(--color-text); }
+
+.tutorial-body {
+  position: relative; min-height: 260px;
+}
+.tut-slide {
+  display: none; padding: 20px 24px 8px; text-align: center;
+}
+.tut-slide.active { display: block; }
+
+.tut-viz {
+  width: 100%; height: 150px; margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: center;
+}
+.tut-svg { width: 280px; height: 140px; display: block; }
+
+.tut-desc {
+  font-size: 0.85rem; color: var(--color-text-muted); line-height: 1.7;
+  max-width: 320px; margin: 0 auto;
+}
+.tut-hl {
+  color: var(--color-primary); font-weight: 600;
+}
+
+/* SVG 动画 */
+.tut-line-draw {
+  stroke-dasharray: 400; stroke-dashoffset: 400;
+  animation: tutDrawLine 1.2s ease-out forwards;
+}
+@keyframes tutDrawLine {
+  to { stroke-dashoffset: 0; }
+}
+
+.tut-area-fade {
+  animation: tutFadeArea 0.8s ease-out 0.8s forwards;
+}
+@keyframes tutFadeArea {
+  to { opacity: 1; }
+}
+
+.tut-dot-1 { animation: tutDotIn 0.3s ease-out 0.2s both; }
+.tut-dot-2 { animation: tutDotIn 0.3s ease-out 0.4s both; }
+.tut-dot-3 { animation: tutDotIn 0.3s ease-out 0.6s both; }
+@keyframes tutDotIn {
+  from { r: 0; opacity: 0; } to { r: 2; opacity: 1; }
+}
+
+.tut-label-pop {
+  animation: tutLabelPop 0.4s ease-out forwards;
+}
+@keyframes tutLabelPop {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tut-dot-pop {
+  animation: tutDotPulse 0.5s ease-out both;
+}
+@keyframes tutDotPulse {
+  from { r: 0; opacity: 0; }
+  to { r: 2.5; opacity: 1; }
+}
+
+.tut-btn-click {
+  animation: tutBtnFlash 0.6s ease-out 0.5s both;
+}
+@keyframes tutBtnFlash {
+  0% { fill: transparent; }
+  50% { fill: rgba(216,150,20,0.25); }
+  100% { fill: transparent; }
+}
+
+.tut-fly-line {
+  animation: tutFlyLine 0.5s ease-out 0.8s forwards;
+}
+@keyframes tutFlyLine {
+  to { opacity: 1; stroke-dashoffset: -10; }
+}
+
+.tut-fly-dot {
+  animation: tutFlyDot 0.5s ease-out 0.8s forwards;
+}
+@keyframes tutFlyDot {
+  to { opacity: 1; }
+}
+
+.tut-arrow-curve {
+  animation: tutArrowCurve 0.5s ease-out 0.3s forwards;
+}
+@keyframes tutArrowCurve {
+  to { opacity: 1; }
+}
+
+/* Footer */
+.tutorial-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px 18px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.tut-dots { display: flex; gap: 6px; }
+.tut-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  transition: background 0.2s;
+}
+.tut-dot.active { background: var(--color-primary); }
+
+.tut-btns { display: flex; gap: 8px; }
+.tut-btn {
+  padding: 7px 16px; border-radius: 6px; border: none;
+  font-size: 0.8rem; cursor: pointer; transition: all 0.15s;
+}
+.tut-btn-prev {
+  background: rgba(255,255,255,0.06); color: var(--color-text-muted);
+}
+.tut-btn-prev:hover { background: rgba(255,255,255,0.1); color: var(--color-text); }
+.tut-btn-next, .tut-btn-done {
+  background: var(--color-primary); color: #fff;
+}
+.tut-btn-next:hover, .tut-btn-done:hover { background: var(--color-primary-hover); }

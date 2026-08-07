@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -186,12 +187,24 @@ def create_app() -> FastAPI:
     frontend_path = (Path(settings_dir) / ".." / "frontend").resolve()
     if frontend_path.exists():
         # CSS/JS/lib 带 cache 头（文件名含版本号 v=8，更新时改版本号即跳过缓存）
-        for sub_dir, ttl in [("/css", 31536000), ("/js", 31536000), ("/lib", 31536000)]:
+        for sub_dir in ["/css", "/js", "/lib"]:
             sp = frontend_path / sub_dir.lstrip("/")
             if sp.is_dir():
-                app.mount(sub_dir, StaticFiles(directory=str(sp), headers={"Cache-Control": f"public, max-age={ttl}"}), name=f"static-{sub_dir.lstrip('/')}")
+                app.mount(sub_dir, StaticFiles(directory=str(sp)), name=f"static-{sub_dir.lstrip('/')}")
         # HTML 根 mount 兜底，不加缓存
         app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
+
+        # 给静态资源响应追加 Cache-Control 头（Starlette StaticFiles 不支持 headers 参数）
+        from starlette.middleware.base import BaseHTTPMiddleware
+        from starlette.requests import Request
+        class _CacheStaticMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                response = await call_next(request)
+                path = request.url.path
+                if path.startswith("/css/") or path.startswith("/js/") or path.startswith("/lib/"):
+                    response.headers["Cache-Control"] = "public, max-age=31536000"
+                return response
+        app.add_middleware(_CacheStaticMiddleware)
         logger.info(f"Frontend: {frontend_path}")
     else:
         logger.warning(f"Frontend not found at {frontend_path}")
