@@ -545,6 +545,11 @@ function loadQuotesForVisible() {
       cards.forEach(function(card) {
         var code = card.getAttribute('data-code');
         var qd = quotes[code] || {};
+        // Name — 兼容数据库空名称，用行情数据回填
+        if (qd.name) {
+          var nameEl = card.querySelector('.fav-name');
+          if (nameEl && nameEl.textContent === code) nameEl.textContent = qd.name;
+        }
         // Price & pct
         var priceEl = card.querySelector('.fav-price');
         var pctEl = card.querySelector('.fav-pct');
