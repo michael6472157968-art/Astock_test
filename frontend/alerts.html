@@ -907,22 +907,23 @@ function moveStockToGroup(code, groupId) {
 
 function loadGroupMore(groupKey) {
   var currentPg = _groupPage[groupKey] || 0;
-  // 记录"查看更多"按钮的屏幕位置，重建后保持在原位
-  var groupId = groupKey === '__ungrouped__' ? '__ungrouped__' : groupKey;
-  var moreBtn = document.querySelector('[data-group-id="' + groupId + '"] .fav-more-btn');
-  var anchorY = moreBtn ? moreBtn.getBoundingClientRect().top : null;
-
   _groupPage[groupKey] = currentPg + _pageSize;
-  refreshGroupSection(groupKey);
 
-  if (anchorY != null) {
-    var newMoreBtn = document.querySelector('[data-group-id="' + groupId + '"] .fav-more-btn');
-    if (newMoreBtn) {
-      var newY = newMoreBtn.getBoundingClientRect().top;
-      window.scrollBy(0, newY - anchorY);
-    }
-  }
+  refreshGroupSection(groupKey);
   loadQuotesForVisible();
+
+  // 新卡片的起点 = pageOffset + pageSize 对应位置，滚动到它
+  var newPg = _groupPage[groupKey] || 0;
+  var groupId = groupKey === '__ungrouped__' ? '__ungrouped__' : groupKey;
+  var containers = document.querySelectorAll('[data-group-id="' + groupId + '"] .fav-cards-container');
+  // 重建后只有一个 container，包含全部卡片。找到第 (currentPg + _pageSize) 张做锚点
+  setTimeout(function() {
+    var cards = document.querySelectorAll('[data-group-id="' + groupId + '"] .fav-card');
+    var anchorIdx = currentPg + _pageSize;
+    if (cards.length > anchorIdx) {
+      cards[anchorIdx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, 200);
 }
 
 function refreshGroupSection(groupKey) {
