@@ -293,6 +293,36 @@ var FavStore = {
   },
   setStockPctCodes: function(codes) {
     localStorage.setItem(this._ukey('fav_stock_pct_codes'), JSON.stringify(codes));
+    // 清理不在列表中的颜色映射
+    var map = this._getStockPctColorMap();
+    var kept = {};
+    codes.forEach(function(c) { kept[c] = true; });
+    var changed = false;
+    Object.keys(map).forEach(function(c) { if (!kept[c]) { delete map[c]; changed = true; } });
+    if (changed) this._setStockPctColorMap(map);
+  },
+
+  // ── 个股颜色映射（code → colorIndex，确定性分配不漂移）──
+  _getStockPctColorMap: function() {
+    try { return JSON.parse(localStorage.getItem(this._ukey('fav_stock_pct_colors')) || '{}'); } catch(e) { return {}; }
+  },
+  _setStockPctColorMap: function(map) {
+    localStorage.setItem(this._ukey('fav_stock_pct_colors'), JSON.stringify(map));
+  },
+
+  getStockPctColor: function(code) {
+    var colors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
+    var map = this._getStockPctColorMap();
+    if (map[code] !== undefined) return colors[map[code]];
+    // 找第一个未被占用的索引
+    var used = {};
+    Object.values(map).forEach(function(v) { used[v] = true; });
+    var idx = 0;
+    while (used[idx]) idx++;
+    if (idx >= colors.length) idx = map[code] !== undefined ? map[code] : 0; // fallback
+    map[code] = idx;
+    this._setStockPctColorMap(map);
+    return colors[idx];
   },
 
   // ── 个股涨跌幅模式缓存（用户绑定 + 旧键迁移）──

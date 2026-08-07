@@ -176,7 +176,7 @@
   </div>
 </div>
 
-<script src="/js/app.js?v=7"></script>
+<script src="/js/app.js?v=8"></script>
 <script src="/lib/echarts.js"></script>
 <script>
 (function() {
@@ -851,12 +851,7 @@
     });
   }
 
-  function _stockPctColorForCode(code) {
-    var colors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
-    var hash = 5381;
-    for (var i = 0; i < code.length; i++) { hash = ((hash << 5) + hash) + code.charCodeAt(i); hash |= 0; }
-    return colors[Math.abs(hash) % colors.length];
-  }
+  function _stockPctColorForCode(code) { return FavStore.getStockPctColor(code); }
 
   function renderFavStockPctSubChart(data) {
     var wrap = document.getElementById('favGroupChartWrap');

@@ -226,7 +226,7 @@
     <button onclick="createNewGroup()">+ 新建</button>
   </div>
 </main>
-<script src="/js/app.js?v=7"></script>
+<script src="/js/app.js?v=8"></script>
 <script>
 if (!Session.loggedIn()) {
   document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用自选功能</p>';
@@ -1226,11 +1226,7 @@ window.addEventListener('resize', function() {
 // ── 标签切换 ──
 var _stockPctColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
 
-function _stockPctColorForCode(code) {
-  var hash = 5381;
-  for (var i = 0; i < code.length; i++) { hash = ((hash << 5) + hash) + code.charCodeAt(i); hash |= 0; }
-  return _stockPctColors[Math.abs(hash) % _stockPctColors.length];
-}
+function _stockPctColorForCode(code) { return FavStore.getStockPctColor(code); }
 var _favStockPctReq = null;
 
 function switchFavTab(tabId) {
