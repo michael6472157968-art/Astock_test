@@ -557,7 +557,7 @@ function createNewGroup() {
     return;
   }
   if (!Session.isAdmin() && _groups.length >= Session.getGroupCountLimit()) {
-    showToast('最多创建' + Session.getGroupCountLimit() + '个分组，请先删除旧分组');
+    showToast('最多创建' + Session.getGroupCountLimit() + '个自定义分组');
     return;
   }
   var input = document.getElementById('newGroupInput');
