@@ -214,7 +214,7 @@
   <div id="favMainChartPanel" class="mood-panel" style="margin-bottom:16px;display:none;">
     <div class="mood-header" style="flex-wrap:wrap;gap:6px;">
       <div style="display:flex;align-items:center;gap:0;">
-        <span class="mood-title">自选速览</span>
+        <span class="mood-title">自选速览 <span class="tutorial-trigger" onclick="event.stopPropagation();openTutorial()" title="使用说明">?</span></span>
         <div class="tabs" style="margin:0 0 0 16px;border-bottom:none;" id="favChartTabs">
           <button class="tab active" data-tab="avg_chg" onclick="switchFavTab('avg_chg')">涨跌幅均值(%)</button>
           <button class="tab" data-tab="stock_pct" onclick="switchFavTab('stock_pct')">个股涨跌幅(%)</button>
@@ -1582,6 +1582,162 @@ function onStockPctTDateChange(code, inputEl, minDate, maxDate) {
 
 // Load quotes after DOM render
 setTimeout(loadQuotesForVisible, 100);
+
+	// ── 自选速览使用说明 ──
+	var _tutStep = 0;
+	var _tutTotal = 5;
+	window.openTutorial = function() {
+		_tutStep = 0;
+		showTutSlide(0);
+		document.getElementById('tutorialOverlay').classList.add('show');
+	};
+	window.closeTutorial = function() {
+		document.getElementById('tutorialOverlay').classList.remove('show');
+	};
+	window.nextTutorial = function() {
+		if (_tutStep < _tutTotal - 1) showTutSlide(_tutStep + 1);
+		else closeTutorial();
+	};
+	window.prevTutorial = function() {
+		if (_tutStep > 0) showTutSlide(_tutStep - 1);
+	};
+	function showTutSlide(n) {
+		_tutStep = n;
+		document.querySelectorAll('.tut-slide').forEach(function(s, i) { s.classList.toggle('active', i === n); });
+		document.getElementById('tutStepLabel').textContent = (n + 1) + '/' + _tutTotal;
+		document.getElementById('tutPrev').style.display = n === 0 ? 'none' : '';
+		document.getElementById('tutNext').style.display = n === _tutTotal - 1 ? 'none' : '';
+		document.getElementById('tutDone').style.display = n === _tutTotal - 1 ? '' : 'none';
+		var dots = '';
+		for (var i = 0; i < _tutTotal; i++) dots += '<span class="tut-dot' + (i === n ? ' active' : '') + '"></span>';
+		document.getElementById('tutDots').innerHTML = dots;
+	}
+
+	if (!localStorage.getItem('tutorial_seen')) {
+		setTimeout(function() { openTutorial(); localStorage.setItem('tutorial_seen', '1'); }, 1200);
+	}
+</script>
+
+<div class="tutorial-overlay" id="tutorialOverlay" onclick="closeTutorial()">
+  <div class="tutorial-dialog" onclick="event.stopPropagation()">
+    <div class="tutorial-header">
+      <span class="tutorial-title">自选速览使用说明</span>
+      <span class="tutorial-step" id="tutStepLabel">1/5</span>
+      <button class="tutorial-close" onclick="closeTutorial()">&times;</button>
+    </div>
+    <div class="tutorial-body">
+
+      <div class="tut-slide active" data-step="0">
+        <div class="tut-viz">
+          <div class="tut-mock tut-mock-panel1">
+            <div class="tmm-panel">
+              <div class="tmm-header"><span class="tmm-title">自选速览</span><span class="tmm-count">12只</span></div>
+              <div class="tmm-chart">
+                <div class="tmm-line" style="top:30%;left:0;width:100%;height:40%;border-bottom:1.5px solid #1677ff;border-radius:0 0 60% 4%/0 0 80% 60%;"></div>
+                <div class="tmm-grid-line" style="top:45%"></div><div class="tmm-grid-line" style="top:60%"></div>
+              </div>
+            </div>
+            <div class="tut-circle tut-c1" style="top:8px;left:28px;width:58px;height:14px;"></div>
+            <div class="tut-circle tut-c2" style="top:26px;left:6px;width:270px;height:80px;"></div>
+            <div class="tut-label tut-l1" style="top:2px;left:100px;">标题 & 股票数量</div>
+            <div class="tut-label tut-l2" style="top:110px;left:80px;">迷你涨跌幅折线图</div>
+          </div>
+        </div>
+        <p class="tut-desc">首页侧边栏的<span class="tut-hl">迷你行情图</span>，<br/>展示自选股分组/个股近期涨跌趋势。</p>
+      </div>
+
+      <div class="tut-slide" data-step="1">
+        <div class="tut-viz">
+          <div class="tut-mock tut-mock-tabs">
+            <div class="tmm-tab-bar">
+              <span class="tmm-tab tmm-tab-on">涨跌幅均值(%)</span>
+              <span class="tmm-tab">个股涨跌幅(%)</span>
+            </div>
+            <div class="tut-circle tut-c1" style="top:-2px;left:0;width:98px;height:22px;"></div>
+            <div class="tut-label tut-l1" style="top:24px;left:10px;">选中此标签</div>
+            <div class="tmm-chart-legend" style="margin-top:12px;">
+              <span class="tmm-legend"><span class="tmm-ldot" style="background:#1677ff"></span>科技股 (5只)</span>
+              <span class="tmm-legend"><span class="tmm-ldot" style="background:#f59e0b"></span>消费股 (4只)</span>
+              <span class="tmm-legend"><span class="tmm-ldot" style="background:#14b143"></span>未分组 (3只)</span>
+            </div>
+            <div class="tut-circle tut-c2" style="top:44px;left:6px;width:270px;height:46px;"></div>
+            <div class="tut-label tut-l2" style="top:94px;left:40px;">每条线 = 一个分组的涨跌幅均值</div>
+          </div>
+        </div>
+        <p class="tut-desc">每个<span class="tut-hl">分组</span>一条折线，<br/>该组所有股票当日涨跌幅的<span class="tut-hl">平均值</span>，一眼对比分组强弱。</p>
+      </div>
+
+      <div class="tut-slide" data-step="2">
+        <div class="tut-viz">
+          <div class="tut-mock tut-mock-tabs">
+            <div class="tmm-tab-bar">
+              <span class="tmm-tab">涨跌幅均值(%)</span>
+              <span class="tmm-tab tmm-tab-on">个股涨跌幅(%)</span>
+            </div>
+            <div class="tut-circle tut-c1" style="top:-2px;left:102px;width:98px;height:22px;"></div>
+            <div class="tut-label tut-l1" style="top:24px;left:120px;">切换到此标签</div>
+            <div class="tmm-chart-legend" style="margin-top:12px;">
+              <span class="tmm-legend"><span class="tmm-ldot" style="background:#1677ff"></span>贵州茅台</span>
+              <span class="tmm-legend"><span class="tmm-ldot" style="background:#f59e0b"></span>宁德时代</span>
+              <span class="tmm-legend"><span class="tmm-ldot" style="background:#a855f7"></span>比亚迪</span>
+            </div>
+            <div class="tut-circle tut-c2" style="top:44px;left:6px;width:270px;height:46px;"></div>
+            <div class="tut-label tut-l2" style="top:94px;left:40px;">每条线 = 一只股票的累计收益率</div>
+          </div>
+        </div>
+        <p class="tut-desc">每只<span class="tut-hl">个股</span>一条折线，从 T 日起<br/><span class="tut-hl">累计收益率(%)</span>，颜色固定不漂移。</p>
+      </div>
+
+      <div class="tut-slide" data-step="3">
+        <div class="tut-viz">
+          <div class="tut-mock tut-mock-tdate">
+            <div class="tmm-tdate-row">
+              <span class="tmm-tdate-label">T日</span>
+              <span class="tmm-tdate-val">2026-08-07 ▾</span>
+            </div>
+            <div class="tut-circle tut-c1" style="top:2px;left:28px;width:130px;height:18px;"></div>
+            <div class="tut-label tut-l1" style="top:24px;left:50px;">点击可换起始日期</div>
+            <div class="tmm-tdate-hint" style="margin-top:14px;">默认近22个交易日，可任意选定起始日</div>
+            <div class="tut-circle tut-c2" style="top:44px;left:6px;width:270px;height:20px;"></div>
+            <div class="tut-label tut-l2" style="top:68px;left:30px;">从 T 日起算累计涨跌幅</div>
+          </div>
+        </div>
+        <p class="tut-desc">可选定<span class="tut-hl">起始日期(T日)</span>，<br/>图表从该日起计算累计涨跌幅。</p>
+      </div>
+
+      <div class="tut-slide" data-step="4">
+        <div class="tut-viz">
+          <div class="tut-mock tut-mock-obs">
+            <div class="tmm-obs-card">
+              <span class="tmm-obs-name">贵州茅台</span>
+              <span class="tmm-obs-code">600519</span>
+              <span class="tmm-obs-btn">涨跌观测</span>
+            </div>
+            <div class="tut-circle tut-c1" style="top:5px;left:148px;width:54px;height:16px;"></div>
+            <div class="tut-label tut-l1" style="top:26px;left:155px;">点这里</div>
+            <div class="tmm-obs-card" style="margin-top:20px;">
+              <span class="tmm-obs-name">宁德时代</span>
+              <span class="tmm-obs-code">300750</span>
+              <span class="tmm-obs-btn-on">观测中</span>
+            </div>
+            <div class="tut-circle tut-c2" style="top:62px;left:148px;width:44px;height:16px;"></div>
+            <div class="tut-label tut-l2" style="top:83px;left:155px;">最多5只</div>
+          </div>
+        </div>
+        <p class="tut-desc">在<span class="tut-hl">自选管理页</span>点「涨跌观测」，<br/>最多选 <span class="tut-hl">5只</span>，图表实时对比走势。</p>
+      </div>
+
+    </div>
+    <div class="tutorial-footer">
+      <div class="tut-dots" id="tutDots"></div>
+      <div class="tut-btns">
+        <button class="tut-btn tut-btn-prev" id="tutPrev" onclick="prevTutorial()">上一步</button>
+        <button class="tut-btn tut-btn-next" id="tutNext" onclick="nextTutorial()">下一步</button>
+        <button class="tut-btn tut-btn-done" id="tutDone" onclick="closeTutorial()">知道了</button>
+      </div>
+    </div>
+  </div>
+</div>
 </script>
 </body>
 </html>

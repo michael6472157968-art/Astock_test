@@ -917,7 +917,7 @@ body {
 .tutorial-overlay.show { opacity: 1; pointer-events: auto; }
 
 .tutorial-dialog {
-  width: 400px; max-width: 92vw;
+  width: 420px; max-width: 92vw;
   background: var(--color-surface);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 12px;
@@ -937,94 +937,102 @@ body {
 .tutorial-close:hover { color: var(--color-text); }
 
 .tutorial-body {
-  position: relative; min-height: 260px;
+  position: relative; min-height: 220px;
 }
 .tut-slide {
-  display: none; padding: 20px 24px 8px; text-align: center;
+  display: none; padding: 16px 24px 4px; text-align: center;
 }
 .tut-slide.active { display: block; }
 
 .tut-viz {
-  width: 100%; height: 150px; margin-bottom: 8px;
+  width: 100%; min-height: 130px; margin-bottom: 4px;
   display: flex; align-items: center; justify-content: center;
 }
-.tut-svg { width: 280px; height: 140px; display: block; }
-
 .tut-desc {
   font-size: 0.85rem; color: var(--color-text-muted); line-height: 1.7;
-  max-width: 320px; margin: 0 auto;
+  max-width: 340px; margin: 0 auto;
 }
 .tut-hl {
   color: var(--color-primary); font-weight: 600;
 }
 
-/* SVG 动画 */
-.tut-line-draw {
-  stroke-dasharray: 400; stroke-dashoffset: 400;
-  animation: tutDrawLine 1.2s ease-out forwards;
-}
-@keyframes tutDrawLine {
-  to { stroke-dashoffset: 0; }
-}
-
-.tut-area-fade {
-  animation: tutFadeArea 0.8s ease-out 0.8s forwards;
-}
-@keyframes tutFadeArea {
-  to { opacity: 1; }
+/* 教学插画（HTML模拟UI） */
+.tut-mock {
+  position: relative; display: inline-block;
+  background: var(--color-bg); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px; padding: 10px 12px;
+  width: 280px; text-align: left;
 }
 
-.tut-dot-1 { animation: tutDotIn 0.3s ease-out 0.2s both; }
-.tut-dot-2 { animation: tutDotIn 0.3s ease-out 0.4s both; }
-.tut-dot-3 { animation: tutDotIn 0.3s ease-out 0.6s both; }
-@keyframes tutDotIn {
-  from { r: 0; opacity: 0; } to { r: 2; opacity: 1; }
+/* 模拟面板 */
+.tmm-panel { }
+.tmm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.tmm-title { font-weight: 600; font-size: 0.8rem; color: var(--color-text); }
+.tmm-count { font-size: 0.62rem; color: var(--color-text-muted); }
+.tmm-chart {
+  position: relative; height: 70px; background: rgba(255,255,255,0.02);
+  border-radius: 4px; overflow: hidden;
+}
+.tmm-line {
+  position: absolute; border-bottom: 1.5px solid #1677ff;
+}
+.tmm-grid-line {
+  position: absolute; left: 0; right: 0; height: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
-.tut-label-pop {
-  animation: tutLabelPop 0.4s ease-out forwards;
+/* 模拟标签页 */
+.tmm-tab-bar { display: flex; gap: 0; }
+.tmm-tab {
+  padding: 5px 12px; font-size: 0.7rem; color: var(--color-text-muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
-@keyframes tutLabelPop {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+.tmm-tab-on {
+  color: var(--color-primary); border-bottom-color: var(--color-primary);
+}
+.tmm-chart-legend { display: flex; gap: 8px; flex-wrap: wrap; }
+.tmm-legend { font-size: 0.62rem; color: var(--color-text-muted); display: flex; align-items: center; gap: 3px; }
+.tmm-ldot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+
+/* 模拟T日 */
+.tmm-tdate-row { display: flex; align-items: center; gap: 8px; }
+.tmm-tdate-label { font-size: 0.68rem; color: var(--color-text-muted); }
+.tmm-tdate-val {
+  font-size: 0.72rem; color: var(--color-text);
+  padding: 2px 8px; border: 1px solid rgba(255,255,255,0.12); border-radius: 4px;
+}
+.tmm-tdate-hint { font-size: 0.62rem; color: var(--color-text-muted); }
+
+/* 模拟涨跌观测 */
+.tmm-obs-card {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; background: var(--color-surface); border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.tmm-obs-name { font-size: 0.72rem; color: var(--color-text); }
+.tmm-obs-code { font-size: 0.6rem; color: var(--color-text-muted); margin-left: auto; }
+.tmm-obs-btn {
+  font-size: 0.58rem; color: #d89614; border: 1px solid #d89614;
+  padding: 2px 6px; border-radius: 3px; margin-left: 4px; white-space: nowrap;
+}
+.tmm-obs-btn-on {
+  font-size: 0.58rem; color: #111; background: #d89614;
+  padding: 2px 6px; border-radius: 3px; margin-left: 4px; white-space: nowrap;
 }
 
-.tut-dot-pop {
-  animation: tutDotPulse 0.5s ease-out both;
+/* 红圈标注 */
+.tut-circle {
+  position: absolute; border: 2px solid #ef232a; border-radius: 50%;
+  pointer-events: none; z-index: 2;
+  animation: tutPulse 1.5s ease-in-out infinite;
 }
-@keyframes tutDotPulse {
-  from { r: 0; opacity: 0; }
-  to { r: 2.5; opacity: 1; }
+@keyframes tutPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,35,42,0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(239,35,42,0); }
 }
-
-.tut-btn-click {
-  animation: tutBtnFlash 0.6s ease-out 0.5s both;
-}
-@keyframes tutBtnFlash {
-  0% { fill: transparent; }
-  50% { fill: rgba(216,150,20,0.25); }
-  100% { fill: transparent; }
-}
-
-.tut-fly-line {
-  animation: tutFlyLine 0.5s ease-out 0.8s forwards;
-}
-@keyframes tutFlyLine {
-  to { opacity: 1; stroke-dashoffset: -10; }
-}
-
-.tut-fly-dot {
-  animation: tutFlyDot 0.5s ease-out 0.8s forwards;
-}
-@keyframes tutFlyDot {
-  to { opacity: 1; }
-}
-
-.tut-arrow-curve {
-  animation: tutArrowCurve 0.5s ease-out 0.3s forwards;
-}
-@keyframes tutArrowCurve {
-  to { opacity: 1; }
+.tut-label {
+  position: absolute; font-size: 0.62rem; color: #ef232a; font-weight: 600;
+  white-space: nowrap; pointer-events: none; z-index: 3;
 }
 
 /* Footer */
