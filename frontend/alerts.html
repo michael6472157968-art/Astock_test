@@ -292,7 +292,7 @@ function loadAll() {
       document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无自选，请在<a href="diagnosis.html">诊股页面</a>搜索股票并点击「+ 自选」按钮添加。</p></div></div>';
       return;
     }
-    if (Session.canCreateGroup()) {
+    if (_groups.length === 0 && Session.canCreateGroup()) {
       document.getElementById('newGroupWrap').style.display = 'flex';
     } else {
       document.getElementById('newGroupWrap').style.display = 'none';
@@ -306,6 +306,7 @@ function loadAll() {
         loadFavMainChart();
       }
     } else {
+      document.getElementById('newGroupWrap').style.display = 'none';
       renderFavMainChartBlurred();
     }
   }).catch(function() {
