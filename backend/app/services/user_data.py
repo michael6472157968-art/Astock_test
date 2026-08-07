@@ -264,8 +264,8 @@ async def create_group(user_id: int, name: str, tier: int = 0) -> tuple[bool, st
                     UserFavoriteGroup.user_id == user_id
                 )
             )
-            if (c.scalar() or 0) >= 20:
-                return False, "最多创建20个分组", None
+            if (c.scalar() or 0) >= _settings.group_count_limit:
+                return False, f"最多创建{_settings.group_count_limit}个分组", None
 
         exist_r = await session.execute(
             select(UserFavoriteGroup).where(

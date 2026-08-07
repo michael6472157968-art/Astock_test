@@ -235,7 +235,7 @@
     <button onclick="createNewGroup()">+ 新建</button>
   </div>
 </main>
-<script src="/js/app.js?v=9"></script>
+<script src="/js/app.js?v=10"></script>
 <script>
 if (!Session.loggedIn()) {
   document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用自选功能</p>';
@@ -554,6 +554,10 @@ function handleNewGroupKey(e) {
 function createNewGroup() {
   if (!Session.canCreateGroup()) {
     showToast('注册用户及以上才可创建分组，请先注册或登录');
+    return;
+  }
+  if (!Session.isAdmin() && _groups.length >= Session.getGroupCountLimit()) {
+    showToast('最多创建' + Session.getGroupCountLimit() + '个分组，请先删除旧分组');
     return;
   }
   var input = document.getElementById('newGroupInput');

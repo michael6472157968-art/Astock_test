@@ -110,6 +110,7 @@ var Session = {
   canViewDashboard: function() { var t = this.tier(); return t >= 2 || t === 99; },
   canUseGroupFeature: function() { var t = this.tier(); return t >= 1 || t === 99; },
   getGroupStockLimit: function() { return this.isAdmin() ? 999 : 10; },
+  getGroupCountLimit: function() { return this.isAdmin() ? 999 : 5; },
   credits: function() {
     var u = this.get();
     return u ? u.credits || 0 : 0;

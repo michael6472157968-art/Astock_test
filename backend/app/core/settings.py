@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     favorite_quota: dict = {0: 0, 1: 10, 2: 20, 3: 30, 99: 999}
     favorite_page_size: int = 10
     group_stock_limit: int = 10      # 每组最多股票数（tier=99 管理员豁免，未分组不受此限）
+    group_count_limit: int = 5       # 每个用户最多自定义分组数（tier=99 管理员豁免）
     dashboard_min_tier: int = 2      # 自选速览最低tier
 
     @model_validator(mode="after")
