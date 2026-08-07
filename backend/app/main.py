@@ -92,7 +92,19 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Auto-sync failed: {e}")
 
-    asyncio.create_task(_auto_sync())
+    # 只在空库首次部署时跑全量同步，避免每次重启拖慢 API 响应
+    async def _maybe_auto_sync():
+        await asyncio.sleep(5)
+        from app.core.database import async_session
+        from sqlalchemy import text
+        async with async_session() as s:
+            r = await s.execute(text("SELECT COUNT(*) FROM stocks"))
+            if r.scalar() and r.scalar() > 0:
+                logger.info("Auto-sync: data exists, skip")
+                return
+        await _auto_sync()
+
+    asyncio.create_task(_maybe_auto_sync())
 
     yield
 
