@@ -52,3 +52,9 @@ Astock-test/
 
 # Dev auth token (never commit)
 .dev_token
+
+# Third-party / comparison projects (not part of Astock)
+QuantDinger/
+admin-dashboard/
+demo-proxy/
+data/

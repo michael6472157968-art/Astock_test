@@ -1,2 +1,0 @@
-"""Market module registry package."""
-
