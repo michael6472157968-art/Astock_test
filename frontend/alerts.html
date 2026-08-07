@@ -1741,7 +1741,7 @@ setTimeout(loadQuotesForVisible, 100);
 		document.getElementById('tutDots').innerHTML = dots;
 	}
 
-	if (!localStorage.getItem('tutorial_seen')) {
+	if (Session.canViewDashboard() && !localStorage.getItem('tutorial_seen')) {
 		setTimeout(function() { openTutorial(); localStorage.setItem('tutorial_seen', '1'); }, 1200);
 	}
 </script>
