@@ -1224,11 +1224,11 @@ window.addEventListener('resize', function() {
 });
 
 // ── 标签切换 ──
-var _stockPctColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a'];
+var _stockPctColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
 
 function _stockPctColorForCode(code) {
-  var hash = 0;
-  for (var i = 0; i < code.length; i++) { hash = ((hash << 5) - hash) + code.charCodeAt(i); hash |= 0; }
+  var hash = 5381;
+  for (var i = 0; i < code.length; i++) { hash = ((hash << 5) + hash) + code.charCodeAt(i); hash |= 0; }
   return _stockPctColors[Math.abs(hash) % _stockPctColors.length];
 }
 var _favStockPctReq = null;
