@@ -986,6 +986,12 @@
       });
     }
   }
+  // 自选速览使用说明（挂到全局，供HTML onclick调用）
+  window.closeTutorial = closeTutorial;
+  window.nextTutorial = nextTutorial;
+  window.prevTutorial = prevTutorial;
+  window.openTutorial = openTutorial;
+
   // 首次访问自动弹出
   if (!localStorage.getItem('tutorial_seen')) {
     setTimeout(function() { openTutorial(); localStorage.setItem('tutorial_seen', '1'); }, 1200);
