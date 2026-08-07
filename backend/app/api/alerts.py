@@ -11,10 +11,9 @@ from pydantic import BaseModel, Field
 from app.core.database import async_session
 from app.core.settings import get_settings
 from app.middleware.auth_middleware import require_auth
-from app.models.orm.models import AlertNotification, UserAlertConfig, UserFavorite, UserFavoriteGroup
+from app.models.orm.models import UserFavorite, UserFavoriteGroup
 from app.models.schemas.common import APIResponse
 from app.services import user_data
-from sqlalchemy import select
 from sqlalchemy import text as _text
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["预警"])
@@ -575,75 +574,3 @@ async def favorites_stock_prices(
             stocks_out.append({"ts_code": code, "name": name, "daily": daily_list})
 
     return APIResponse(data={"stocks": stocks_out, "dates": dates}, timestamp=int(time.time()))
-
-
-# ── 预警配置 ──
-
-@router.get("/configs")
-async def list_configs(user: dict = Depends(require_auth)):
-    uid, tier = user["user_id"], user["tier"]
-    if not uid:
-        return APIResponse(data={"total": 0, "items": []}, timestamp=int(time.time()))
-
-    async with async_session() as session:
-        r = await session.execute(
-            select(UserAlertConfig).where(UserAlertConfig.user_id == uid)
-        )
-        cfgs = r.scalars().all()
-        items = [{"id": c.id, "stock_code": c.ts_code, "alert_types": c.alert_types, "is_active": c.is_active} for c in cfgs]
-        return APIResponse(data={"total": len(items), "items": items}, timestamp=int(time.time()))
-
-
-class AlertConfigRequest(BaseModel):
-    stock_code: str
-    alert_types: str = "[]"  # JSON数组字符串
-    is_active: int = 1
-
-
-@router.post("/configs")
-async def create_config(req: AlertConfigRequest, user: dict = Depends(require_auth)):
-    uid, tier = user["user_id"], user["tier"]
-    if not uid:
-        raise HTTPException(401, "请先登录")
-
-    async with async_session() as session:
-        cfg = UserAlertConfig(user_id=uid, ts_code=req.stock_code, alert_types=req.alert_types, is_active=req.is_active)
-        session.add(cfg)
-        await session.commit()
-        await session.refresh(cfg)
-        return APIResponse(data={"id": cfg.id, "message": "已创建"}, timestamp=int(time.time()))
-
-
-@router.delete("/configs/{cfg_id}")
-async def delete_config(cfg_id: int, user: dict = Depends(require_auth)):
-    uid, tier = user["user_id"], user["tier"]
-    if not uid:
-        raise HTTPException(401, "请先登录")
-
-    async with async_session() as session:
-        r = await session.execute(
-            select(UserAlertConfig).where(UserAlertConfig.id == cfg_id, UserAlertConfig.user_id == uid)
-        )
-        cfg = r.scalar_one_or_none()
-        if not cfg:
-            raise HTTPException(404, "配置不存在")
-        await session.delete(cfg)
-        await session.commit()
-        return APIResponse(data={"message": "已删除"}, timestamp=int(time.time()))
-
-
-# ── 通知 ──
-
-@router.get("/notifications")
-async def list_notifications(user: dict = Depends(require_auth)):
-    uid, tier = user["user_id"], user["tier"]
-    if not uid:
-        return APIResponse(data={"total": 0, "items": []}, timestamp=int(time.time()))
-
-    async with async_session() as session:
-        r = await session.execute(
-            select(AlertNotification).where(AlertNotification.user_id == uid).order_by(AlertNotification.created_at.desc()).limit(50)
-        )
-        notifs = r.scalars().all()
-        items = [{"id": n.id, "ts_code": n.ts_code, "stock_name": n.stock_name, "alert_type": n.alert_type, "content": n.content, "is_read": n.is_read, "created_at": n.created_at.isoformat() if n.created_at else ""} for n in notifs]
-        return APIResponse(data={"total": len(items), "items": items}, timestamp=int(time.time()))

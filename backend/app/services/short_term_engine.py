@@ -73,9 +73,11 @@ class ShortTermEngine:
             "short_t7_dip": t7d,
         }
         for ptype in pools:
-            await cache_set(f"pool:{ptype}:{trade_date}", pools[ptype],
+            # 剥离内部字段再对外暴露（缓存 + DB）
+            cleaned = [{k: v for k, v in item.items() if not k.startswith("_")} for item in pools[ptype]]
+            await cache_set(f"pool:{ptype}:{trade_date}", cleaned,
                             ttl=_settings.cache_offline_ttl)
-            await self._persist(ptype, pools[ptype], trade_date)
+            await self._persist(ptype, cleaned, trade_date)
 
         counts = {k: len(v) for k, v in pools.items()}
         logger.info(f"Short-term pools computed for {trade_date}: {counts}")

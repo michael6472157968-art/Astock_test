@@ -10,11 +10,12 @@
       "autoPort": false
     },
     {
-      "name": "Astock-preview",
+      "name": "Astock-8003",
       "runtimeExecutable": "uvicorn",
-      "runtimeArgs": ["app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+      "runtimeArgs": ["app.main:app", "--host", "127.0.0.1", "--port", "8003"],
       "cwd": "D:/Astock_DetaTest/backend",
-      "port": 8000
+      "port": 8003,
+      "autoPort": false
     }
   ]
 }

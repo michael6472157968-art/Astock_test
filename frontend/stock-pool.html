@@ -51,7 +51,7 @@
     <p class="state-loading">加载中...</p>
   </div></div>
 </main>
-<script src="/js/app.js?v=5"></script>
+<script src="/js/app.js?v=8"></script>
 <script>
 var pools = [
   { type: 'hot_leader', name: '热点龙头池' },
@@ -174,7 +174,7 @@ function renderTable(items) {
   });
   html += '</tbody></table>';
   content.innerHTML = html;
-  refreshFavButtons();
+  FavStore._refreshButtons();
 }
 
 document.addEventListener('click', function(e) {

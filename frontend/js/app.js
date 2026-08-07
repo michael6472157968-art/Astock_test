@@ -40,7 +40,7 @@ var API = {
       if (json.code === 403) {
         showToast(json.message || '当前用户等级无权限访问此功能');
       }
-      throw { code: json.code, message: json.message, data: json.data };
+      throw { code: json.code, message: json.message || json.detail, data: json.data };
     });
   },
 

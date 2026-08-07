@@ -81,6 +81,7 @@
 .fav-card:active { cursor: grabbing; }
 .fav-card.dragging { opacity: 0.4; }
 .fav-card.drag-over { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary); }
+.fav-card.touch-over { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary); }
 .fav-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .fav-card .fav-top-row { display: flex; align-items: center; gap: 8px; }
 .fav-card .fav-left { display: flex; align-items: center; flex-shrink: 0; }
@@ -191,6 +192,14 @@
   font-size: 0.78rem;
 }
 .fav-more-btn:hover { background: var(--color-border-light); }
+.fav-collapse-btn {
+  display: block; width: calc(100% - 16px); margin: 4px 8px 6px;
+  padding: 5px; text-align: center;
+  background: var(--color-surface); border: 1px dashed var(--color-border);
+  border-radius: 6px; color: var(--color-text-muted); cursor: pointer;
+  font-size: 0.75rem;
+}
+.fav-collapse-btn:hover { background: var(--color-border-light); color: var(--color-text-secondary); }
 </style>
 </head>
 <body>
@@ -400,6 +409,8 @@ function renderCards(items, totalVisible, groupKey) {
   var remaining = items.length - totalVisible;
   if (remaining > 0) {
     h += '<button class="fav-more-btn" onclick="loadGroupMore(\'' + groupKey + '\')">查看更多（剩余' + remaining + '只）</button>';
+  } else if (totalVisible > _pageSize) {
+    h += '<button class="fav-collapse-btn" onclick="collapseGroupMore(\'' + groupKey + '\')">收起</button>';
   }
   h += '</div>';
   return h;
@@ -624,15 +635,23 @@ var _touchSrcGroupId = null;
 var _touchIsDragging = false;
 var TOUCH_DRAG_THRESHOLD = 8;
 
-function getTouchDropGroup(e) {
-  var el = document.elementFromPoint(e.clientX, e.clientY);
+function getTouchDropTarget(touch) {
+  // Returns { groupId, card, insertAfter } or null
+  var el = document.elementFromPoint(touch.clientX, touch.clientY);
   if (!el) return null;
-  var header = el.closest('.fav-group-header');
-  if (header) return header.getAttribute('data-drop-group');
-  var body = el.closest('.fav-group-body');
-  if (body) return body.getAttribute('data-drop-group');
   var card = el.closest('.fav-card');
-  if (card) return card.getAttribute('data-group-id') || null;
+  if (card) {
+    var rect = card.getBoundingClientRect();
+    return {
+      groupId: card.getAttribute('data-group-id') || null,
+      card: card,
+      insertAfter: touch.clientY >= (rect.top + rect.height / 2)
+    };
+  }
+  var header = el.closest('.fav-group-header');
+  if (header) return { groupId: header.getAttribute('data-drop-group'), card: null, insertAfter: false };
+  var body = el.closest('.fav-group-body');
+  if (body) return { groupId: body.getAttribute('data-drop-group'), card: null, insertAfter: false };
   return null;
 }
 
@@ -673,14 +692,19 @@ document.addEventListener('touchmove', function(e) {
     _touchClone.style.top = (touch.clientY - 30) + 'px';
   }
   document.querySelectorAll('.fav-group-header.drop-target').forEach(function(h) { h.classList.remove('drop-target'); });
-  var groupId = getTouchDropGroup(touch);
-  if (groupId !== null) {
-    var hdr = document.querySelector('[data-drop-group="' + groupId + '"]');
-    if (hdr) {
-      if (hdr.classList.contains('fav-group-body')) {
-        hdr = hdr.parentElement.querySelector('.fav-group-header');
+  document.querySelectorAll('.fav-card.touch-over').forEach(function(c) { c.classList.remove('touch-over'); });
+  var dropTarget = getTouchDropTarget(touch);
+  if (dropTarget) {
+    if (dropTarget.card) {
+      dropTarget.card.classList.add('touch-over');
+    } else {
+      var hdr = document.querySelector('[data-drop-group="' + dropTarget.groupId + '"]');
+      if (hdr) {
+        if (hdr.classList.contains('fav-group-body')) {
+          hdr = hdr.parentElement.querySelector('.fav-group-header');
+        }
+        if (hdr) hdr.classList.add('drop-target');
       }
-      if (hdr) hdr.classList.add('drop-target');
     }
   }
 }, { passive: false });
@@ -690,15 +714,47 @@ document.addEventListener('touchend', function(e) {
   if (_touchClone) { _touchClone.remove(); _touchClone = null; }
   _touchDragSrc.classList.remove('dragging');
   document.querySelectorAll('.fav-group-header.drop-target').forEach(function(h) { h.classList.remove('drop-target'); });
+  document.querySelectorAll('.fav-card.touch-over').forEach(function(c) { c.classList.remove('touch-over'); });
 
   if (_touchIsDragging) {
     var touch = e.changedTouches[0];
-    var groupId = getTouchDropGroup(touch);
-    var srcCode = _touchDragSrc.getAttribute('data-code');
-    if (groupId === '__ungrouped__') groupId = null;
-    else if (groupId) groupId = parseInt(groupId);
-    if (srcCode && String(groupId) !== String(_touchSrcGroupId || '')) {
-      moveStockToGroup(srcCode, groupId);
+    var dropTarget = getTouchDropTarget(touch);
+    if (dropTarget) {
+      var groupId = dropTarget.groupId;
+      var srcCode = _touchDragSrc.getAttribute('data-code');
+      if (groupId === '__ungrouped__') groupId = null;
+      else if (groupId) groupId = parseInt(groupId);
+
+      if (srcCode && String(groupId) !== String(_touchSrcGroupId || '')) {
+        if (dropTarget.card) {
+          // Cross-group drop onto specific card: move + insert at position
+          var item = _allItems.find(function(f){return f.stock_code === srcCode;});
+          if (item) {
+            item.group_id = groupId;
+            var globalSrcIdx = _allItems.indexOf(item);
+            var tgtCode = dropTarget.card.getAttribute('data-code');
+            var globalTgtIdx = _allItems.findIndex(function(f){return f.stock_code === tgtCode;});
+            if (dropTarget.insertAfter) globalTgtIdx += 1;
+            if (globalSrcIdx >= 0 && globalTgtIdx >= 0) {
+              var moved = _allItems.splice(globalSrcIdx, 1)[0];
+              var insertAt = globalSrcIdx < globalTgtIdx ? globalTgtIdx - 1 : globalTgtIdx;
+              _allItems.splice(insertAt, 0, moved);
+            }
+          }
+          invalidateFavStatsCache();
+          var oldKey = _touchSrcGroupId ? ('g_' + _touchSrcGroupId) : '__ungrouped__';
+          var newKey = groupId ? ('g_' + groupId) : '__ungrouped__';
+          refreshGroupSection(oldKey);
+          if (oldKey !== newKey) refreshGroupSection(newKey);
+          API.put('/alerts/favorites/' + encodeURIComponent(srcCode) + '/move', { group_id: groupId }).then(function() {
+            var ordered = _allItems.map(function(f){return f.stock_code;});
+            API.put('/alerts/favorites/reorder', { ordered_codes: ordered }).catch(function(){});
+          });
+        } else {
+          // Drop on group header/body: just move to group (back of list)
+          moveStockToGroup(srcCode, groupId);
+        }
+      }
     }
   }
 
@@ -783,6 +839,46 @@ function handleCardDrop(e) {
 
   if (!targetCard || !_dragSrc || targetCard === _dragSrc) { resetDrag(); return; }
   if (!targetContainer) { resetDrag(); return; }
+
+  // Cross-group: drop onto card in a different group
+  var targetCardGroupId = targetCard.getAttribute('data-group-id') || null;
+  if (String(targetCardGroupId) !== String(_dragSrcGroupId || '')) {
+    var _srcCode2 = _dragSrc.getAttribute('data-code');
+    var _rect2 = targetCard.getBoundingClientRect();
+    var _midY2 = _rect2.top + _rect2.height / 2;
+    var _insertAfter2 = e.clientY >= _midY2;
+
+    var _item2 = _allItems.find(function(f){return f.stock_code === _srcCode2;});
+    if (_item2) {
+      _item2.group_id = targetCardGroupId ? (parseInt(targetCardGroupId) || null) : null;
+
+      var _globalSrcIdx2 = _allItems.indexOf(_item2);
+      var _tgtCode2 = targetCard.getAttribute('data-code');
+      var _globalTgtIdx2 = _allItems.findIndex(function(f){return f.stock_code === _tgtCode2;});
+      if (_insertAfter2) _globalTgtIdx2 += 1;
+
+      if (_globalSrcIdx2 >= 0 && _globalTgtIdx2 >= 0) {
+        var _moved2 = _allItems.splice(_globalSrcIdx2, 1)[0];
+        var _insertAt2 = _globalSrcIdx2 < _globalTgtIdx2 ? _globalTgtIdx2 - 1 : _globalTgtIdx2;
+        _allItems.splice(_insertAt2, 0, _moved2);
+      }
+    }
+
+    invalidateFavStatsCache();
+    var _oldKey = _dragSrcGroupId ? ('g_' + _dragSrcGroupId) : '__ungrouped__';
+    var _newKey = targetCardGroupId ? ('g_' + targetCardGroupId) : '__ungrouped__';
+    refreshGroupSection(_oldKey);
+    if (_oldKey !== _newKey) refreshGroupSection(_newKey);
+
+    var _newGroupId = targetCardGroupId ? parseInt(targetCardGroupId) : null;
+    API.put('/alerts/favorites/' + encodeURIComponent(_srcCode2) + '/move', { group_id: _newGroupId }).then(function() {
+      var _ordered2 = _allItems.map(function(f){return f.stock_code;});
+      API.put('/alerts/favorites/reorder', { ordered_codes: _ordered2 }).catch(function(){});
+    });
+
+    resetDrag();
+    return;
+  }
 
   // Determine drop position relative to target
   var cards = Array.from(targetContainer.querySelectorAll('.fav-card'));
@@ -929,6 +1025,12 @@ function loadGroupMore(groupKey) {
       window.scrollBy(0, diff);
     }
   }
+}
+
+function collapseGroupMore(groupKey) {
+  _groupPage[groupKey] = _pageSize;
+  refreshGroupSection(groupKey);
+  loadQuotesForVisible();
 }
 
 function refreshGroupSection(groupKey) {
