@@ -241,7 +241,7 @@ var _ungroupedCount = 0;
 var _quotaMax = 0;
 var _quotaCurrent = 0;
 var _expandedGroups = {};
-var _groupPage = {};       // groupId → current offset
+var _groupPage = {};       // groupId → total visible count (0 = initial pageSize)
 var _pageSize = 10;
 var _dragSrc = null;
 var _dragSrcGroupId = null;
@@ -362,8 +362,11 @@ function renderGroupSection(g) {
   return h;
 }
 
-function renderCards(items, pageOffset, groupKey) {
-  var batch = items.slice(pageOffset, pageOffset + _pageSize);
+function renderCards(items, totalVisible, groupKey) {
+  totalVisible = totalVisible || 0;
+  if (!totalVisible) totalVisible = _pageSize;
+  totalVisible = Math.min(totalVisible, items.length);
+  var batch = items.slice(0, totalVisible);
   var codes = batch.map(function(f){return f.stock_code;});
   var h = '<div class="fav-cards-container" data-codes="' + codes.join(',') + '" data-group-key="' + groupKey + '" data-page-offset="' + pageOffset + '">';
   h += '<div class="fav-cards-inner">';
@@ -394,7 +397,7 @@ function renderCards(items, pageOffset, groupKey) {
     h += '</div>';
   });
   h += '</div>';
-  var remaining = items.length - pageOffset - batch.length;
+  var remaining = items.length - totalVisible;
   if (remaining > 0) {
     h += '<button class="fav-more-btn" onclick="loadGroupMore(\'' + groupKey + '\')">查看更多（剩余' + remaining + '只）</button>';
   }
@@ -906,24 +909,26 @@ function moveStockToGroup(code, groupId) {
 // ── Group More ──
 
 function loadGroupMore(groupKey) {
-  var currentPg = _groupPage[groupKey] || 0;
-  _groupPage[groupKey] = currentPg + _pageSize;
+  var current = _groupPage[groupKey] || 0;
+  if (!current) current = _pageSize;
+  _groupPage[groupKey] = current + _pageSize;
+
+  // 记录当前最后一张可见卡的屏幕位置
+  var groupId = groupKey === '__ungrouped__' ? '__ungrouped__' : groupKey;
+  var lastCard = document.querySelector('[data-group-id="' + groupId + '"] .fav-card:last-child');
+  var anchorY = lastCard ? lastCard.getBoundingClientRect().top : null;
 
   refreshGroupSection(groupKey);
   loadQuotesForVisible();
 
-  // 新卡片的起点 = pageOffset + pageSize 对应位置，滚动到它
-  var newPg = _groupPage[groupKey] || 0;
-  var groupId = groupKey === '__ungrouped__' ? '__ungrouped__' : groupKey;
-  var containers = document.querySelectorAll('[data-group-id="' + groupId + '"] .fav-cards-container');
-  // 重建后只有一个 container，包含全部卡片。找到第 (currentPg + _pageSize) 张做锚点
-  setTimeout(function() {
+  if (anchorY != null) {
+    // 找到重建后同一张卡片，补偿滚动偏移
     var cards = document.querySelectorAll('[data-group-id="' + groupId + '"] .fav-card');
-    var anchorIdx = currentPg + _pageSize;
-    if (cards.length > anchorIdx) {
-      cards[anchorIdx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (cards.length) {
+      var diff = cards[cards.length - 1].getBoundingClientRect().top - anchorY;
+      window.scrollBy(0, diff);
     }
-  }, 200);
+  }
 }
 
 function refreshGroupSection(groupKey) {
