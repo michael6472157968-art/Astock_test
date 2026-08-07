@@ -57,6 +57,13 @@
 }
 .fav-group-header .group-action:hover { color: var(--color-primary); background: rgba(59,130,246,0.1); }
 .fav-group-header .group-action.danger:hover { color: var(--color-danger); background: rgba(239,68,68,0.1); }
+.fav-group-header .group-obs-btn {
+  font-size: 0.7rem; font-weight: 500; cursor: pointer;
+  color: #f59e0b; border: 1px solid #f59e0b; border-radius: 4px;
+  background: transparent; padding: 2px 6px; margin-left: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+.fav-group-header .group-obs-btn:hover { background: #f59e0b; color: #fff; }
 
 .fav-group-body { display: none; }
 .fav-group-body.open { display: block; }
@@ -104,6 +111,14 @@
   transition: background 0.15s, color 0.15s;
 }
 .fav-card .fav-diag-btn:hover { background: var(--color-primary); color: #fff; }
+.fav-card .fav-obs-btn {
+  font-size: 0.72rem; font-weight: 500; cursor: pointer;
+  padding: 3px 10px; border-radius: 4px;
+  color: #f59e0b; border: 1px solid #f59e0b;
+  background: transparent; transition: background 0.15s, color 0.15s;
+}
+.fav-card .fav-obs-btn:hover { background: #f59e0b; color: #fff; }
+.fav-card .fav-obs-btn.active { background: #f59e0b; color: #fff; }
 .fav-card .fav-del { font-size: 0.7rem; color: var(--color-text-muted); background: none; border: none; cursor: pointer; padding: 3px 8px; border-radius: 4px; margin-left: auto; }
 .fav-card .fav-del:hover { color: var(--color-danger); background: rgba(239,68,68,0.1); }
 .fav-card .fav-score-badge {
@@ -270,7 +285,13 @@ function loadAll() {
     }
     document.getElementById('newGroupWrap').style.display = 'flex';
     renderAll();
-    loadFavMainChart();
+    // 恢复上次标签页状态
+    var savedTab = FavStore.getChartTab();
+    if (savedTab === 'stock_pct') {
+      switchFavTab('stock_pct');
+    } else {
+      loadFavMainChart();
+    }
   }).catch(function() {
     document.getElementById('content').innerHTML = '<p class="state-error">加载失败</p>';
   });
@@ -289,8 +310,17 @@ function renderAll() {
     html += renderGroupSection(g);
   });
   document.getElementById('content').innerHTML = html;
-  // 渲染完成后重新加载主图（分组数可能变了）
-  setTimeout(loadFavMainChart, 50);
+  // 刷新所有观测按钮状态
+  _refreshAllObserveButtons();
+  // 渲染完成后恢复主图（尊重用户上次标签页选择）
+  setTimeout(function() {
+    var savedTab = FavStore.getChartTab();
+    if (savedTab === 'stock_pct') {
+      switchFavTab('stock_pct');
+    } else {
+      loadFavMainChart();
+    }
+  }, 50);
 }
 
 function renderUngroupedSection() {
@@ -322,6 +352,7 @@ function renderGroupSection(g) {
   h += '<span class="group-drag-handle" title="拖拽排序分组">⋮⋮</span>';
   h += '<span class="group-name" id="groupName_' + g.id + '" ondblclick="startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')">' + escHtml(g.name) + '</span>';
   h += '<span class="group-count">' + items.length + '只</span>';
+  h += '<button class="group-obs-btn" onclick="event.stopPropagation();toggleObserveGroup(' + g.id + ',\'' + escHtml(escHtml(g.name)) + '\')" title="涨跌观测此分组">涨跌观测</button>';
   h += '<button class="group-action" onclick="event.stopPropagation();startRenameGroup(' + g.id + ',\'' + escHtml(g.name) + '\')" title="重命名">✎</button>';
   h += '<button class="group-action danger" onclick="event.stopPropagation();deleteGroupConfirm(' + g.id + ')" title="删除分组">✕</button>';
   h += '</div>';
@@ -357,6 +388,7 @@ function renderCards(items, pageOffset, groupKey) {
     h += '</div>';
     h += '<div class="fav-bot-row">';
     h += '<a class="fav-diag-btn" href="diagnosis.html?code=' + encodeURIComponent(f.stock_code) + '" onclick="event.stopPropagation();">诊股</a>';
+    h += '<button class="fav-obs-btn" data-code="' + f.stock_code + '" onclick="event.stopPropagation();toggleObserveStock(this,\'' + f.stock_code + '\')">涨跌观测</button>';
     h += '<button class="fav-del" onclick="event.stopPropagation();removeFav(\'' + f.stock_code + '\')" title="删除自选">✕ 移除</button>';
     h += '</div>';
     h += '</div>';
@@ -896,6 +928,60 @@ function removeFav(code) {
 // ── 自选速览主图 ──
 var _favMainChart = null;
 
+// ── 涨跌观测按钮 ──
+
+function toggleObserveStock(btn, code) {
+  var codes = FavStore.getStockPctCodes();
+  var idx = codes.indexOf(code);
+  if (idx >= 0) {
+    codes.splice(idx, 1);
+    btn.classList.remove('active');
+    btn.textContent = '涨跌观测';
+  } else {
+    if (codes.length >= 10) { showToast('最多观测10只股票'); return; }
+    codes.push(code);
+    btn.classList.add('active');
+    btn.textContent = '观测中';
+  }
+  FavStore.setStockPctCodes(codes);
+  _refreshAllObserveButtons();
+  // 如果当前在个股涨跌幅标签页，刷新图表
+  if (FavStore.getChartTab() === 'stock_pct') loadFavStockPctChart();
+}
+
+function _refreshAllObserveButtons() {
+  var obsCodes = FavStore.getStockPctCodes();
+  var obsSet = {};
+  obsCodes.forEach(function(c) { obsSet[c] = true; });
+  document.querySelectorAll('.fav-obs-btn').forEach(function(btn) {
+    var code = btn.getAttribute('data-code');
+    if (code) {
+      if (obsSet[code]) {
+        btn.classList.add('active');
+        btn.textContent = '观测中';
+      } else {
+        btn.classList.remove('active');
+        btn.textContent = '涨跌观测';
+      }
+    }
+  });
+}
+
+function toggleObserveGroup(gid, gname) {
+  var tab = FavStore.getChartTab();
+  // 先切换到涨跌幅均值标签页
+  if (tab !== 'avg_chg') switchFavTab('avg_chg');
+  // 默认展开对应的配置T日
+  var tDates = FavStore.getTDates();
+  if (!tDates['g_' + gid]) {
+    FavStore.setTDate('g_' + gid, '');
+    reloadGroups(); // 重建配置行
+  }
+  // 滚动到图表
+  document.getElementById('favMainChartPanel').scrollIntoView({ behavior: 'smooth' });
+  showToast('已切换到分组「' + gname + '」涨跌幅均值');
+}
+
 function fmtDate(d) {
   if (!d) return '';
   return d.slice(4, 6) + '-' + d.slice(6, 8);
@@ -966,7 +1052,7 @@ function loadFavMainChart() {
     renderFavConfigRows(groupInfos, tDates, allDates);
 
     // 通知子图当前模式
-    FavStore.setChartTab('avg_chg');
+    // 注意：不在这里覆盖 chartTab，由 switchFavTab 写入
 
     var viewForSub = { groups: [], ungrouped: null, dates: allDates };
     groupData.forEach(function(gd) {
