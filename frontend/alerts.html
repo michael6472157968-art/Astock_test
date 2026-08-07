@@ -368,7 +368,7 @@ function renderCards(items, totalVisible, groupKey) {
   totalVisible = Math.min(totalVisible, items.length);
   var batch = items.slice(0, totalVisible);
   var codes = batch.map(function(f){return f.stock_code;});
-  var h = '<div class="fav-cards-container" data-codes="' + codes.join(',') + '" data-group-key="' + groupKey + '" data-page-offset="' + pageOffset + '">';
+  var h = '<div class="fav-cards-container" data-codes="' + codes.join(',') + '" data-group-key="' + groupKey + '" data-page-offset="' + totalVisible + '">';
   h += '<div class="fav-cards-inner">';
   batch.forEach(function(f) {
     h += '<div class="fav-card" draggable="true" data-code="' + f.stock_code + '" data-group-id="' + (f.group_id || '') + '" ondragstart="handleCardDragStart(event)" ondragover="handleCardDragOver(event)" ondragleave="handleCardDragLeave(event)" ondrop="handleCardDrop(event)" ondragend="handleCardDragEnd(event)">';
