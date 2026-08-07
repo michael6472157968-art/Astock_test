@@ -44,6 +44,8 @@ async def lifespan(app: FastAPI):
 
     # 启动时轻量同步：股票列表 + 日线 + 每日指标。计算引擎随后触发。
     async def _auto_sync():
+        import asyncio as _asyncio
+        await _asyncio.sleep(5)  # 给首批请求让路，避免 SQLite 读写争锁
         try:
             from app.services.data_sync import sync_stock_basic, sync_daily_data, sync_daily_basic, sync_moneyflow_hsgt
 
@@ -89,7 +91,6 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Auto-sync failed: {e}")
 
-    import asyncio
     asyncio.create_task(_auto_sync())
 
     yield
@@ -184,6 +185,12 @@ def create_app() -> FastAPI:
     settings_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     frontend_path = (Path(settings_dir) / ".." / "frontend").resolve()
     if frontend_path.exists():
+        # CSS/JS/lib 带 cache 头（文件名含版本号 v=8，更新时改版本号即跳过缓存）
+        for sub_dir, ttl in [("/css", 31536000), ("/js", 31536000), ("/lib", 31536000)]:
+            sp = frontend_path / sub_dir.lstrip("/")
+            if sp.is_dir():
+                app.mount(sub_dir, StaticFiles(directory=str(sp), headers={"Cache-Control": f"public, max-age={ttl}"}), name=f"static-{sub_dir.lstrip('/')}")
+        # HTML 根 mount 兜底，不加缓存
         app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
         logger.info(f"Frontend: {frontend_path}")
     else:

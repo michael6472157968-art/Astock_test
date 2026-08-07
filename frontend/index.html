@@ -526,7 +526,6 @@
   }
 
   function autoRefresh() {
-    updateHealth(); loadStockCount();
     loadDashboard();
     loadTradeCalendar();
     loadMarquee();
@@ -543,7 +542,8 @@
     }
   }
 
-  loadIndices(); loadMood(); loadIndexKline(); loadMarquee(); loadShortPools(); loadMarketGuess(); autoRefresh();
+  loadIndices(); loadMood(); loadIndexKline(); loadMarketGuess(); autoRefresh();
+  setTimeout(function() { updateHealth(); loadStockCount(); }, 3000);
   setInterval(function() { updateHealth(); }, 30000);
 
   // 窗口resize时重绘K线

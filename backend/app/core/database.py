@@ -48,6 +48,13 @@ async def init_db() -> None:
             )
         ))
 
+        # stock_pool_results 查询去重去索引（按日期+类型+排名）
+        await conn.run_sync(lambda sync_conn: sync_conn.execute(
+            __import__("sqlalchemy").text(
+                "CREATE INDEX IF NOT EXISTS ix_spr_calc_date_pool_rank ON stock_pool_results (calc_date, pool_type, rank_in_pool)"
+            )
+        ))
+
         # 自动补全旧数据库缺失的列（create_all 只建新表不改旧表）
         await _auto_migrate_schema(conn)
 
