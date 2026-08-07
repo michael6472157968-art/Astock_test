@@ -193,7 +193,7 @@
         <span class="mood-title">自选速览</span>
         <div class="tabs" style="margin:0 0 0 16px;border-bottom:none;" id="favChartTabs">
           <button class="tab active" data-tab="avg_chg" onclick="switchFavTab('avg_chg')">涨跌幅均值(%)</button>
-          <button class="tab" data-tab="prices" onclick="switchFavTab('prices')">价格走势(元)</button>
+          <button class="tab" data-tab="stock_pct" onclick="switchFavTab('stock_pct')">个股涨跌幅(%)</button>
         </div>
         <span style="font-size:0.72rem;color:var(--color-text-muted);margin-left:10px;" id="favTabSubtitle">组内涨跌幅均值(%)</span>
       </div>
@@ -202,7 +202,7 @@
     <div class="mood-body" style="flex-direction:column;padding:0;">
       <div id="favMainChartWrap" style="width:100%;height:320px;"></div>
       <div id="favConfigRows"></div>
-      <div id="favPriceControls" style="display:none;"></div>
+      <div id="favStockPctControls" style="display:none;"></div>
     </div>
   </div>
   <div id="content" style="width:100%;"><p class="state-loading">加载中...</p></div>
@@ -211,7 +211,7 @@
     <button onclick="createNewGroup()">+ 新建</button>
   </div>
 </main>
-<script src="/js/app.js?v=6"></script>
+<script src="/js/app.js?v=7"></script>
 <script>
 if (!Session.loggedIn()) {
   document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用自选功能</p>';
@@ -544,8 +544,8 @@ function reloadGroups() {
 
     // 恢复上次标签页
     var tab = FavStore.getChartTab();
-    if (tab === 'prices') {
-      switchFavTab('prices');
+    if (tab === 'stock_pct') {
+      switchFavTab('stock_pct');
     } else {
       var gi = [];
       _groups.forEach(function(g) { gi.push({ key: String(g.id), name: g.name, count: g.stock_count }); });
@@ -1103,8 +1103,8 @@ window.addEventListener('resize', function() {
 });
 
 // ── 标签切换 ──
-var _priceColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
-var _favPriceReq = null;
+var _stockPctColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
+var _favStockPctReq = null;
 
 function switchFavTab(tabId) {
   FavStore.setChartTab(tabId);
@@ -1113,18 +1113,18 @@ function switchFavTab(tabId) {
   });
   var subtitle = document.getElementById('favTabSubtitle');
   var configRows = document.getElementById('favConfigRows');
-  var priceCtrls = document.getElementById('favPriceControls');
+  var pctCtrls = document.getElementById('favStockPctControls');
   var hasGroups = _groups && _groups.length > 0;
 
-  if (tabId === 'prices') {
-    if (subtitle) subtitle.textContent = '个股价格走势（元）';
+  if (tabId === 'stock_pct') {
+    if (subtitle) subtitle.textContent = '个股累计涨跌幅(%)';
     if (configRows) configRows.style.display = 'none';
-    if (priceCtrls) priceCtrls.style.display = '';
-    loadFavPriceChart();
+    if (pctCtrls) pctCtrls.style.display = '';
+    loadFavStockPctChart();
   } else {
     if (subtitle) subtitle.textContent = '组内涨跌幅均值(%)';
     if (configRows) configRows.style.display = '';
-    if (priceCtrls) priceCtrls.style.display = 'none';
+    if (pctCtrls) pctCtrls.style.display = 'none';
     if (hasGroups) {
       loadFavMainChart();
     } else {
@@ -1133,9 +1133,9 @@ function switchFavTab(tabId) {
   }
 }
 
-// ── 价格走势模式 ──
-function loadFavPriceChart() {
-  var codes = FavStore.getPriceCodes();
+// ── 个股涨跌幅模式 ──
+function loadFavStockPctChart() {
+  var codes = FavStore.getStockPctCodes();
   if (!codes.length) {
     // 默认选前5只
     var allCodes = [];
@@ -1145,33 +1145,33 @@ function loadFavPriceChart() {
       return;
     }
     codes = allCodes.slice(0, 5);
-    FavStore.setPriceCodes(codes);
+    FavStore.setStockPctCodes(codes);
   }
 
   var tDates = FavStore.getTDates();
-  var sharedTDate = tDates['__price__'] || '';
+  var sharedTDate = tDates['__stock_pct__'] || '';
 
   document.getElementById('favMainChartPanel').style.display = '';
 
-  if (_favPriceReq) clearTimeout(_favPriceReq);
-  _favPriceReq = setTimeout(function() {
+  if (_favStockPctReq) clearTimeout(_favStockPctReq);
+  _favStockPctReq = setTimeout(function() {
     var qs = 'codes=' + encodeURIComponent(codes.join(','));
     if (sharedTDate) qs += '&t_date=' + sharedTDate;
     API.get('/alerts/favorites/stock-prices?' + qs).then(function(r) {
       var data = r.data || { stocks: [], dates: [] };
-      renderFavPriceChart(data);
-      renderFavPriceControls(data, sharedTDate);
+      renderFavStockPctChart(data);
+      renderFavStockPctControls(data, sharedTDate);
 
       // 写入子图缓存
-      var viewForSub = { tab: 'prices', dates: data.dates || [], stocks: data.stocks || [] };
-      try { FavStore.setPriceView(viewForSub); } catch(e) {}
+      var viewForSub = { tab: 'stock_pct', dates: data.dates || [], stocks: data.stocks || [] };
+      try { FavStore.setStockPctView(viewForSub); } catch(e) {}
     }).catch(function() {
       document.getElementById('favMainChartPanel').style.display = 'none';
     });
   }, 300);
 }
 
-function renderFavPriceChart(data) {
+function renderFavStockPctChart(data) {
   var wrap = document.getElementById('favMainChartWrap');
   if (!wrap) return;
   var dates = data.dates || [];
@@ -1187,10 +1187,20 @@ function renderFavPriceChart(data) {
   _favMainChart = echarts.init(wrap);
 
   var seriesOpts = stocks.map(function(st, si) {
-    var closeMap = {};
-    (st.daily || []).forEach(function(d) { closeMap[d.date] = d.close; });
-    var values = dates.map(function(d) { return closeMap[d] !== undefined ? closeMap[d] : null; });
-    var ci = si % _priceColors.length;
+    var pctMap = {};
+    (st.daily || []).forEach(function(d) { pctMap[d.date] = d.pct_chg; });
+    var cum = 0;
+    var hasFirst = false;
+    var values = dates.map(function(d) {
+      var pct = pctMap[d];
+      if (pct != null) {
+        if (!hasFirst) { hasFirst = true; cum = 0; } // 第一个有效日开始累加
+        cum += pct;
+        return +cum.toFixed(2);
+      }
+      return hasFirst ? +cum.toFixed(2) : null; // 首日之前无数据的保持null
+    });
+    var ci = si % _stockPctColors.length;
     return {
       name: st.name + ' (' + st.ts_code + ')',
       type: 'line',
@@ -1198,12 +1208,12 @@ function renderFavPriceChart(data) {
       smooth: true,
       symbol: 'circle',
       symbolSize: 5,
-      lineStyle: { width: 2, color: _priceColors[ci] },
-      itemStyle: { color: _priceColors[ci] },
+      lineStyle: { width: 2, color: _stockPctColors[ci] },
+      itemStyle: { color: _stockPctColors[ci] },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: _priceColors[ci] + '30' },
-          { offset: 1, color: _priceColors[ci] + '02' }
+          { offset: 0, color: _stockPctColors[ci] + '30' },
+          { offset: 1, color: _stockPctColors[ci] + '02' }
         ])
       }
     };
@@ -1216,7 +1226,7 @@ function renderFavPriceChart(data) {
         var lines = ['<b>' + params[0].axisValue + '</b>'];
         params.forEach(function(p) {
           var v = p.value;
-          lines.push(p.marker + ' ' + p.seriesName + ': ' + (v != null ? v + '元' : '--'));
+          lines.push(p.marker + ' ' + p.seriesName + ': ' + (v != null ? (v >= 0 ? '+' : '') + v + '%' : '--'));
         });
         return lines.join('<br/>');
       }
@@ -1231,15 +1241,15 @@ function renderFavPriceChart(data) {
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: '#8392A5', fontSize: 10 },
+      axisLabel: { color: '#8392A5', fontSize: 10, formatter: '{value}%' },
       splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } }
     },
     series: seriesOpts
   });
 }
 
-function renderFavPriceControls(data, sharedTDate) {
-  var ctrls = document.getElementById('favPriceControls');
+function renderFavStockPctControls(data, sharedTDate) {
+  var ctrls = document.getElementById('favStockPctControls');
   if (!ctrls) return;
 
   var stocks = data.stocks || [];
@@ -1247,17 +1257,17 @@ function renderFavPriceControls(data, sharedTDate) {
   var minDate = dates.length > 0 ? date8toPicker(dates[0]) : '';
   var maxDate = dates.length > 0 ? date8toPicker(dates[dates.length - 1]) : '';
   var td = sharedTDate || maxDate.replace(/-/g, '');
-  var selCodes = FavStore.getPriceCodes();
+  var selCodes = FavStore.getStockPctCodes();
   var selSet = {};
   selCodes.forEach(function(c) { selSet[c] = true; });
 
   var html = '';
-  html += '<div class="fav-price-controls-wrap">';
+  html += '<div class="fav-stock-pct-ctrls">';
   html += '<span style="font-size:0.75rem;color:var(--color-text-muted);">T日</span>';
-  html += '<input type="date" value="' + date8toPicker(td) + '" min="' + minDate + '" max="' + maxDate + '" onchange="onPriceTDateChange(this,\'' + minDate + '\',\'' + maxDate + '\')" style="width:130px;" />';
+  html += '<input type="date" value="' + date8toPicker(td) + '" min="' + minDate + '" max="' + maxDate + '" onchange="onStockPctTDateChange(this,\'' + minDate + '\',\'' + maxDate + '\')" style="width:130px;" />';
   html += '<span style="font-size:0.75rem;color:var(--color-text-muted);margin-left:8px;">点击选择股票（最多10只）</span>';
   html += '</div>';
-  html += '<div class="fav-price-chips" id="favPriceChips">';
+  html += '<div class="fav-stock-pct-chips" id="favStockPctChips">';
 
   // 已选 stocks
   var selected = [];
@@ -1271,9 +1281,9 @@ function renderFavPriceControls(data, sharedTDate) {
   });
 
   function chipHtml(st, si, active) {
-    var ci = si % _priceColors.length;
-    return '<span class="fav-price-chip' + (active ? ' active' : '') + '" data-code="' + st.ts_code + '" onclick="togglePriceChip(this)" style="' + (active ? '' : 'border-color:transparent;') + '">'
-      + '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + _priceColors[ci] + ';flex-shrink:0;"></span>'
+    var ci = si % _stockPctColors.length;
+    return '<span class="fav-stock-pct-chip' + (active ? ' active' : '') + '" data-code="' + st.ts_code + '" onclick="toggleStockPctChip(this)" style="' + (active ? '' : 'border-color:transparent;') + '">'
+      + '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + _stockPctColors[ci] + ';flex-shrink:0;"></span>'
       + st.name
       + '</span>';
   }
@@ -1286,9 +1296,9 @@ function renderFavPriceControls(data, sharedTDate) {
   ctrls.innerHTML = html;
 }
 
-function togglePriceChip(chip) {
+function toggleStockPctChip(chip) {
   var code = chip.getAttribute('data-code');
-  var codes = FavStore.getPriceCodes();
+  var codes = FavStore.getStockPctCodes();
   var idx = codes.indexOf(code);
   var isActive = idx >= 0;
 
@@ -1301,11 +1311,11 @@ function togglePriceChip(chip) {
     }
     codes.push(code);
   }
-  FavStore.setPriceCodes(codes);
-  loadFavPriceChart();
+  FavStore.setStockPctCodes(codes);
+  loadFavStockPctChart();
 }
 
-function onPriceTDateChange(inputEl, minDate, maxDate) {
+function onStockPctTDateChange(inputEl, minDate, maxDate) {
   var val = inputEl.value;
   if (val < minDate || val > maxDate) {
     alert('T日超出可选范围（' + minDate + ' ~ ' + maxDate + '）');
@@ -1313,8 +1323,8 @@ function onPriceTDateChange(inputEl, minDate, maxDate) {
     return;
   }
   inputEl.defaultValue = val;
-  FavStore.setTDate('__price__', pickerToDate8(val));
-  loadFavPriceChart();
+  FavStore.setTDate('__stock_pct__', pickerToDate8(val));
+  loadFavStockPctChart();
 }
 
 // ── 分组管理 ──

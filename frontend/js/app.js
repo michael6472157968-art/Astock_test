@@ -276,22 +276,42 @@ var FavStore = {
     localStorage.setItem(this._ukey('fav_chart_tab'), tab);
   },
 
-  // ── 价格模式选股（用户绑定）──
-  getPriceCodes: function() {
-    try { var raw = localStorage.getItem(this._ukey('fav_price_codes')); return raw ? JSON.parse(raw) : []; }
-    catch(e) { return []; }
+  // ── 个股涨跌幅模式选股（用户绑定 + 旧键迁移）──
+  getStockPctCodes: function() {
+    try {
+      var newKey = this._ukey('fav_stock_pct_codes');
+      var raw = localStorage.getItem(newKey);
+      if (raw) return JSON.parse(raw);
+      var oldRaw = localStorage.getItem(this._ukey('fav_price_codes'));
+      if (oldRaw) {
+        localStorage.setItem(newKey, oldRaw);
+        localStorage.removeItem(this._ukey('fav_price_codes'));
+        return JSON.parse(oldRaw);
+      }
+    } catch(e) {}
+    return [];
   },
-  setPriceCodes: function(codes) {
-    localStorage.setItem(this._ukey('fav_price_codes'), JSON.stringify(codes));
+  setStockPctCodes: function(codes) {
+    localStorage.setItem(this._ukey('fav_stock_pct_codes'), JSON.stringify(codes));
   },
 
-  // ── 价格模式缓存（用户绑定）──
-  getPriceView: function() {
-    try { var raw = localStorage.getItem(this._ukey('fav_price_view')); return raw ? JSON.parse(raw) : null; }
-    catch(e) { return null; }
+  // ── 个股涨跌幅模式缓存（用户绑定 + 旧键迁移）──
+  getStockPctView: function() {
+    try {
+      var newKey = this._ukey('fav_stock_pct_view');
+      var raw = localStorage.getItem(newKey);
+      if (raw) return JSON.parse(raw);
+      var oldRaw = localStorage.getItem(this._ukey('fav_price_view'));
+      if (oldRaw) {
+        localStorage.setItem(newKey, oldRaw);
+        localStorage.removeItem(this._ukey('fav_price_view'));
+        return JSON.parse(oldRaw);
+      }
+    } catch(e) {}
+    return null;
   },
-  setPriceView: function(data) {
-    localStorage.setItem(this._ukey('fav_price_view'), JSON.stringify(data));
+  setStockPctView: function(data) {
+    localStorage.setItem(this._ukey('fav_stock_pct_view'), JSON.stringify(data));
   },
 
   // ── 涨跌幅统计缓存（用户绑定 + 旧键迁移）──

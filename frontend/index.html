@@ -176,7 +176,7 @@
   </div>
 </div>
 
-<script src="/js/app.js?v=6"></script>
+<script src="/js/app.js?v=7"></script>
 <script src="/lib/echarts.js"></script>
 <script>
 (function() {
@@ -799,12 +799,12 @@
       // 副图：读用户绑定的缓存 + 根据fav_chart_tab分派模式
       var chartTab = FavStore.getChartTab();
 
-      if (chartTab === 'prices') {
-        // 价格走势模式
-        var pv = FavStore.getPriceView();
+      if (chartTab === 'stock_pct') {
+        // 个股涨跌幅模式
+        var pv = FavStore.getStockPctView();
         if (pv && pv.stocks && pv.stocks.length > 0) {
           document.getElementById('favQuickEmpty').style.display = 'none';
-          renderFavPriceSubChart(pv);
+          renderFavStockPctSubChart(pv);
         } else {
           document.getElementById('favQuickEmpty').style.display = 'block';
           document.getElementById('favQuickEmpty').textContent = '暂无价格数据';
@@ -851,14 +851,14 @@
     });
   }
 
-  function renderFavPriceSubChart(data) {
+  function renderFavStockPctSubChart(data) {
     var wrap = document.getElementById('favGroupChartWrap');
     if (!wrap) return;
 
     var dates = data.dates || [];
     var stocks = data.stocks || [];
     var xLabels = dates.map(function(d) { return fmtDate(d); });
-    var priceColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
+    var stockPctColors = ['#1677ff', '#f59e0b', '#a855f7', '#14b143', '#ef232a', '#06b6d4', '#ec4899', '#f97316', '#84cc16', '#fb923c'];
 
     if (!stocks.length || !xLabels.length) {
       if (_favGroupChart) { _favGroupChart.dispose(); _favGroupChart = null; }
@@ -870,10 +870,20 @@
     _favGroupChart = echarts.init(wrap);
 
     var seriesOpts = stocks.map(function(st, si) {
-      var closeMap = {};
-      (st.daily || []).forEach(function(d) { closeMap[d.date] = d.close; });
-      var values = dates.map(function(d) { return closeMap[d] !== undefined ? closeMap[d] : null; });
-      var ci = si % priceColors.length;
+      var pctMap = {};
+      (st.daily || []).forEach(function(d) { pctMap[d.date] = d.pct_chg; });
+      var cum = 0;
+      var hasFirst = false;
+      var values = dates.map(function(d) {
+        var pct = pctMap[d];
+        if (pct != null) {
+          if (!hasFirst) { hasFirst = true; cum = 0; }
+          cum += pct;
+          return +cum.toFixed(2);
+        }
+        return hasFirst ? +cum.toFixed(2) : null;
+      });
+      var ci = si % stockPctColors.length;
       return {
         name: st.name,
         type: 'line',
@@ -881,12 +891,12 @@
         smooth: true,
         symbol: 'circle',
         symbolSize: 6,
-        lineStyle: { width: 2, color: priceColors[ci] },
-        itemStyle: { color: priceColors[ci] },
+        lineStyle: { width: 2, color: stockPctColors[ci] },
+        itemStyle: { color: stockPctColors[ci] },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: priceColors[ci] + '30' },
-            { offset: 1, color: priceColors[ci] + '02' }
+            { offset: 0, color: stockPctColors[ci] + '30' },
+            { offset: 1, color: stockPctColors[ci] + '02' }
           ])
         }
       };
@@ -899,7 +909,7 @@
           var lines = ['<b>' + params[0].axisValue + '</b>'];
           params.forEach(function(p) {
             var v = p.value;
-            lines.push(p.marker + ' ' + p.seriesName + ': ' + (v != null ? v + '元' : '--'));
+            lines.push(p.marker + ' ' + p.seriesName + ': ' + (v != null ? (v >= 0 ? '+' : '') + v + '%' : '--'));
           });
           return lines.join('<br/>');
         }
@@ -914,7 +924,7 @@
       },
       yAxis: {
         type: 'value',
-        axisLabel: { color: '#8392A5', fontSize: 10 },
+        axisLabel: { color: '#8392A5', fontSize: 10, formatter: '{value}%' },
         splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } }
       },
       series: seriesOpts
