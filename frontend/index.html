@@ -4,9 +4,25 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Stockwin 短线助手 V1.0.0 test</title>
-<link rel="stylesheet" href="/css/app.css?v=11" />
+<link rel="stylesheet" href="/css/app.css?v=12" />
 </head>
 <body>
+<!-- 加载蒙版 -->
+<div id="appLoadingMask">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 70" width="260" height="70">
+    <defs>
+      <linearGradient id="almLogoGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#00d4aa"/><stop offset="100%" stop-color="#00a8e8"/>
+      </linearGradient>
+    </defs>
+    <text x="0" y="44" font-family="'Segoe UI',Arial,sans-serif" font-size="34" font-weight="700" fill="url(#almLogoGrad)" letter-spacing="2">Stock</text>
+    <polyline points="112,48 118,30 126,38 134,18 142,28 150,10 154,10" stroke="url(#almLogoGrad)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="156" y="44" font-family="'Segoe UI',Arial,sans-serif" font-size="34" font-weight="700" fill="url(#almLogoGrad)" letter-spacing="2">in</text>
+    <text x="0" y="63" font-family="'Segoe UI',Arial,sans-serif" font-size="11" font-weight="500" fill="url(#almLogoGrad)" letter-spacing="6">短线助手</text>
+  </svg>
+  <div class="alm-ring"><span></span><span></span><span></span></div>
+  <div class="alm-status" id="almStatus">正在连接服务器...</div>
+</div>
 <main class="main-content" data-chrome>
   <div class="dashboard">
 
@@ -176,7 +192,7 @@
   </div>
 </div>
 
-<script src="/js/app.js?v=11"></script>
+<script src="/js/app.js?v=12"></script>
 <script src="/lib/echarts.js"></script>
 <script>
 (function() {
@@ -541,6 +557,42 @@
       document.getElementById('refreshHint').textContent = '非交易时段';
     }
   }
+
+  // ── 加载蒙版：跟踪关键API，全部完成后渐隐 ──
+  var _maskTimer = null, _maskStatus = document.getElementById('almStatus');
+  var _maskLabels = ['正在连接服务器...','正在加载指数行情...','正在加载市场概览...','正在加载交易日历...','正在加载选股数据...','即将完成...'];
+  var _maskIdx = 0;
+  function _maskTick() {
+    if (_maskIdx < _maskLabels.length) { _maskStatus.textContent = _maskLabels[_maskIdx]; _maskIdx++; }
+  }
+  var _maskInterval = setInterval(_maskTick, 1100);
+  _maskTick();
+
+  var _keyDone = 0, _keyTotal = 5;
+  function _checkMask() { _keyDone++; if (_keyDone >= _keyTotal) { _maskDone(); } }
+  function _maskDone() {
+    clearTimeout(_maskTimer); clearInterval(_maskInterval);
+    var m = document.getElementById('appLoadingMask');
+    if (m) { m.classList.add('fade-out'); setTimeout(function() { if (m.parentNode) m.parentNode.removeChild(m); }, 550); }
+  }
+  _maskTimer = setTimeout(_maskDone, 7000);
+
+  // 拦截 API.get，跟踪关键路由首次完成
+  var _origGet = API.get;
+  var _keyRoutes = ['/market/index','/market/mood','/market/dashboard','/market/calendar','/market/index_kline'];
+  var _keySeen = {};
+  API.get = function(path) {
+    var p = _origGet.call(this, path);
+    for (var i = 0; i < _keyRoutes.length; i++) {
+      var k = _keyRoutes[i];
+      if (path.indexOf(k) === 0 && !_keySeen[k]) {
+        _keySeen[k] = true;
+        p.then(_checkMask, _checkMask);
+        break;
+      }
+    }
+    return p;
+  };
 
   loadIndices(); loadMood(); loadIndexKline(); loadMarketGuess(); autoRefresh();
   setTimeout(function() { updateHealth(); loadStockCount(); }, 3000);

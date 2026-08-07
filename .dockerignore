@@ -8,3 +8,9 @@ backend/tests/
 .venv/
 *.pyc
 __pycache__/
+QuantDinger/
+admin-dashboard/
+demo-proxy/
+data/
+**/node_modules/
+**/.git/

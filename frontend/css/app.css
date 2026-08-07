@@ -1115,3 +1115,41 @@ body {
 #favQuickPanel .fav-blur-overlay .lock-icon { font-size: 1.6rem; }
 #favQuickPanel .fav-blur-overlay .lock-title { font-size: 0.88rem; }
 #favQuickPanel .fav-blur-overlay .lock-desc { font-size: 0.74rem; max-width: 220px; }
+
+/* ── 加载蒙版 ── */
+#appLoadingMask {
+  position: fixed; inset: 0; z-index: 10000;
+  background: var(--color-bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  transition: opacity 0.5s ease;
+}
+#appLoadingMask.fade-out { opacity: 0; pointer-events: none; }
+
+.alm-ring { position: relative; width: 60px; height: 60px; margin: 32px 0; }
+.alm-ring span {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: var(--color-primary);
+  animation: almSpin 1s linear infinite;
+}
+.alm-ring span:nth-child(2) {
+  inset: 6px;
+  border-top-color: #00d4aa;
+  animation-duration: 1.5s;
+  animation-direction: reverse;
+}
+.alm-ring span:nth-child(3) {
+  inset: 12px;
+  border-top-color: #0ea5e9;
+  animation-duration: 2s;
+}
+
+.alm-status {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  min-height: 1.4em;
+  transition: opacity 0.3s;
+}
+
+@keyframes almSpin { to { transform: rotate(360deg); } }
