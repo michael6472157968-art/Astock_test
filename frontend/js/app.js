@@ -106,6 +106,10 @@ var Session = {
   tier: function() { var u = this.get(); return u ? u.tier : 0; },
   isVip: function() { var t = this.tier(); return t >= 2 || t === 99; },
   isAdmin: function() { return this.tier() === 99; },
+  canCreateGroup: function() { var t = this.tier(); return t >= 1 || t === 99; },
+  canViewDashboard: function() { var t = this.tier(); return t >= 2 || t === 99; },
+  canUseGroupFeature: function() { var t = this.tier(); return t >= 1 || t === 99; },
+  getGroupStockLimit: function() { return this.isAdmin() ? 999 : 10; },
   credits: function() {
     var u = this.get();
     return u ? u.credits || 0 : 0;

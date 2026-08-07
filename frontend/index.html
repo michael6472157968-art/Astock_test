@@ -176,7 +176,7 @@
   </div>
 </div>
 
-<script src="/js/app.js?v=8"></script>
+<script src="/js/app.js?v=9"></script>
 <script src="/lib/echarts.js"></script>
 <script>
 (function() {
@@ -684,6 +684,7 @@
 
   // ── 自选速览 ──
   var _favGroupChart = null;
+  var _mockMiniChart = null;
 
   function fmtDate(d) {
     if (!d) return '';
@@ -780,6 +781,10 @@
       document.getElementById('favQuickCount').textContent = '0只';
       return;
     }
+    if (!Session.canViewDashboard()) {
+      renderFavGroupStatsBlurred();
+      return;
+    }
     API.get('/alerts/favorites').then(function(r) {
       var total = r.data.total || 0;
       document.getElementById('favQuickCount').textContent = total + '只';
@@ -849,6 +854,76 @@
       document.getElementById('favQuickEmpty').style.display = 'block';
       document.getElementById('favQuickEmpty').textContent = '加载失败';
     });
+  }
+
+  function renderFavGroupStatsBlurred() {
+    var panel = document.getElementById('favQuickPanel');
+    if (!panel) return;
+    panel.style.display = '';
+    API.get('/alerts/favorites').then(function(r) {
+      var total = r.data.total || 0;
+      document.getElementById('favQuickCount').textContent = total + '只';
+      if (total > 10) {
+        document.getElementById('favQuickMore').style.display = 'block';
+        document.getElementById('favQuickTotal').textContent = total;
+      }
+    }).catch(function(){});
+    var body = document.getElementById('favQuickBody');
+    if (!body) return;
+    var wrap = document.getElementById('favGroupChartWrap');
+    if (wrap) {
+      var mockDates = [];
+      for (var i = 21; i >= 0; i--) {
+        var d = new Date(); d.setDate(d.getDate() - i);
+        mockDates.push(String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+      }
+      var mockGroups = [
+        { name: '科技股龙头', color: '#1677ff', seed: 0.2 },
+        { name: '消费白马', color: '#f59e0b', seed: -0.3 }
+      ];
+      if (_favGroupChart) _favGroupChart.dispose();
+      _favGroupChart = echarts.init(wrap);
+      _mockMiniChart = _favGroupChart;
+      _favGroupChart.setOption({
+        tooltip: { show: false }, legend: { show: false },
+        grid: { left: 0, right: 4, top: 8, bottom: 8 },
+        xAxis: { type: 'category', data: mockDates, boundaryGap: false,
+          axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
+        yAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false } },
+        series: mockGroups.map(function(g) {
+          var vals = []; var cum = g.seed;
+          for (var j = 0; j < mockDates.length; j++) { cum += (Math.random() - 0.47) * 0.7; vals.push(+cum.toFixed(2)); }
+          return { name: g.name, type: 'line', data: vals, smooth: true, symbol: 'none',
+            lineStyle: { width: 2, color: g.color },
+            areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[
+              { offset: 0, color: g.color + '30' }, { offset: 1, color: g.color + '02' }]) }
+          };
+        })
+      });
+    }
+    var wrapper = body.querySelector('.fav-blur-wrapper');
+    if (!wrapper) {
+      wrapper = document.createElement('div'); wrapper.className = 'fav-blur-wrapper';
+      while (body.firstChild) wrapper.appendChild(body.firstChild);
+      body.appendChild(wrapper);
+    }
+    var blContent = wrapper.querySelector('.fav-blur-content');
+    if (!blContent) {
+      blContent = document.createElement('div'); blContent.className = 'fav-blur-content';
+      while (wrapper.firstChild) blContent.appendChild(wrapper.firstChild);
+      wrapper.appendChild(blContent);
+    }
+    var oldOv = wrapper.querySelector('.fav-blur-overlay');
+    if (oldOv) oldOv.remove();
+    var tier = Session.tier();
+    var tl = tier === 0 ? '游客' : '注册用户';
+    var overlay = document.createElement('div'); overlay.className = 'fav-blur-overlay';
+    overlay.innerHTML = '<div class="lock-icon">&#x1f512;</div>' +
+      '<div class="lock-title">升级会员解锁</div>' +
+      '<div class="lock-desc">当前为<b>' + tl + '</b>，升级后查看分组涨跌趋势</div>' +
+      '<a class="lock-cta" href="profile.html">立即升级</a>';
+    wrapper.appendChild(overlay);
+    document.getElementById('favQuickEmpty').style.display = 'none';
   }
 
   function _stockPctColorForCode(code) { return FavStore.getStockPctColor(code); }
@@ -940,6 +1015,7 @@
 
   window.addEventListener('resize', function() {
     if (_favGroupChart) _favGroupChart.resize();
+    if (_mockMiniChart) _mockMiniChart.resize();
   });
 
   // 从alerts.html切回时自动刷新分组统计

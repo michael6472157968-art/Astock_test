@@ -248,11 +248,25 @@ async def get_groups(user_id: int) -> list[dict]:
         return result, (ungrouped_r.scalar() or 0)
 
 
-async def create_group(user_id: int, name: str) -> tuple[bool, str, int | None]:
-    """创建分组。返回(success, message, group_id)。"""
+async def create_group(user_id: int, name: str, tier: int = 0) -> tuple[bool, str, int | None]:
+    """创建分组。返回(success, message, group_id)。注册以下(tier<1)不可创建。"""
+    from app.core.settings import get_settings
     from app.models.orm.models import UserFavoriteGroup
 
+    if tier != 99 and tier < 1:
+        return False, "注册用户及以上才可创建分组，请先注册或登录", None
+
     async with async_session() as session:
+        _settings = get_settings()
+        if tier != 99:
+            c = await session.execute(
+                select(func.count(UserFavoriteGroup.id)).where(
+                    UserFavoriteGroup.user_id == user_id
+                )
+            )
+            if (c.scalar() or 0) >= 20:
+                return False, "最多创建20个分组", None
+
         exist_r = await session.execute(
             select(UserFavoriteGroup).where(
                 UserFavoriteGroup.user_id == user_id,
@@ -341,8 +355,24 @@ async def reorder_groups(user_id: int, ordered_ids: list[int]) -> bool:
         return True
 
 
-async def move_to_group(user_id: int, stock_code: str, group_id: int | None) -> bool:
-    """将股票移入/移出分组。group_id=None 表示取消分组。"""
+async def move_to_group(user_id: int, stock_code: str, group_id: int | None, tier: int = 0) -> tuple[bool, str]:
+    """将股票移入/移出分组。group_id=None 表示取消分组。每组最多5只（管理员豁免）。"""
+    from app.core.settings import get_settings
+
+    if group_id is not None and tier != 99:
+        async with async_session() as session:
+            cnt_r = await session.execute(
+                select(func.count(UserFavorite.id)).where(
+                    UserFavorite.user_id == user_id,
+                    UserFavorite.group_id == group_id,
+                    UserFavorite.ts_code != stock_code,
+                )
+            )
+            current = cnt_r.scalar() or 0
+            limit = get_settings().group_stock_limit
+            if current >= limit:
+                return False, f"每组最多{limit}只股票，请先移出部分股票"
+
     async with async_session() as session:
         r = await session.execute(
             select(UserFavorite).where(
@@ -352,10 +382,10 @@ async def move_to_group(user_id: int, stock_code: str, group_id: int | None) -> 
         )
         fav = r.scalar_one_or_none()
         if not fav:
-            return False
+            return False, "自选记录不存在"
         fav.group_id = group_id
         await session.commit()
-        return True
+        return True, "已移动"
 
 
 

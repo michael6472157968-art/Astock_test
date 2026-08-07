@@ -1084,3 +1084,31 @@ body {
   background: var(--color-primary); color: #fff;
 }
 .tut-btn-next:hover, .tut-btn-done:hover { background: var(--color-primary-hover); }
+
+/* ── 自选速览模糊锁定覆盖层 ── */
+.fav-blur-wrapper { position: relative; overflow: hidden; }
+.fav-blur-wrapper .fav-blur-content {
+  filter: blur(8px); user-select: none; pointer-events: none;
+  opacity: 0.6; transition: filter 0.3s;
+}
+.fav-blur-overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(8, 8, 8, 0.55); z-index: 10; border-radius: 10px;
+  gap: 12px; text-align: center; padding: 20px;
+}
+.fav-blur-overlay .lock-icon { font-size: 2.2rem; opacity: 0.8; }
+.fav-blur-overlay .lock-title { font-size: 1rem; font-weight: 600; color: var(--color-text); }
+.fav-blur-overlay .lock-desc {
+  font-size: 0.82rem; color: var(--color-text-muted); max-width: 260px; line-height: 1.6;
+}
+.fav-blur-overlay .lock-cta {
+  display: inline-block; padding: 8px 20px; border-radius: 6px;
+  background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff;
+  font-size: 0.85rem; font-weight: 600; text-decoration: none; cursor: pointer;
+}
+.fav-blur-overlay .lock-cta:hover { opacity: 0.9; }
+#favQuickPanel .fav-blur-overlay { gap: 8px; padding: 14px; }
+#favQuickPanel .fav-blur-overlay .lock-icon { font-size: 1.6rem; }
+#favQuickPanel .fav-blur-overlay .lock-title { font-size: 0.88rem; }
+#favQuickPanel .fav-blur-overlay .lock-desc { font-size: 0.74rem; max-width: 220px; }

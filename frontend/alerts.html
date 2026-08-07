@@ -235,7 +235,7 @@
     <button onclick="createNewGroup()">+ 新建</button>
   </div>
 </main>
-<script src="/js/app.js?v=8"></script>
+<script src="/js/app.js?v=9"></script>
 <script>
 if (!Session.loggedIn()) {
   document.getElementById('content').innerHTML = '<p class="state-empty">请先<a href="login.html">登录</a>使用自选功能</p>';
@@ -292,14 +292,21 @@ function loadAll() {
       document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无自选，请在<a href="diagnosis.html">诊股页面</a>搜索股票并点击「+ 自选」按钮添加。</p></div></div>';
       return;
     }
-    document.getElementById('newGroupWrap').style.display = 'flex';
-    renderAll();
-    // 恢复上次标签页状态
-    var savedTab = FavStore.getChartTab();
-    if (savedTab === 'stock_pct') {
-      switchFavTab('stock_pct');
+    if (Session.canCreateGroup()) {
+      document.getElementById('newGroupWrap').style.display = 'flex';
     } else {
-      loadFavMainChart();
+      document.getElementById('newGroupWrap').style.display = 'none';
+    }
+    renderAll();
+    if (Session.canViewDashboard()) {
+      var savedTab = FavStore.getChartTab();
+      if (savedTab === 'stock_pct') {
+        switchFavTab('stock_pct');
+      } else {
+        loadFavMainChart();
+      }
+    } else {
+      renderFavMainChartBlurred();
     }
   }).catch(function() {
     document.getElementById('content').innerHTML = '<p class="state-error">加载失败</p>';
@@ -545,6 +552,10 @@ function handleNewGroupKey(e) {
 }
 
 function createNewGroup() {
+  if (!Session.canCreateGroup()) {
+    showToast('注册用户及以上才可创建分组，请先注册或登录');
+    return;
+  }
   var input = document.getElementById('newGroupInput');
   var name = input.value.trim();
   if (!name) return;
@@ -831,6 +842,14 @@ function handleCardDrop(e) {
     else targetGroupId = parseInt(targetGroupId);
     var srcCode = _dragSrc.getAttribute('data-code');
     if (srcCode && String(targetGroupId) !== String(_dragSrcGroupId || '')) {
+      if (targetGroupId !== null && !Session.isAdmin()) {
+        var dc = itemsForGroup(targetGroupId).length;
+        if (dc >= Session.getGroupStockLimit()) {
+          showToast('该分组已满（最多' + Session.getGroupStockLimit() + '只），请先移出部分股票');
+          resetDrag();
+          return;
+        }
+      }
       moveStockToGroup(srcCode, targetGroupId);
     }
     resetDrag();
@@ -843,6 +862,14 @@ function handleCardDrop(e) {
   // Cross-group: drop onto card in a different group
   var targetCardGroupId = targetCard.getAttribute('data-group-id') || null;
   if (String(targetCardGroupId) !== String(_dragSrcGroupId || '')) {
+    if (targetCardGroupId !== null && !Session.isAdmin()) {
+      var cc = itemsForGroup(targetCardGroupId).length;
+      if (cc >= Session.getGroupStockLimit()) {
+        showToast('该分组已满（最多' + Session.getGroupStockLimit() + '只），请先移出部分股票');
+        resetDrag();
+        return;
+      }
+    }
     var _srcCode2 = _dragSrc.getAttribute('data-code');
     var _rect2 = targetCard.getBoundingClientRect();
     var _midY2 = _rect2.top + _rect2.height / 2;
@@ -993,6 +1020,18 @@ function handleGroupDrop(e) {
 }
 
 function moveStockToGroup(code, groupId) {
+  if (!Session.canUseGroupFeature() && groupId !== null) {
+    showToast('注册用户及以上才可使用分组功能，请先注册或登录');
+    return;
+  }
+  if (groupId !== null && !Session.isAdmin()) {
+    var count = itemsForGroup(groupId).length;
+    var limit = Session.getGroupStockLimit();
+    if (count >= limit) {
+      showToast('该分组已满（最多' + limit + '只），请先移出部分股票');
+      return;
+    }
+  }
   API.put('/alerts/favorites/' + encodeURIComponent(code) + '/move', { group_id: groupId }).then(function() {
     // Update local state
     var item = _allItems.find(function(f){return f.stock_code === code;});
@@ -1149,6 +1188,10 @@ function invalidateFavStatsCache() {
 }
 
 function loadFavMainChart() {
+  if (!Session.canViewDashboard()) {
+    renderFavMainChartBlurred();
+    return;
+  }
   var tDates = FavStore.getTDates();
 
   var groupInfos = [];
@@ -1222,6 +1265,86 @@ function loadFavMainChart() {
       document.getElementById('favMainChartPanel').style.display = 'none';
     });
   }, 300);
+}
+
+var _mockMainChart = null;
+function renderMockDashboardChart() {
+  var wrap = document.getElementById('favMainChartWrap');
+  if (!wrap) return;
+  var mockDates = [];
+  var base = new Date();
+  for (var i = 21; i >= 0; i--) {
+    var d = new Date(base); d.setDate(d.getDate() - i);
+    mockDates.push(String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
+  }
+  var mockGroups = [
+    { name: '科技股龙头', color: '#1677ff', seed: 0.3 },
+    { name: '消费白马', color: '#f59e0b', seed: -0.1 },
+    { name: '新能源', color: '#a855f7', seed: 0.6 }
+  ];
+  if (_mockMainChart) _mockMainChart.dispose();
+  _mockMainChart = echarts.init(wrap);
+  var series = mockGroups.map(function(g) {
+    var values = []; var cum = g.seed;
+    for (var j = 0; j < mockDates.length; j++) { cum += (Math.random() - 0.48) * 0.8; values.push(+cum.toFixed(2)); }
+    return { name: g.name, type: 'line', data: values, smooth: true, symbol: 'none',
+      lineStyle: { width: 2, color: g.color },
+      itemStyle: { color: g.color },
+      areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: g.color + '30' }, { offset: 1, color: g.color + '02' }]) }
+    };
+  });
+  _mockMainChart.setOption({
+    tooltip: { show: false }, legend: { show: false },
+    grid: { left: 18, right: 12, top: 8, bottom: 8 },
+    xAxis: { type: 'category', data: mockDates, boundaryGap: false,
+      axisLabel: { color: '#8392A5', fontSize: 10 }, axisLine: { lineStyle: { color: 'rgba(128,128,128,0.15)' } }, axisTick: { show: false } },
+    yAxis: { type: 'value', axisLabel: { color: '#8392A5', fontSize: 10, formatter: '{value}%' },
+      splitLine: { lineStyle: { color: 'rgba(128,128,128,0.1)' } } },
+    series: series
+  });
+  var rows = document.getElementById('favConfigRows');
+  if (rows) {
+    rows.innerHTML = mockGroups.map(function(g) {
+      return '<div style="display:flex;align-items:center;padding:6px 8px;gap:6px;font-size:0.82rem;">' +
+        '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + g.color + ';"></span>' +
+        '<span style="flex:1;font-weight:500;">' + g.name + '</span>' +
+        '<span style="font-size:0.72rem;color:var(--color-text-muted);">--只</span>' +
+        '<span style="font-size:0.72rem;color:var(--color-text-muted);">T日</span>' +
+        '<input type="date" disabled style="width:120px;font-size:0.72rem;opacity:0.5;" />' +
+        '</div>';
+    }).join('');
+  }
+}
+
+function renderFavMainChartBlurred() {
+  var panel = document.getElementById('favMainChartPanel');
+  if (!panel) return;
+  panel.style.display = '';
+  var wrapper = panel.querySelector('.fav-blur-wrapper');
+  if (!wrapper) {
+    wrapper = document.createElement('div'); wrapper.className = 'fav-blur-wrapper';
+    while (panel.firstChild) wrapper.appendChild(panel.firstChild);
+    panel.appendChild(wrapper);
+  }
+  var blContent = wrapper.querySelector('.fav-blur-content');
+  if (!blContent) {
+    blContent = document.createElement('div'); blContent.className = 'fav-blur-content';
+    while (wrapper.firstChild) blContent.appendChild(wrapper.firstChild);
+    wrapper.appendChild(blContent);
+  }
+  document.getElementById('favChartTabs').style.display = 'none';
+  document.getElementById('favTabSubtitle').textContent = '';
+  var oldOv = wrapper.querySelector('.fav-blur-overlay');
+  if (oldOv) oldOv.remove();
+  renderMockDashboardChart();
+  var tier = Session.tier();
+  var tl = tier === 0 ? '游客' : '注册用户';
+  var overlay = document.createElement('div'); overlay.className = 'fav-blur-overlay';
+  overlay.innerHTML = '<div class="lock-icon">&#x1f512;</div>' +
+    '<div class="lock-title">会员专享功能</div>' +
+    '<div class="lock-desc">当前为<b>' + tl + '</b>，<br/>升级会员即可使用自选速览，追踪分组涨跌趋势</div>' +
+    '<a class="lock-cta" href="profile.html">立即升级</a>';
+  wrapper.appendChild(overlay);
 }
 
 function renderFavMainChart(groupData, dates) {
@@ -1341,6 +1464,7 @@ function _stockPctColorForCode(code) { return FavStore.getStockPctColor(code); }
 var _favStockPctReq = null;
 
 function switchFavTab(tabId) {
+  if (!Session.canViewDashboard()) { return; }
   FavStore.setChartTab(tabId);
   document.querySelectorAll('#favChartTabs .tab').forEach(function(b) {
     b.classList.toggle('active', b.getAttribute('data-tab') === tabId);

@@ -378,8 +378,10 @@ async def create_group(req: CreateGroupRequest, user: dict = Depends(require_aut
     uid, tier = user["user_id"], user["tier"]
     if not uid:
         raise HTTPException(401, "请先登录")
+    if tier != 99 and tier < 1:
+        raise HTTPException(403, "注册用户及以上才可创建分组，请先注册或登录")
 
-    ok, msg, gid = await user_data.create_group(uid, req.name)
+    ok, msg, gid = await user_data.create_group(uid, req.name, tier)
     if not ok:
         raise HTTPException(400, msg)
     return APIResponse(data={"id": gid, "message": msg}, timestamp=int(time.time()))
@@ -424,11 +426,13 @@ async def move_favorite(stock_code: str, req: MoveFavRequest, user: dict = Depen
     uid, tier = user["user_id"], user["tier"]
     if not uid:
         raise HTTPException(401, "请先登录")
+    if tier != 99 and tier < 1 and req.group_id is not None:
+        raise HTTPException(403, "注册用户及以上才可使用分组功能，请先注册或登录")
 
-    ok = await user_data.move_to_group(uid, stock_code, req.group_id)
+    ok, msg = await user_data.move_to_group(uid, stock_code, req.group_id, tier)
     if not ok:
-        raise HTTPException(404, "自选记录不存在")
-    return APIResponse(data={"message": "已移动"}, timestamp=int(time.time()))
+        raise HTTPException(400, msg)
+    return APIResponse(data={"message": msg}, timestamp=int(time.time()))
 
 
 @router.get("/favorites/groups/stats")
