@@ -292,10 +292,12 @@ function loadAll() {
       document.getElementById('content').innerHTML = '<div class="card"><div class="card-body"><p class="state-empty">暂无自选，请在<a href="diagnosis.html">诊股页面</a>搜索股票并点击「+ 自选」按钮添加。</p></div></div>';
       return;
     }
-    if (Session.canCreateGroup()) {
-      document.getElementById('newGroupWrap').style.display = 'flex';
-    } else {
+    if (!Session.canCreateGroup()) {
       document.getElementById('newGroupWrap').style.display = 'none';
+    } else if (_groups.length >= Session.getGroupCountLimit() && !Session.isAdmin()) {
+      document.getElementById('newGroupWrap').style.display = 'none';
+    } else {
+      document.getElementById('newGroupWrap').style.display = 'flex';
     }
     renderAll();
     if (Session.canViewDashboard()) {
