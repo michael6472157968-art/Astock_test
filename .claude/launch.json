@@ -15,7 +15,15 @@
       "runtimeArgs": ["app.main:app", "--host", "127.0.0.1", "--port", "8000"],
       "cwd": "D:/Astock_DetaTest/backend",
       "port": 8000,
-      "autoPort": true
+      "autoPort": false
+    },
+    {
+      "name": "Astock-8007",
+      "runtimeExecutable": "uvicorn",
+      "runtimeArgs": ["app.main:app", "--host", "127.0.0.1", "--port", "8007"],
+      "cwd": "D:/Astock_DetaTest/backend",
+      "port": 8007,
+      "autoPort": false
     }
   ]
 }

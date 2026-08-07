@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>管理后台 - Stockwin</title>
+<style>
+:root {
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --card: #1a1a1a;
+  --border: rgba(255,255,255,0.08);
+  --text: rgba(255,255,255,0.85);
+  --muted: rgba(255,255,255,0.40);
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --up: #ef4444;
+  --down: #22c55e;
+  --radius: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; min-height: 100vh; }
+</style>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+
+<!-- 登录页 -->
+<div id="loginPage">
+  <div class="login-card">
+    <h1>Stockwin 管理后台</h1>
+    <p class="login-sub">独立管理面板 · 请使用管理员账号登录</p>
+    <form id="loginForm" onsubmit="return doLogin()">
+      <label class="field">
+        <span>手机号</span>
+        <input type="text" id="lgPhone" placeholder="管理员手机号" required />
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <input type="password" id="lgPwd" placeholder="密码" required />
+      </label>
+      <label class="field" id="serverField">
+        <span>API 地址</span>
+        <input type="text" id="lgServer" placeholder="https://astock.fly.dev" />
+      </label>
+      <button type="submit" class="btn-primary" id="lgBtn">登 录</button>
+      <p id="lgError" class="lg-error"></p>
+    </form>
+  </div>
+</div>
+
+<!-- 主面板 -->
+<div id="mainPage" style="display:none">
+  <header class="topbar">
+    <h1>Stockwin 管理后台</h1>
+    <div class="topbar-right">
+      <span id="topServer" class="top-server"></span>
+      <span id="topUser"></span>
+      <button class="btn-outline btn-sm" onclick="doLogout()">退出</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <span class="tab active" data-tab="overview">概览</span>
+    <span class="tab" data-tab="users">用户管理</span>
+    <span class="tab" data-tab="codes">激活码</span>
+    <span class="tab" data-tab="tasks">任务调度</span>
+    <span class="tab" data-tab="cache">缓存管理</span>
+    <span class="tab" data-tab="logs">系统日志</span>
+  </div>
+
+  <main class="main-area">
+
+    <!-- 概览 -->
+    <section id="sec-overview">
+      <div class="stat-row" id="ovStats"></div>
+      <div class="chart-wrap"><div class="chart" id="ovChart"></div></div>
+    </section>
+
+    <!-- 用户管理 -->
+    <section id="sec-users" style="display:none">
+      <div class="toolbar">
+        <input class="inp" id="uSearch" placeholder="手机号搜索..." onkeypress="if(event.key==='Enter')loadUsers()" />
+        <select class="inp" id="uTier" onchange="loadUsers()">
+          <option value="">全部等级</option><option value="1">免费</option><option value="2">月VIP</option><option value="3">年VIP</option><option value="99">管理员</option>
+        </select>
+        <button class="btn-primary btn-sm" onclick="loadUsers()">搜索</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>手机号</th><th>等级</th><th>积分</th><th>状态</th><th>会员到期</th><th>注册时间</th><th>操作</th></tr></thead>
+          <tbody id="uTbody"></tbody>
+        </table>
+      </div>
+      <div class="pager" id="uPager"></div>
+    </section>
+
+    <!-- 激活码 -->
+    <section id="sec-codes" style="display:none">
+      <div class="toolbar">
+        <select class="inp" id="cType"><option value="monthly">月卡</option><option value="annual">年卡</option></select>
+        <input class="inp" id="cCount" type="number" value="10" min="1" max="200" style="max-width:80px" />
+        <button class="btn-primary btn-sm" onclick="genCodes()">生成</button>
+        <button class="btn-outline btn-sm" onclick="loadCodes()">刷新</button>
+      </div>
+      <pre class="gen-out" id="cGenOut" style="display:none"></pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>激活码</th><th>类型</th><th>状态</th><th>使用者</th><th>生成时间</th><th>使用时间</th></tr></thead>
+          <tbody id="cTbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 任务调度 -->
+    <section id="sec-tasks" style="display:none">
+      <div class="toolbar">
+        <button class="btn-primary btn-sm" onclick="runDailyBatch()">执行日批量</button>
+        <button class="btn-outline btn-sm" onclick="loadTasks()">刷新</button>
+      </div>
+      <pre class="gen-out" id="tResult" style="display:none"></pre>
+      <div id="tList"></div>
+    </section>
+
+    <!-- 缓存管理 -->
+    <section id="sec-cache" style="display:none">
+      <div class="toolbar">
+        <button class="btn-primary btn-sm" onclick="cacheClearAll()">清空全部缓存</button>
+        <button class="btn-outline btn-sm" onclick="cacheRefreshPool()">刷新选股池</button>
+        <button class="btn-outline btn-sm" onclick="cacheRefreshReview()">刷新复盘</button>
+        <button class="btn-outline btn-sm" onclick="cacheRefreshRisk()">刷新风险</button>
+        <button class="btn-outline btn-sm" onclick="cacheRefreshSector()">刷新板块</button>
+        <button class="btn-outline btn-sm" onclick="loadCacheStats()">刷新统计</button>
+      </div>
+      <div id="cacheStats"></div>
+    </section>
+
+    <!-- 系统日志 -->
+    <section id="sec-logs" style="display:none">
+      <div class="toolbar">
+        <input class="inp" id="lUid" placeholder="用户ID筛选..." />
+        <button class="btn-primary btn-sm" onclick="loadLogs()">查询</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>用户ID</th><th>手机号</th><th>路径</th><th>时间</th></tr></thead>
+          <tbody id="lTbody"></tbody>
+        </table>
+      </div>
+      <div class="pager" id="lPager"></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- 用户详情弹窗 -->
+<div class="modal" id="userModal"><div class="modal-card" onclick="event.stopPropagation()">
+  <div class="modal-head"><h3>用户详情</h3><button class="modal-x" onclick="closeModal('userModal')">&times;</button></div>
+  <div id="userModalBody"></div>
+</div></div>
+
+<!-- 操作弹窗 -->
+<div class="modal" id="actionModal"><div class="modal-card" onclick="event.stopPropagation()">
+  <div class="modal-head"><h3 id="actionModalTitle">操作</h3><button class="modal-x" onclick="closeModal('actionModal')">&times;</button></div>
+  <div id="actionModalBody"></div>
+</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
