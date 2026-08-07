@@ -907,19 +907,22 @@ function moveStockToGroup(code, groupId) {
 
 function loadGroupMore(groupKey) {
   var currentPg = _groupPage[groupKey] || 0;
+  // 记录"查看更多"按钮的屏幕位置，重建后保持在原位
+  var groupId = groupKey === '__ungrouped__' ? '__ungrouped__' : groupKey;
+  var moreBtn = document.querySelector('[data-group-id="' + groupId + '"] .fav-more-btn');
+  var anchorY = moreBtn ? moreBtn.getBoundingClientRect().top : null;
+
   _groupPage[groupKey] = currentPg + _pageSize;
   refreshGroupSection(groupKey);
-  loadQuotesForVisible();
-  // 增加页面高度，确保新加载的股票可见
-  setTimeout(function() {
-    var lastCard = document.querySelector('[data-group-id="' + (groupKey === '__ungrouped__' ? '__ungrouped__' : groupKey) + '"]');
-    if (lastCard) {
-      var rect = lastCard.getBoundingClientRect();
-      if (rect.bottom > window.innerHeight) {
-        window.scrollBy(0, Math.min(rect.bottom - window.innerHeight + 400, 800));
-      }
+
+  if (anchorY != null) {
+    var newMoreBtn = document.querySelector('[data-group-id="' + groupId + '"] .fav-more-btn');
+    if (newMoreBtn) {
+      var newY = newMoreBtn.getBoundingClientRect().top;
+      window.scrollBy(0, newY - anchorY);
     }
-  }, 100);
+  }
+  loadQuotesForVisible();
 }
 
 function refreshGroupSection(groupKey) {
