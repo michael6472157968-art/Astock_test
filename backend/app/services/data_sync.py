@@ -85,13 +85,29 @@ async def sync_index_historical(days: int = 120) -> int:
 
     与 sync_historical_daily 配合使用，
     确保 calendar/market 等页面有足够的历史指数数据。
+    已有数据的日期自动跳过，不会重复消耗 Tushare 调用。
     """
     from datetime import date, timedelta
+    import asyncio
 
     end = date.today()
     total = 0
+    skipped = 0
     for offset in range(days):
         d = (end - timedelta(days=offset)).strftime("%Y%m%d")
+        existing = 0
+        try:
+            async with async_session() as sess:
+                r = await sess.execute(
+                    text("SELECT COUNT(*) FROM stock_daily WHERE ts_code = '000001.SH' AND trade_date = :d"),
+                    {"d": d},
+                )
+                existing = r.scalar() or 0
+        except Exception:
+            pass
+        if existing > 0:
+            skipped += 1
+            continue
         try:
             n = await _sync_index_daily_for_date(d)
             total += n
@@ -99,7 +115,10 @@ async def sync_index_historical(days: int = 120) -> int:
                 logger.debug(f"Index historical {d}: {n} records")
         except Exception as e:
             logger.warning(f"Index historical {d}: {e}")
-    logger.info(f"Index historical sync: {total} records for {days} days")
+        # 每处理一批交易日稍息，避开 Tushare 分钟限频
+        if offset % 20 == 19:
+            await asyncio.sleep(1)
+    logger.info(f"Index historical sync: {total} new records, {skipped} skipped (total {days} days)")
     return total
 
 
