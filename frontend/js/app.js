@@ -510,6 +510,8 @@ function closeMobileNav() {
 }
 
 // 二维码分享弹窗
+var _siteUrl = '';
+
 function showQRCode() {
   var overlay = document.getElementById('qrOverlay');
   if (!overlay) {
@@ -525,7 +527,8 @@ function showQRCode() {
     overlay.addEventListener('click', function(e) { if (e.target === overlay) closeQRCode(); });
     document.body.appendChild(overlay);
   }
-  var url = window.location.href;
+  var page = window.location.pathname + window.location.search + window.location.hash;
+  var url = (_siteUrl || window.location.origin) + page;
   document.getElementById('qrImage').src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
   document.getElementById('qrUrl').textContent = url;
   overlay.classList.add('show');
@@ -535,6 +538,13 @@ function closeQRCode() {
   var overlay = document.getElementById('qrOverlay');
   if (overlay) overlay.classList.remove('show');
 }
+
+// 预加载站点配置（管理员在后台设置的域名，供二维码使用）
+(function loadSiteConfig() {
+  API.get('/market/site-config').then(function(r) {
+    if (r.data && r.data.site_url) _siteUrl = r.data.site_url;
+  }).catch(function() {});
+})();
 
 // 退出
 function doLogout() {

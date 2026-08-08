@@ -1315,3 +1315,11 @@ async def industry_leaders(ts_code: str = "", user: dict = Depends(require_auth_
     ttl = 300 if _is_trading_time() else 86400
     await cache_set(cache_key, data, ttl=ttl)
     return APIResponse(data=data, timestamp=int(time.time()))
+
+
+@market_router.get("/site-config")
+async def public_site_config():
+    """公开站点配置——无需登录，供前端QR码生成使用。"""
+    from app.core.cache import cache_get
+    config = await cache_get("admin:site_config") or {"site_url": ""}
+    return APIResponse(data=config, timestamp=int(time.time()))

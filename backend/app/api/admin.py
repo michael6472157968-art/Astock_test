@@ -631,3 +631,29 @@ async def admin_logs(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1
         } for r in rows]
 
     return APIResponse(data={"total": total, "page": page, "page_size": page_size, "items": items}, timestamp=int(time.time()))
+
+
+# ── 站点配置 ──
+
+class SiteConfigRequest(BaseModel):
+    site_url: str = Field("", max_length=256)
+
+_SITE_CONFIG_KEY = "admin:site_config"
+
+
+@router.get("/site-config")
+async def admin_get_site_config():
+    """获取站点配置（管理员可读）。"""
+    from app.core.cache import cache_get
+    config = await cache_get(_SITE_CONFIG_KEY) or {"site_url": ""}
+    return APIResponse(data=config, timestamp=int(time.time()))
+
+
+@router.put("/site-config")
+async def admin_set_site_config(req: SiteConfigRequest):
+    """设置站点配置（管理员可写）。"""
+    from app.core.cache import cache_set
+    config = {"site_url": req.site_url.strip().rstrip("/")}
+    await cache_set(_SITE_CONFIG_KEY, config, ttl=0)
+    return APIResponse(data=config, timestamp=int(time.time()))
+

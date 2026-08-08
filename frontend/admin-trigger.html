@@ -35,6 +35,7 @@
     <span class="admin-tab" data-tab="codes">激活码</span>
     <span class="admin-tab" data-tab="sync">数据同步</span>
     <span class="admin-tab" data-tab="stats">统计概览</span>
+    <span class="admin-tab" data-tab="config">站点配置</span>
   </div>
 
   <!-- 用户管理 -->
@@ -103,6 +104,18 @@
     <div class="stat-grid" id="adminStats" style="margin-bottom:20px;"></div>
   </div>
 
+  <!-- 站点配置 -->
+  <div id="tab-config" style="display:none;">
+    <div class="card"><div class="card-header">站点域名配置</div><div class="card-body">
+      <p style="font-size:0.82rem;color:var(--color-text-muted);margin-bottom:12px;">设置后，前台 📱 二维码将使用此域名替代默认地址，用于手机扫码访问。</p>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input class="form-input" id="siteUrlInput" placeholder="https://你的域名.com" style="max-width:360px;flex:1" />
+        <button class="btn btn-primary btn-sm" onclick="saveSiteConfig()">保存</button>
+      </div>
+      <p id="siteConfigMsg" style="margin-top:8px;font-size:0.8rem;"></p>
+    </div></div>
+  </div>
+
   <!-- 用户详情弹窗 -->
   <div class="modal-overlay" id="detailModal" onclick="if(event.target===this)closeDetail()">
     <div class="modal-box" onclick="event.stopPropagation()">
@@ -138,13 +151,14 @@
       document.querySelectorAll('.admin-tab').forEach(function(x) { x.classList.remove('active'); });
       t.classList.add('active');
       var tab = t.dataset.tab;
-      ['users','codes','sync','stats'].forEach(function(id) {
+      ['users','codes','sync','stats','config'].forEach(function(id) {
         document.getElementById('tab-' + id).style.display = id === tab ? '' : 'none';
       });
       if (tab === 'users') { loadUserStats(); loadUsers(); }
       if (tab === 'codes') loadCodes();
       if (tab === 'sync') { loadCacheStats(); loadSyncStats(); }
       if (tab === 'stats') loadAdminStats();
+      if (tab === 'config') loadSiteConfig();
     });
   });
 
@@ -470,6 +484,27 @@
           }).join(' | ') + '</div></div>';
     }).catch(function() {});
   }
+
+  // ── Site Config ──
+  function loadSiteConfig() {
+    API.get('/admin/site-config').then(function(r) {
+      document.getElementById('siteUrlInput').value = r.data.site_url || '';
+    }).catch(function() {});
+  }
+  window.loadSiteConfig = loadSiteConfig;
+
+  function saveSiteConfig() {
+    var url = document.getElementById('siteUrlInput').value.trim();
+    var msgEl = document.getElementById('siteConfigMsg');
+    API.put('/admin/site-config', { site_url: url }).then(function() {
+      msgEl.textContent = '保存成功';
+      msgEl.style.color = 'var(--color-success)';
+    }).catch(function(e) {
+      msgEl.textContent = '保存失败: ' + (e.message || '');
+      msgEl.style.color = 'var(--color-danger)';
+    });
+  }
+  window.saveSiteConfig = saveSiteConfig;
 
   // Init
   loadUserStats(); loadUsers();
