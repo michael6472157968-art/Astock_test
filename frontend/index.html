@@ -193,7 +193,7 @@
   </div>
 </div>
 
-<script src="/js/app.js?v=14"></script>
+<script src="/js/app.js?v=15"></script>
 <script src="/lib/echarts.js"></script>
 <script>
 (function() {
@@ -836,8 +836,9 @@
       renderFavGroupStatsBlurred();
       return;
     }
-    API.get('/alerts/favorites').then(function(r) {
-      var total = r.data.total || 0;
+    // 保证 loadCache 只发出一次请求（内部 _loading 去重），拿到 _total 后渲染图表
+    FavStore.loadCache().then(function() {
+      var total = FavStore._total || 0;
       document.getElementById('favQuickCount').textContent = total + '只';
       if (total > 10) {
         document.getElementById('favQuickMore').style.display = 'block';
@@ -852,11 +853,9 @@
         document.getElementById('favGroupChartWrap').innerHTML = '';
         return;
       }
-      // 副图：读用户绑定的缓存 + 根据fav_chart_tab分派模式
       var chartTab = FavStore.getChartTab();
 
       if (chartTab === 'stock_pct') {
-        // 个股涨跌幅模式
         var pv = FavStore.getStockPctView();
         if (pv && pv.stocks && pv.stocks.length > 0) {
           document.getElementById('favQuickEmpty').style.display = 'none';
@@ -868,7 +867,6 @@
         return;
       }
 
-      // avg_chg：涨跌幅均值模式
       try {
         var data = FavStore.getStatsView();
         if (data) {
@@ -881,7 +879,6 @@
           }
         }
       } catch(e) {}
-      // fallback: 缓存不可用时自行请求API
       API.get('/alerts/favorites/groups/stats').then(function(sr) {
         var data = sr.data || { groups: [], ungrouped: null, dates: [] };
         var hasData = (data.groups || []).some(function(g) { return g.stock_count > 0; }) ||
@@ -911,14 +908,19 @@
     var panel = document.getElementById('favQuickPanel');
     if (!panel) return;
     panel.style.display = '';
-    API.get('/alerts/favorites').then(function(r) {
-      var total = r.data.total || 0;
+    // 复用 loadCache 结果，不重复请求 /alerts/favorites
+    var total = FavStore._total;
+    if (total > 0) {
       document.getElementById('favQuickCount').textContent = total + '只';
       if (total > 10) {
         document.getElementById('favQuickMore').style.display = 'block';
         document.getElementById('favQuickTotal').textContent = total;
       }
-    }).catch(function(){});
+    } else {
+      FavStore.loadCache().then(function() {
+        document.getElementById('favQuickCount').textContent = (FavStore._total || 0) + '只';
+      });
+    }
     var body = document.getElementById('favQuickBody');
     if (!body) return;
     var wrap = document.getElementById('favGroupChartWrap');

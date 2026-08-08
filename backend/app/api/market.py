@@ -46,14 +46,19 @@ async def _get_trade_context() -> tuple[str, bool]:
     """返回 (trade_date, is_trade_day) — 统一入口，所有端点共用。
 
     优先级：stock_daily MAX(trade_date) → get_latest_trade_date() → date.today()
+    1 秒内存缓存，避免同一请求链内重复查 DB。
     """
     from app.core.database import async_session
     from sqlalchemy import text
 
+    now_ts = time.time()
+    global _trade_ctx_cache
+    if _trade_ctx_cache and (now_ts - _trade_ctx_cache[2]) < 1:
+        return _trade_ctx_cache[0], _trade_ctx_cache[1]
+
     today_str = date.today().strftime("%Y%m%d")
     trade_date = today_str
 
-    # 1. DB MAX 优先——stock_daily 里的最新日期就是数据截止日
     try:
         async with async_session() as sess:
             r = await sess.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
@@ -63,7 +68,6 @@ async def _get_trade_context() -> tuple[str, bool]:
     except Exception:
         pass
 
-    # 2. DB 无数据时回退到交易日历
     if trade_date == today_str:
         try:
             trade_date = await get_latest_trade_date()
@@ -75,7 +79,11 @@ async def _get_trade_context() -> tuple[str, bool]:
     except Exception:
         is_td_val = date.today().weekday() < 5
 
+    _trade_ctx_cache = (trade_date, is_td_val, now_ts)
     return trade_date, is_td_val
+
+
+_trade_ctx_cache = None
 
 
 @market_router.get("/stock_count")

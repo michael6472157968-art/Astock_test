@@ -41,6 +41,9 @@ async def lifespan(app: FastAPI):
     from app.core.security import seed_admin
     await seed_admin()
 
+    from app.utils.trading_calendar import ensure_calendar_table
+    await ensure_calendar_table()
+
     start_scheduler()
 
     # 启动时轻量同步：股票列表 + 日线 + 每日指标。计算引擎随后触发。

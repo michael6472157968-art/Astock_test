@@ -165,6 +165,8 @@ var Gate = {
 var FavStore = {
   _cache: [],
   _loaded: false,
+  _loading: null,
+  _total: 0,
 
   _ukey: function(base) {
     var u = Session.get();
@@ -174,12 +176,16 @@ var FavStore = {
   loadCache: function() {
     if (!Session.loggedIn()) return Promise.resolve([]);
     var self = this;
-    return API.get('/alerts/favorites').then(function(r) {
+    if (self._loading) return self._loading;
+    self._loading = API.get('/alerts/favorites').then(function(r) {
       self._cache = (r.data.items || []).map(function(f) { return f.stock_code; });
+      self._total = r.data.total || 0;
       self._loaded = true;
       self._refreshButtons();
+      self._loading = null;
       return self._cache;
-    }).catch(function() { return []; });
+    }).catch(function() { self._loading = null; return []; });
+    return self._loading;
   },
 
   isFav: function(code) {

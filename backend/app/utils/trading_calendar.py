@@ -11,10 +11,12 @@ from datetime import date, datetime, timedelta
 logger = logging.getLogger("trading_calendar")
 
 _CALENDAR_CACHE_TABLE = "trading_calendar_cache"
+_calendar_table_ready = False
 
 
-async def _ensure_cache_table() -> None:
-    """确保交易日历缓存表存在。"""
+async def ensure_calendar_table() -> None:
+    """建表（仅 startup 调用一次），避免每次请求拿 SQLite 写锁。"""
+    global _calendar_table_ready
     from app.core.database import async_session
     from sqlalchemy import text
 
@@ -26,6 +28,8 @@ async def _ensure_cache_table() -> None:
             )
         """))
         await sess.commit()
+    _calendar_table_ready = True
+    logger.info("Trading calendar cache table ensured")
 
 
 async def _load_from_tushare(start_date: str, end_date: str) -> set[str]:
@@ -65,8 +69,6 @@ async def _load_from_tushare(start_date: str, end_date: str) -> set[str]:
 
 async def is_trade_date(date_str: str) -> bool:
     """判断指定日期是否为交易日（先查缓存，再调 Tushare）。"""
-    await _ensure_cache_table()
-
     from app.core.database import async_session
     from sqlalchemy import text
 
@@ -92,8 +94,6 @@ async def get_next_trade_date(from_date_str: str) -> str:
 
     向前搜索最多14天，找不到则抛 RuntimeError（仅极端休市期可能）。
     """
-    await _ensure_cache_table()
-
     from app.core.database import async_session
     from sqlalchemy import text
 
@@ -124,8 +124,6 @@ async def get_next_trade_date(from_date_str: str) -> str:
 
 async def get_trade_days_in_range(start_date: str, end_date: str) -> list[str]:
     """返回 [start_date, end_date] 区间内所有交易日，按日期升序。"""
-    await _ensure_cache_table()
-
     from app.core.database import async_session
     from sqlalchemy import text
 
