@@ -136,7 +136,12 @@ async def get_trade_days_in_range(start_date: str, end_date: str) -> list[str]:
         )
         trade_days = [row[0] for row in r]
 
-    if not trade_days:
+    # 缓存可能不完整（如只有零星几次 get_latest_trade_date 写入的条目），
+    # 若不足区间预期交易日的 50%，触发 Tushare 补充拉取
+    from datetime import datetime as _dt
+    _days = (_dt.strptime(end_date, "%Y%m%d") - _dt.strptime(start_date, "%Y%m%d")).days + 1
+    _expected = int(_days * 5 / 7 * 0.5)  # 周末约占 2/7，取预期一半为阈值
+    if len(trade_days) < _expected:
         loaded = await _load_from_tushare(start_date, end_date)
         trade_days = sorted([d for d in loaded if start_date <= d <= end_date])
 

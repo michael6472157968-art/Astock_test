@@ -99,7 +99,8 @@ async def lifespan(app: FastAPI):
         from sqlalchemy import text
         async with async_session() as s:
             r = await s.execute(text("SELECT COUNT(*) FROM stocks"))
-            if r.scalar() and r.scalar() > 0:
+            count = r.scalar()
+            if count and count > 0:
                 logger.info("Auto-sync: data exists, skip")
                 return
         await _auto_sync()
