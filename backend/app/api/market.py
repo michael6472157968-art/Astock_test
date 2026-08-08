@@ -1157,6 +1157,7 @@ async def market_calendar(user: dict = Depends(require_auth_optional)):
             }
             if ds in index_pct_map:
                 day_data["index_pct"] = index_pct_map[ds]
+                day_data["is_trade_day"] = True  # stock_daily 有数据=必然是历史交易日
             week.append(day_data)
             cursor += timedelta(days=1)
         weeks.append(week)

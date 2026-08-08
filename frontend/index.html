@@ -511,6 +511,10 @@
           if (day.is_trade_day) { cls += 'cal-day-trade '; }
           if (day.is_weekend) { cls += 'cal-day-weekend '; }
           var bg = '';
+          if (!day.is_current_month) {
+            html += '<span style="flex:1;padding:4px 0;font-size:0.72rem;border-radius:4px;margin:1px;"></span>';
+            return;
+          }
           if (day.is_today) {
             bg = 'background:var(--color-primary);color:#fff;font-weight:700;';
           } else if (day.index_pct !== undefined) {
