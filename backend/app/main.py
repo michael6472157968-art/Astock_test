@@ -75,10 +75,6 @@ async def lifespan(app: FastAPI):
             else:
                 logger.info(f"Stock daily rows: {daily_count} (>= 50000), skip historical sync")
 
-            # 回填指数日线——不在门控内，内部有DB跳过检查，不会重复消耗Tushare
-            from app.services.data_sync import sync_index_historical
-            await sync_index_historical(days=120)
-
             # 数据同步完成后触发计算引擎，确保启动后数据都是新的
             logger.info("Auto-sync: compute engines...")
             from app.services.stock_pool_engine import StockPoolEngine
@@ -109,8 +105,12 @@ async def lifespan(app: FastAPI):
             count = r.scalar()
             if count and count > 0:
                 logger.info("Auto-sync: data exists, skip")
-                return
-        await _auto_sync()
+            else:
+                await _auto_sync()
+
+        # 指数日线回填始终执行——内部有DB跳过检查，不浪费Tushare
+        from app.services.data_sync import sync_index_historical
+        await sync_index_historical(days=120)
 
     asyncio.create_task(_maybe_auto_sync())
 
