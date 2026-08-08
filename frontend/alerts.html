@@ -140,6 +140,56 @@
 .risk-high { background: rgba(239,68,68,0.12); color: #dc2626; }
 .fav-card > .fav-del, .fav-card > .fav-diag-btn { display: none; }
 
+/* ── Mobile: two-row card layout ── */
+@media (max-width: 640px) {
+  .fav-card { padding: 6px 8px; gap: 6px; }
+  /* Row 1: name+code | score | risk | price */
+  .fav-card .fav-top-row {
+    flex-wrap: wrap; gap: 6px 8px;
+  }
+  .fav-card .fav-left { display: none; }  /* hide drag handle on mobile — use touch long-press */
+  .fav-card .fav-info { flex: 1; min-width: 0; }
+  .fav-card .fav-name { font-size: 0.8rem; }
+  .fav-card .fav-code { font-size: 0.65rem; }
+  .fav-card .fav-quote { min-width: auto; align-items: flex-end; }
+  .fav-card .fav-price { font-size: 0.85rem; }
+  .fav-card .fav-pct { font-size: 0.75rem; }
+  /* score and risk tags inline with row 1 */
+  .fav-card .fav-score-badge {
+    width: 30px; height: 30px; font-size: 0.75rem; border-radius: 5px;
+  }
+  .fav-card .fav-score-badge .score-label { font-size: 0.45rem; }
+  .fav-card .fav-risk-tag { font-size: 0.6rem; }
+
+  /* Row 2: sparkline full-width + signals wrap below */
+  .fav-card .fav-mid {
+    order: 10; flex: 1 1 100%; width: 100%;
+    flex-wrap: wrap; gap: 4px;
+  }
+  .fav-card .fav-sparkline {
+    width: 100%; height: 36px;
+  }
+  .fav-card .fav-signals {
+    flex: 1 1 100%; width: 100%;
+  }
+  .fav-card .signal-chip { font-size: 0.6rem; padding: 1px 4px; }
+
+  /* Bot row: buttons stack full-width */
+  .fav-card .fav-bot-row {
+    flex-wrap: wrap; gap: 4px;
+  }
+  .fav-card .fav-diag-btn,
+  .fav-card .fav-obs-btn {
+    font-size: 0.68rem; padding: 4px 10px;
+  }
+  .fav-card .fav-del { font-size: 0.65rem; padding: 4px 8px; }
+
+  /* Group header mobile */
+  .fav-group-header { padding: 6px 10px; }
+  .fav-group-header .group-name { font-size: 0.82rem; }
+  .fav-group-header .group-count { font-size: 0.7rem; }
+}
+
 /* ── Drop Indicator ── */
 .drop-indicator {
   height: 3px; background: var(--color-primary); border-radius: 2px;
