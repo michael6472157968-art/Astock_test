@@ -94,7 +94,12 @@ async def sync_index_historical(days: int = 120) -> int:
     total = 0
     skipped = 0
     for offset in range(days):
-        d = (end - timedelta(days=offset)).strftime("%Y%m%d")
+        d_dt = end - timedelta(days=offset)
+        d = d_dt.strftime("%Y%m%d")
+        # 周末跳过——Tushare永远返回空，不必浪费API配额
+        if d_dt.weekday() >= 5:
+            skipped += 1
+            continue
         existing = 0
         try:
             async with async_session() as sess:
