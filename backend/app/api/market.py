@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -42,19 +43,26 @@ def _is_trading_time() -> bool:
     return 540 <= t <= 930
 
 
+_trade_ctx_lock = asyncio.Lock()
+
+
 async def _get_trade_context() -> tuple[str, bool]:
     """返回 (trade_date, is_trade_day) — 统一入口，所有端点共用。
 
     优先级：stock_daily MAX(trade_date) → get_latest_trade_date() → date.today()
-    1 秒内存缓存，避免同一请求链内重复查 DB。
+    60 秒内存缓存 + 互斥锁，避免并发请求同时查 DB。
     """
     from app.core.database import async_session
     from sqlalchemy import text
 
     now_ts = time.time()
     global _trade_ctx_cache
-    if _trade_ctx_cache and (now_ts - _trade_ctx_cache[2]) < 1:
+    if _trade_ctx_cache and (now_ts - _trade_ctx_cache[2]) < 60:
         return _trade_ctx_cache[0], _trade_ctx_cache[1]
+
+    async with _trade_ctx_lock:
+        if _trade_ctx_cache and (time.time() - _trade_ctx_cache[2]) < 60:
+            return _trade_ctx_cache[0], _trade_ctx_cache[1]
 
     today_str = date.today().strftime("%Y%m%d")
     trade_date = today_str

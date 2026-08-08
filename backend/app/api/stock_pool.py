@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from datetime import date, datetime, timedelta
@@ -30,8 +31,22 @@ POOL_TYPES = {
 }
 
 
+_stp_trade_ctx_cache: tuple[str, bool, float] | None = None  # (trade_date, is_trade_day, monotonic_ts)
+_stp_lock = asyncio.Lock()
+
+
 async def _resolve_trade_date() -> tuple[str, bool]:
-    """返回 (trade_date, is_trade_day) — DB MAX 优先。"""
+    """返回 (trade_date, is_trade_day) — DB MAX 优先，60s 缓存 + 互斥锁。"""
+    import time as _time
+    global _stp_trade_ctx_cache
+    now_ts = _time.monotonic()
+    if _stp_trade_ctx_cache and (now_ts - _stp_trade_ctx_cache[2]) < 60:
+        return _stp_trade_ctx_cache[0], _stp_trade_ctx_cache[1]
+
+    async with _stp_lock:
+        if _stp_trade_ctx_cache and (_time.monotonic() - _stp_trade_ctx_cache[2]) < 60:
+            return _stp_trade_ctx_cache[0], _stp_trade_ctx_cache[1]
+
     from sqlalchemy import text as _text
     from app.core.database import async_session as _sess
 
@@ -57,7 +72,9 @@ async def _resolve_trade_date() -> tuple[str, bool]:
         is_td_val = await is_trade_date(today_str)
     except Exception:
         is_td_val = date.today().weekday() < 5
-    return trade_date, is_td_val
+    result = (trade_date, is_td_val)
+    _stp_trade_ctx_cache = (result[0], result[1], now_ts)
+    return result
 
 
 @router.get("/categories")
