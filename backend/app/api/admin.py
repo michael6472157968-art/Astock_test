@@ -654,6 +654,6 @@ async def admin_set_site_config(req: SiteConfigRequest):
     """设置站点配置（管理员可写）。"""
     from app.core.cache import cache_set
     config = {"site_url": req.site_url.strip().rstrip("/")}
-    await cache_set(_SITE_CONFIG_KEY, config, ttl=0)
+    await cache_set(_SITE_CONFIG_KEY, config, ttl=None)
     return APIResponse(data=config, timestamp=int(time.time()))
 
