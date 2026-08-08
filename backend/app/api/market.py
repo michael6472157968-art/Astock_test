@@ -1078,8 +1078,13 @@ async def risk_list(page: int = 1, page_size: int = 20, user: dict = Depends(req
 
 @market_router.get("/calendar")
 async def market_calendar(user: dict = Depends(require_auth_optional)):
-    """返回当月交易日历 + 休市倒计时。"""
+    """返回当月交易日历 + 休市倒计时（缓存1小时）。"""
     today = date.today()
+    cache_key = f"market:calendar:{today.strftime('%Y%m')}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return APIResponse(data=cached, timestamp=int(time.time()))
+
     today_str = today.strftime("%Y%m%d")
 
     # 当月范围
@@ -1174,7 +1179,7 @@ async def market_calendar(user: dict = Depends(require_auth_optional)):
 
     trade_date, _ = await _get_trade_context()
 
-    return APIResponse(data={
+    data = {
         "month": f"{today.year}-{today.month:02d}",
         "is_trade_day": is_td,
         "today": today_str,
@@ -1182,7 +1187,9 @@ async def market_calendar(user: dict = Depends(require_auth_optional)):
         "month_trade_days": len(month_trade_days),
         "weeks": weeks,
         "countdown": countdown,
-    }, timestamp=int(time.time()))
+    }
+    await cache_set(cache_key, data, ttl=3600)
+    return APIResponse(data=data, timestamp=int(time.time()))
 
 
 # ── 行业龙头成分股 ──
