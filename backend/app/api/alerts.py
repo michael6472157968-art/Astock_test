@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import math
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.api.diagnosis import _quant_signal
 from app.core.database import async_session
 from app.core.settings import get_settings
 from app.middleware.auth_middleware import require_auth
@@ -48,7 +48,6 @@ async def favorites_quotes(codes: str = "", user: dict = Depends(require_auth)):
     code_list = [c.strip() for c in codes.split(",") if c.strip()]
     quotes = {}
     async with async_session() as session:
-        from sqlalchemy import text as _text
         for code in code_list:
             r = await session.execute(
                 _text("""SELECT s.name, d.close, d.pct_chg, d.open, d.high, d.low, d.volume
@@ -59,13 +58,14 @@ async def favorites_quotes(codes: str = "", user: dict = Depends(require_auth)):
             row = r.fetchone()
             if not row:
                 quotes[code] = {"name": code, "close": None, "pct_chg": 0,
-                                "sparkline": [], "score": None, "signals": [], "risk": None}
+                                "sparkline": [], "score": None, "signals": [], "risk": None,
+                                "indicators": {}}
                 continue
 
             r2 = await session.execute(
                 _text("""SELECT trade_date, open, close, high, low, volume
                          FROM stock_daily WHERE ts_code = :code
-                         ORDER BY trade_date DESC LIMIT 20"""),
+                         ORDER BY trade_date DESC LIMIT 120"""),
                 {"code": code}
             )
             daily_rows = r2.fetchall()
@@ -77,8 +77,18 @@ async def favorites_quotes(codes: str = "", user: dict = Depends(require_auth)):
                 for d in daily_rows
             ]
 
+            # 用诊股评分引擎（纯本地计算，不调Tushare）
             closes = [d["close"] for d in sparkline]
-            tech = _compute_light_score(closes)
+            highs = [d["high"] for d in sparkline]
+            lows = [d["low"] for d in sparkline]
+            volumes = [d["vol"] for d in sparkline]
+            quant = _quant_signal(closes, highs, lows, volumes) if len(closes) >= 20 else None
+
+            if quant:
+                score, risk_level = quant["score"], quant["risk"]
+                signals_list = [quant["signals"]["bollinger"]] + quant["signals"]["trend"] + quant["signals"]["volume"] + quant["signals"]["overbought_oversold"]
+            else:
+                score, risk_level, signals_list = None, None, []
 
             quotes[code] = {
                 "name": row[0], "close": round(float(row[1]), 2) if row[1] else None,
@@ -87,178 +97,16 @@ async def favorites_quotes(codes: str = "", user: dict = Depends(require_auth)):
                 "high": round(float(row[4]), 2) if row[4] else None,
                 "low": round(float(row[5]), 2) if row[5] else None,
                 "volume": int(row[6] or 0),
-                "sparkline": sparkline,
-                "score": tech["score"],
-                "signals": tech["signals"],
-                "risk": tech["risk"],
+                "sparkline": sparkline[-20:],  # sparkline 保持20日K线图
+                "score": score,
+                "signals": signals_list,
+                "risk": risk_level,
+                "indicators": quant["indicators"] if quant else {},
             }
 
     await _attach_risk_data(quotes, code_list)
 
     return APIResponse(data={"quotes": quotes}, timestamp=int(time.time()))
-
-
-# ── 轻量技术评分（纯Python，不依赖诊股引擎）──
-
-
-def _compute_light_score(closes: list[float]) -> dict:
-    """基于近20日收盘价计算技术评分、信号和风险等级。"""
-    n = len(closes)
-    if n < 10:
-        return {"score": None, "signals": [], "risk": None}
-
-    signals = []
-    score = 50
-
-    # 均线
-    ma5 = closes[-1] - (sum(closes[-5:]) / 5) if n >= 5 else 0
-    ma10 = closes[-1] - (sum(closes[-10:]) / 10) if n >= 10 else 0
-    if ma5 > 0:
-        score += 8
-        if ma5 > ma10 > 0:
-            signals.append("多头排列")
-            score += 5
-        else:
-            signals.append("站上MA5")
-            score += 2
-    else:
-        score -= 8
-        if ma5 < ma10 < 0:
-            signals.append("空头排列")
-            score -= 5
-        else:
-            signals.append("跌破MA5")
-            score -= 2
-
-    # 涨跌趋势
-    if n >= 5:
-        chg5 = (closes[-1] / closes[-5] - 1) * 100 if closes[-5] else 0
-        if chg5 > 5:
-            signals.append(f"5日+{chg5:.1f}%")
-            score += 5
-        elif chg5 > 3:
-            signals.append(f"5日偏强+{chg5:.1f}%")
-            score += 2
-        elif chg5 < -5:
-            signals.append(f"5日{chg5:.1f}%")
-            score -= 5
-        elif chg5 < -3:
-            signals.append(f"5日偏弱{chg5:.1f}%")
-            score -= 2
-
-    if n >= 10:
-        chg10 = (closes[-1] / closes[-10] - 1) * 100 if closes[-10] else 0
-        if chg10 > 10:
-            signals.append(f"10日+{chg10:.1f}%")
-            score += 4
-        elif chg10 > 7:
-            signals.append(f"10日偏强+{chg10:.1f}%")
-            score += 2
-        elif chg10 < -10:
-            signals.append(f"10日{chg10:.1f}%")
-            score -= 4
-        elif chg10 < -7:
-            signals.append(f"10日偏弱{chg10:.1f}%")
-            score -= 2
-
-    # 量价关系
-    if n >= 5:
-        vol_up = closes[-1] > closes[-5]
-        price_up = closes[-1] > closes[-2] if n >= 2 else False
-        if vol_up and price_up:
-            signals.append("量价齐升")
-            score += 3
-        elif not vol_up and not price_up:
-            signals.append("缩量回调")
-            score -= 2
-        elif vol_up and not price_up:
-            signals.append("放量滞涨")
-            score -= 1
-        elif not vol_up and price_up:
-            signals.append("缩量反弹")
-            score += 1
-
-    # RSI 快速估算
-    rsi = _quick_rsi(closes[-8:]) if n >= 8 else 50
-    if rsi > 75:
-        signals.append(f"RSI超买{rsi:.0f}")
-        score -= 5
-    elif rsi > 65:
-        signals.append("RSI偏强")
-        score -= 2
-    elif rsi < 25:
-        signals.append(f"RSI超卖{rsi:.0f}")
-        score += 8
-    elif rsi < 35:
-        signals.append("RSI偏弱")
-        score += 3
-    elif rsi > 60:
-        score += 3
-    elif rsi < 40:
-        score -= 3
-
-    # 布林带位置
-    boll_pos = _bollinger_position(closes)
-    if boll_pos is not None:
-        if boll_pos > 0.85:
-            signals.append("布林上轨")
-            score -= 4
-        elif boll_pos > 0.7:
-            signals.append("布林偏上轨")
-            score -= 1
-        elif boll_pos < 0.15:
-            signals.append("布林下轨")
-            score += 6
-        elif boll_pos < 0.3:
-            signals.append("布林偏下轨")
-            score += 2
-
-    score = max(1, min(99, int(score)))
-
-    if score >= 75:
-        risk = "低风险"
-    elif score >= 60:
-        risk = "中低风险"
-    elif score >= 40:
-        risk = "中风险"
-    elif score >= 25:
-        risk = "中高风险"
-    else:
-        risk = "高风险"
-
-    return {"score": score, "signals": signals[:6], "risk": risk}
-
-
-def _quick_rsi(closes: list[float]) -> float:
-    gains, losses = 0, 0
-    for i in range(1, len(closes)):
-        chg = closes[i] - closes[i - 1]
-        if chg > 0:
-            gains += chg
-        else:
-            losses += abs(chg)
-    if gains + losses == 0:
-        return 50
-    avg_gain = gains / len(closes)
-    avg_loss = losses / len(closes)
-    if avg_loss == 0:
-        return 100
-    rs = avg_gain / avg_loss
-    return round(100 - 100 / (1 + rs), 1)
-
-
-def _bollinger_position(closes: list[float]) -> float | None:
-    n = len(closes)
-    if n < 20:
-        return None
-    ma20 = sum(closes[-20:]) / 20
-    var = sum((c - ma20) ** 2 for c in closes[-20:]) / 20
-    std = math.sqrt(var)
-    upper = ma20 + 2 * std
-    lower = ma20 - 2 * std
-    if upper - lower == 0:
-        return None
-    return round((closes[-1] - lower) / (upper - lower), 3)
 
 
 async def _attach_risk_data(quotes: dict, code_list: list[str]) -> None:
