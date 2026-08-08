@@ -1,0 +1,10 @@
+{
+  "name": "Stockwin",
+  "short_name": "Stockwin",
+  "description": "A股量化分析助手",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#080808",
+  "background_color": "#080808"
+}

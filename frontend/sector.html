@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>板块分析 - Stockwin</title>
-<link rel="stylesheet" href="/css/app.css?v=13" />
+<link rel="stylesheet" href="/css/app.css?v=14" />
 <style>
 .heat-bar { display:inline-block; height:16px; border-radius:3px; background:var(--color-primary); vertical-align:middle; margin-right:6px; }
 </style>
@@ -15,7 +15,7 @@
   <p class="page-desc">基于行业分类的实时热度排行与阶段判定</p>
   <div id="content"><p class="state-loading">加载中...</p></div>
 </main>
-<script src="/js/app.js?v=13"></script>
+<script src="/js/app.js?v=14"></script>
 <script>
 API.get('/sector-rotation/ranking').then(function(r) {
   var sectors = r.data.sectors || [];

@@ -447,6 +447,7 @@ function renderNav() {
     html += '<a href="' + l.href + '" class="' + cls + '">' + l.label + '</a>';
   });
   html += '</div><div class="nav-right">';
+  html += '<button class="btn btn-sm btn-outline qr-share-btn" onclick="showQRCode()" title="手机扫码打开当前页" style="font-size:1rem;line-height:1">📱</button>';
   if (user) {
     html += '<div class="nav-user-area" onclick="toggleUserMenu(event)">';
     html += Session.memberLabel();
@@ -508,6 +509,33 @@ function closeMobileNav() {
   if (btn) btn.textContent = '☰';
 }
 
+// 二维码分享弹窗
+function showQRCode() {
+  var overlay = document.getElementById('qrOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'qrOverlay';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = '<div class="modal-box" style="text-align:center">' +
+      '<div class="modal-header"><h3>手机扫码打开</h3><button class="modal-close-btn" onclick="closeQRCode()">&times;</button></div>' +
+      '<p style="font-size:0.8rem;color:var(--color-text-muted);margin-bottom:12px">扫描二维码在手机上打开当前页面</p>' +
+      '<img id="qrImage" src="" alt="QR Code" style="max-width:200px;width:100%;display:block;margin:0 auto" />' +
+      '<p style="font-size:0.7rem;color:var(--color-text-muted);margin-top:8px;word-break:break-all" id="qrUrl"></p>' +
+      '</div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeQRCode(); });
+    document.body.appendChild(overlay);
+  }
+  var url = window.location.href;
+  document.getElementById('qrImage').src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
+  document.getElementById('qrUrl').textContent = url;
+  overlay.classList.add('show');
+}
+
+function closeQRCode() {
+  var overlay = document.getElementById('qrOverlay');
+  if (overlay) overlay.classList.remove('show');
+}
+
 // 退出
 function doLogout() {
   Session.clear();
@@ -556,4 +584,11 @@ document.addEventListener('DOMContentLoaded', function() {
       } catch(e) {}
     }
   }, 30000); // 每30秒检查一次
+
+  // 注册 Service Worker (PWA离线缓存)
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/sw.js');
+    });
+  }
 });

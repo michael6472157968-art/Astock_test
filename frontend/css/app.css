@@ -883,6 +883,36 @@ body {
   .app-footer { padding: 10px 12px; font-size: 0.68rem; }
 }
 
+/* ── 移动端小屏 (<481px) ── */
+@media (max-width: 480px) {
+  .main-content { padding: 12px; }
+  .kpi-row { gap: 8px; }
+  .kpi-card { padding: 10px 12px; }
+  .kpi-card .kpi-label { font-size: 0.68rem; }
+  .kpi-card .kpi-value { font-size: 1.1rem; }
+  .index-bar { gap: 8px; }
+  .index-card { padding: 10px 12px; }
+  .index-card .ic-price { font-size: 1rem; }
+  .index-card .ic-change { font-size: 0.78rem; }
+  .chart-container { height: 200px; }
+  .index-kline-wrap .kline-chart { height: 240px; }
+  .score-ring { width: 60px; height: 60px; font-size: 1.2rem; }
+  .hot-stock-card .hs-chart { width: 64px; height: 30px; }
+  .hot-placeholder { width: 64px; height: 30px; }
+  .marquee-item { padding: 6px 10px; min-width: 140px; }
+  .mood-label { width: 32px; font-size: 0.72rem; }
+  .mood-count { width: 42px; font-size: 0.72rem; }
+  .mood-right { min-width: auto; }
+  .shm-cell .shm-name { width: 50px; font-size: 0.72rem; }
+  .shm-cell .shm-pct { width: 48px; font-size: 0.72rem; }
+  .spc-item { font-size: 0.7rem; }
+  .stat-grid { grid-template-columns: 1fr; }
+  .data-table th, .data-table td { padding: 6px 8px; font-size: 0.75rem; }
+  .form-input { font-size: 1rem; }
+  .short-pool-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .hot-stock-list { grid-template-columns: 1fr; }
+}
+
 /* Spinner for AI loading */
 .spinner {
   width: 24px; height: 24px;
