@@ -411,56 +411,50 @@
     if (card) loadIndexKline(card.getAttribute('data-code'));
   });
 
-  function loadMarquee() {
-    // 并行拉取热门+短线4池
+  function loadMarqueeAndShortPools() {
+    // 一次并行拉取热门+短线4池（原来 loadMarquee 和 loadShortPools 各拉一次，重复4个短线池API）
     Promise.all([
       API.get('/stock-pool/hot_leader').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
-      API.get('/stock-pool/short_t3_momentum').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
-      API.get('/stock-pool/short_t3_dip').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
-      API.get('/stock-pool/short_t7_momentum').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
-      API.get('/stock-pool/short_t7_dip').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; })
+      API.get('/stock-pool/short_t3_momentum').then(function(r) { return { items: (r.data.items || []).slice(0, 10), trade_date: r.data.trade_date }; }).catch(function() { return { items: [], trade_date: null }; }),
+      API.get('/stock-pool/short_t3_dip').then(function(r) { return { items: (r.data.items || []).slice(0, 10), trade_date: r.data.trade_date }; }).catch(function() { return { items: [], trade_date: null }; }),
+      API.get('/stock-pool/short_t7_momentum').then(function(r) { return { items: (r.data.items || []).slice(0, 10), trade_date: r.data.trade_date }; }).catch(function() { return { items: [], trade_date: null }; }),
+      API.get('/stock-pool/short_t7_dip').then(function(r) { return { items: (r.data.items || []).slice(0, 10), trade_date: r.data.trade_date }; }).catch(function() { return { items: [], trade_date: null }; })
     ]).then(function(results) {
       var hotItems = results[0];
+      var shortResults = [results[1], results[2], results[3], results[4]];
+
+      // ── 1. 跑马灯（热门+短线去重合并） ──
       var rows = [];
       hotItems.forEach(function(s) {
         rows.push({ name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0, tag: 'hot', tagLabel: '热门' });
       });
-      // 短线4池去重合并
       var seen = {};
-      [].concat(results[1], results[2], results[3], results[4]).forEach(function(s) {
-        if (!seen[s.stock_code]) { seen[s.stock_code] = true; rows.push({ name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0, tag: 'short', tagLabel: '短线' }); }
+      shortResults.forEach(function(sr) {
+        sr.items.forEach(function(s) {
+          if (!seen[s.stock_code]) { seen[s.stock_code] = true; rows.push({ name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0, tag: 'short', tagLabel: '短线' }); }
+        });
       });
-      if (!rows.length) return;
-      // 双份拼接实现无缝循环
-      var items = rows.concat(rows);
-      var html = items.map(function(r) {
-        return '<div class="marquee-item" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(r.code) + '\'" style="cursor:pointer">' +
-          '<span class="mi-tag ' + r.tag + '">' + r.tagLabel + '</span>' +
-          '<span class="mi-name">' + r.name + '</span>' +
-          '<span class="mi-code">' + r.code + '</span>' +
-          '<span class="mi-price">' + (r.close ? r.close.toFixed(2) : '--') + '</span>' +
-          '<span class="mi-pct ' + (r.pct > 0 ? 'up' : r.pct < 0 ? 'down' : 'flat') + '">' + fmtSign(r.pct) + '%</span>' +
-          '</div>';
-      }).join('');
-      document.getElementById('marqueeTrack').innerHTML = html;
-      // CSS 动画初始暂停，填充内容后启动
-      document.getElementById('marqueeTrack').classList.add('marquee-running');
-    }).catch(function() {});
-  }
+      if (rows.length) {
+        var items = rows.concat(rows);
+        var html = items.map(function(r) {
+          return '<div class="marquee-item" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(r.code) + '\'" style="cursor:pointer">' +
+            '<span class="mi-tag ' + r.tag + '">' + r.tagLabel + '</span>' +
+            '<span class="mi-name">' + r.name + '</span>' +
+            '<span class="mi-code">' + r.code + '</span>' +
+            '<span class="mi-price">' + (r.close ? r.close.toFixed(2) : '--') + '</span>' +
+            '<span class="mi-pct ' + (r.pct > 0 ? 'up' : r.pct < 0 ? 'down' : 'flat') + '">' + fmtSign(r.pct) + '%</span>' +
+            '</div>';
+        }).join('');
+        document.getElementById('marqueeTrack').innerHTML = html;
+        document.getElementById('marqueeTrack').classList.add('marquee-running');
+      }
 
-  // ── 短线优选4池列表 ──
-  var shortPoolMap = [
-    { id: 'spT3Momentum', pool: 'short_t3_momentum', label: 'T+3 追涨' },
-    { id: 'spT3Dip', pool: 'short_t3_dip', label: 'T+3 低吸' },
-    { id: 'spT7Momentum', pool: 'short_t7_momentum', label: 'T+7 追涨' },
-    { id: 'spT7Dip', pool: 'short_t7_dip', label: 'T+7 低吸' }
-  ];
-  function loadShortPools() {
-    shortPoolMap.forEach(function(sp) {
-      var el = document.getElementById(sp.id);
-      API.get('/stock-pool/' + sp.pool).then(function(r) {
-        var items = (r.data.items || []).slice(0, 8);
-        document.getElementById('shortPoolDate').textContent = '数据日期 ' + (r.data.trade_date || '--');
+      // ── 2. 短线优选4池列表 ──
+      var tradeDate = shortResults[0].trade_date || shortResults[1].trade_date || shortResults[2].trade_date || shortResults[3].trade_date;
+      document.getElementById('shortPoolDate').textContent = '数据日期 ' + (tradeDate || '--');
+      shortPoolMap.forEach(function(sp, i) {
+        var el = document.getElementById(sp.id);
+        var items = shortResults[i].items.slice(0, 8);
         if (!items.length) { el.querySelector('.spc-list').innerHTML = '<div style="color:var(--color-text-muted);font-size:0.75rem;padding:8px;">暂无信号</div>'; return; }
         var html = '';
         items.forEach(function(s) {
@@ -469,18 +463,23 @@
           html += '<div class="spc-item"><span class="spc-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + (s.stock_name || s.stock_code) + '</span><button class="spc-fav-btn" data-code="' + escAttr(s.stock_code) + '" onclick="event.stopPropagation();FavStore.toggle(this,\'' + escAttr(s.stock_code) + '\',\'' + escAttr(s.stock_name || s.stock_code) + '\')" title="添加自选">+</button><span class="spc-pct ' + cls + '" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + fmtSign(pct) + '%</span></div>';
         });
         el.querySelector('.spc-list').innerHTML = html;
-        // 按钮渲染完成后，用已加载的收藏缓存刷新状态
         if (FavStore._cache.length > 0) {
           el.querySelectorAll('.spc-fav-btn').forEach(function(btn) {
             var c = btn.getAttribute('data-code');
             if (FavStore._cache.indexOf(c) >= 0) FavStore.setBtnAdded(btn);
           });
         }
-      }).catch(function() {
-        el.querySelector('.spc-list').innerHTML = '<div style="color:var(--color-text-muted);font-size:0.75rem;padding:8px;">加载失败</div>';
       });
-    });
+    }).catch(function() {});
   }
+
+  // shortPoolMap 保留，供 loadMarqueeAndShortPools 使用
+  var shortPoolMap = [
+    { id: 'spT3Momentum', pool: 'short_t3_momentum', label: 'T+3 追涨' },
+    { id: 'spT3Dip', pool: 'short_t3_dip', label: 'T+3 低吸' },
+    { id: 'spT7Momentum', pool: 'short_t7_momentum', label: 'T+7 追涨' },
+    { id: 'spT7Dip', pool: 'short_t7_dip', label: 'T+7 低吸' }
+  ];
 
 
   var indexTimer = null;
@@ -545,8 +544,7 @@
   function autoRefresh() {
     loadDashboard();
     loadTradeCalendar();
-    loadMarquee();
-    loadShortPools();
+    loadMarqueeAndShortPools();
     if (inTradingHours()) {
       loadIndices(); loadMood();
       document.getElementById('refreshHint').textContent = '交易时段 | 60s 刷新';
