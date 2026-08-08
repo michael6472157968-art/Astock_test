@@ -173,6 +173,7 @@
     flex: 1 1 100%; width: 100%;
   }
   .fav-card .signal-chip { font-size: 0.6rem; padding: 1px 4px; }
+.fav-card .signal-chip.neutral { background: rgba(255,255,255,0.06); color: var(--color-text-muted); }
 
   /* Bot row: buttons stack full-width */
   .fav-card .fav-bot-row {
@@ -649,10 +650,15 @@ function loadQuotesForVisible() {
           }
           dedup = dedup.slice(0, 4);
           if (dedup.length) {
-            var bullish = ['多头排列','量价齐升','RSI超卖','布林下轨','站上MA5','缩量反弹','RSI偏弱','布林偏下轨'];
-            var bearish = ['空头排列','RSI超买','布林上轨','缩量回调','跌破MA5','放量滞涨','RSI偏强','布林偏上轨'];
+            var BULLISH = ['MACD金叉区域','短多排列','RSI超卖','KDJ超卖','触及布林下轨','布林偏弱',
+                           '放量','MACD多头收敛'];
+            var BEARISH = ['MACD死叉区域','短空排列','RSI超买','KDJ超买','触及布林上轨','布林偏强',
+                           '缩量','MACD空头收敛'];
             sigEl.innerHTML = dedup.map(function(sig) {
-            var cls = bullish.indexOf(sig) >= 0 ? 'bullish' : (bearish.indexOf(sig) >= 0 ? 'bearish' : '');
+            var cls = '';
+            for (var i = 0; i < BULLISH.length; i++) { if (sig.indexOf(BULLISH[i]) >= 0) { cls = 'bullish'; break; } }
+            if (!cls) { for (var i = 0; i < BEARISH.length; i++) { if (sig.indexOf(BEARISH[i]) >= 0) { cls = 'bearish'; break; } } }
+            if (!cls) cls = 'neutral';
             return '<span class="signal-chip ' + cls + '">' + escHtml(sig) + '</span>';
           }).join('');
           } else {
