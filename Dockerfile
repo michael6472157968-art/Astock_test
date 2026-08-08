@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+# Set timezone to China Standard Time
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 WORKDIR /app
 
 # Install Python dependencies (all have pre-built wheels, no compiler needed)

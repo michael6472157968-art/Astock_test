@@ -69,13 +69,15 @@ async def lifespan(app: FastAPI):
                 daily_count = r.scalar() or 0
             if daily_count < 50000:
                 logger.info(f"Stock daily rows: {daily_count} (< 50000), starting historical sync...")
-                from app.services.data_sync import sync_historical_daily, sync_index_historical
+                from app.services.data_sync import sync_historical_daily
                 hist_result = await sync_historical_daily(days=120)
                 logger.info(f"Historical sync complete: {hist_result}")
-                # 回填指数日线，否则日历只有最新交易日有涨跌染色
-                await sync_index_historical(days=120)
             else:
                 logger.info(f"Stock daily rows: {daily_count} (>= 50000), skip historical sync")
+
+            # 回填指数日线——不在门控内，内部有DB跳过检查，不会重复消耗Tushare
+            from app.services.data_sync import sync_index_historical
+            await sync_index_historical(days=120)
 
             # 数据同步完成后触发计算引擎，确保启动后数据都是新的
             logger.info("Auto-sync: compute engines...")
