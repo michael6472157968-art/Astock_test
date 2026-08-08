@@ -1,6 +1,6 @@
 // Stockwin Service Worker — stale-while-revalidate for static assets, network-first for HTML
-var CACHE_STATIC = 'stockwin-static-v1';
-var CACHE_HTML = 'stockwin-html-v1';
+var CACHE_STATIC = 'stockwin-static-v2';
+var CACHE_HTML = 'stockwin-html-v2';
 
 // Static assets: cache-first with background refresh (stale-while-revalidate)
 self.addEventListener('fetch', function(event) {
