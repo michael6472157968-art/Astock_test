@@ -27,11 +27,22 @@ INDEX_CODES = [
 
 
 async def sync_index_daily(trade_date: str = "") -> int:
-    """同步4大指数日线到 stock_daily 表。每次调4次 index_daily API。"""
+    """同步4大指数日线到 stock_daily 表。每次调4次 index_daily API。
+
+    若 trade_date 为空，默认取最新交易日（每日调度场景）。
+    否则按指定日期同步（历史回填场景）。
+    """
     if not trade_date:
         from app.utils.trading_calendar import get_latest_trade_date
         trade_date = await get_latest_trade_date()
 
+    total = await _sync_index_daily_for_date(trade_date)
+    logger.info(f"Index daily synced: {total} records for {trade_date}")
+    return total
+
+
+async def _sync_index_daily_for_date(trade_date: str) -> int:
+    """为单日同步4大指数（内部调用，不重新解析 trade_date）。"""
     total = 0
     for code, _name in INDEX_CODES:
         try:
@@ -66,8 +77,29 @@ async def sync_index_daily(trade_date: str = "") -> int:
                 await session.commit()
         except Exception as e:
             logger.warning(f"sync_index_daily {code}: {e}")
+    return total
 
-    logger.info(f"Index daily synced: {total} records for {trade_date}")
+
+async def sync_index_historical(days: int = 120) -> int:
+    """回填历史指数日线到 stock_daily。
+
+    与 sync_historical_daily 配合使用，
+    确保 calendar/market 等页面有足够的历史指数数据。
+    """
+    from datetime import date, timedelta
+
+    end = date.today()
+    total = 0
+    for offset in range(days):
+        d = (end - timedelta(days=offset)).strftime("%Y%m%d")
+        try:
+            n = await _sync_index_daily_for_date(d)
+            total += n
+            if n > 0:
+                logger.debug(f"Index historical {d}: {n} records")
+        except Exception as e:
+            logger.warning(f"Index historical {d}: {e}")
+    logger.info(f"Index historical sync: {total} records for {days} days")
     return total
 
 

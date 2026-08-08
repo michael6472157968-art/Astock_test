@@ -69,9 +69,11 @@ async def lifespan(app: FastAPI):
                 daily_count = r.scalar() or 0
             if daily_count < 50000:
                 logger.info(f"Stock daily rows: {daily_count} (< 50000), starting historical sync...")
-                from app.services.data_sync import sync_historical_daily
+                from app.services.data_sync import sync_historical_daily, sync_index_historical
                 hist_result = await sync_historical_daily(days=120)
                 logger.info(f"Historical sync complete: {hist_result}")
+                # 回填指数日线，否则日历只有最新交易日有涨跌染色
+                await sync_index_historical(days=120)
             else:
                 logger.info(f"Stock daily rows: {daily_count} (>= 50000), skip historical sync")
 
