@@ -578,15 +578,16 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
         kline = _build_kline_data(records)
         indicators = _build_indicator_series(closes, highs, lows)
 
-        # 获取股票名称
+        # 获取股票名称（DB查stocks表，不调Tushare下载4600+条）
         stock_name = stock_code
         try:
-            from app.services.tushare_client import get_stock_basic
-            basics = await get_stock_basic()
-            for b in basics:
-                if b.get("ts_code") == code:
-                    stock_name = b.get("name", stock_code)
-                    break
+            from app.core.database import async_session as _diag_sess
+            from sqlalchemy import text as _text
+            async with _diag_sess() as _s:
+                _r = await _s.execute(_text("SELECT name FROM stocks WHERE ts_code=:c"), {"c": code})
+                _row = _r.first()
+                if _row:
+                    stock_name = _row[0]
         except Exception:
             pass
 

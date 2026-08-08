@@ -1115,10 +1115,16 @@ async def market_calendar(user: dict = Depends(require_auth_optional)):
         while cal_start.weekday() != 0:
             cal_start = cal_start - timedelta(days=1)
         cal_end = month_end + timedelta(days=(6 - month_end.weekday()))
-        rows = await get_index_daily("000001.SH", cal_start.strftime("%Y%m%d"), cal_end.strftime("%Y%m%d"))
-        if rows:
-            for r in rows:
-                index_pct_map[str(r.get("trade_date", ""))] = round(float(r.get("pct_chg", 0) or 0), 2)
+        # DB 优先——stock_daily 由 sync_index_daily 定时同步上证指数，避免每次调 Tushare
+        from app.core.database import async_session as _cal_sess
+        async with _cal_sess() as _s:
+            _r = await _s.execute(
+                text("SELECT trade_date, pct_chg FROM stock_daily "
+                     "WHERE ts_code='000001.SH' AND trade_date BETWEEN :s AND :e"),
+                {"s": cal_start.strftime("%Y%m%d"), "e": cal_end.strftime("%Y%m%d")},
+            )
+            for _row in _r:
+                index_pct_map[str(_row[0])] = round(float(_row[1] or 0), 2)
     except Exception:
         pass
 
