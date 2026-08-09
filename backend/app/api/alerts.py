@@ -17,6 +17,8 @@ from app.models.schemas.common import APIResponse
 from app.services import user_data
 from sqlalchemy import text as _text
 
+_stext = _text
+
 router = APIRouter(prefix="/api/v1/alerts", tags=["预警"])
 _settings = get_settings()
 
