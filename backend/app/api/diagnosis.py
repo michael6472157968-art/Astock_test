@@ -128,7 +128,10 @@ def _quant_signal(closes, highs, lows, volumes) -> dict:
         vol_trend = "数据不足"
 
     # 综合评分与风险
-    score, risk = _calc_quant_score(rsi_now, k_now, d_now, j_now, dif, dea, bar, boll_pos, vol_ratio)
+    # 估值/情绪数据由上层调用者传入（_compute_diagnosis 不持有），
+    # 此处提供兼容层：None 时四维度评分的估值/情绪维度退化为 50 分。
+    # 上层 fetch 完成后会通过 report["quant"]["dimensions"] 更新。
+    score, risk = _calc_compat_score(rsi_now, k_now, d_now, j_now, dif, dea, bar, boll_pos, vol_ratio)
     suggestion = _gen_suggestion(score, risk, close, pivot)
 
     return {
@@ -159,31 +162,247 @@ def _quant_signal(closes, highs, lows, volumes) -> dict:
     }
 
 
-def _calc_quant_score(rsi, k, d, j, dif, dea, bar, boll_pos, vol_ratio):
-    score = 50
+# ── 四维度评分引擎 ──
+
+def _score_valuation(daily_basic: dict | None) -> dict:
+    """估值维度评分(0-100): PE合理性 + PB合理性。分数越高=越低估。"""
+    drivers: list[str] = []
+    score = 50.0
+
+    if not daily_basic:
+        return {"score": 50, "drivers": ["无估值数据"], "label": "估值", "weight": 25}
+
+    pe = daily_basic.get("pe", 0) or 0
+    pb = daily_basic.get("pb", 0) or 0
+
+    # PE 评分：0-15 低估分高, 15-30 合理, >30 偏高, <0 亏损
+    if pe <= 0:
+        score -= 15
+        drivers.append(f"PE亏损")
+    elif pe < 15:
+        score += 20
+        drivers.append(f"PE={pe:.1f}(低估)")
+    elif pe < 30:
+        score += 5
+        drivers.append(f"PE={pe:.1f}(合理)")
+    elif pe < 60:
+        score -= 10
+        drivers.append(f"PE={pe:.1f}(偏高)")
+    else:
+        score -= 20
+        drivers.append(f"PE={pe:.1f}(过高)")
+
+    # PB 评分：<1 破净, 1-3 合理, >5 偏高
+    if pb <= 0:
+        pass
+    elif pb < 1:
+        score += 15
+        drivers.append(f"PB={pb:.2f}(破净)")
+    elif pb < 3:
+        score += 5
+        drivers.append(f"PB={pb:.2f}(合理)")
+    elif pb < 5:
+        score -= 5
+        drivers.append(f"PB={pb:.2f}(偏高)")
+    else:
+        score -= 10
+        drivers.append(f"PB={pb:.2f}(过高)")
+
+    score = max(1, min(99, round(score)))
+    return {"score": score, "drivers": drivers, "label": "估值", "weight": 25}
+
+
+def _score_quality(financial: dict | None) -> dict:
+    """质量维度评分(0-100): 盈利性+成长性+偿债能力。"""
+    drivers: list[str] = []
+    score = 50.0
+
+    if not financial:
+        return {"score": 50, "drivers": ["无财务数据"], "label": "质量", "weight": 25}
+
+    roe = _safe_float(financial.get("roe"))
+    roa = _safe_float(financial.get("roa"))
+    gp_margin = _safe_float(financial.get("grossprofit_margin"))
+    np_margin = _safe_float(financial.get("netprofit_margin"))
+    rev_yoy = _safe_float(financial.get("or_yoy"))
+    profit_yoy = _safe_float(financial.get("profit_dedt"))
+    debt_ratio = _safe_float(financial.get("debt_to_assets"))
+
+    # ROE
+    if roe > 20:
+        score += 15; drivers.append(f"ROE={roe:.1f}%(优秀)")
+    elif roe > 10:
+        score += 8; drivers.append(f"ROE={roe:.1f}%(良好)")
+    elif roe > 5:
+        score += 2; drivers.append(f"ROE={roe:.1f}%(一般)")
+    elif roe < 0:
+        score -= 10; drivers.append(f"ROE={roe:.1f}%(亏损)")
+
+    # 净利率
+    if np_margin > 20:
+        score += 10; drivers.append(f"净利率={np_margin:.1f}%(优秀)")
+    elif np_margin > 10:
+        score += 5; drivers.append(f"净利率={np_margin:.1f}%(良好)")
+    elif np_margin <= 0:
+        score -= 8; drivers.append(f"净利率={np_margin:.1f}%(亏损)")
+
+    # 营收增速
+    if rev_yoy > 30:
+        score += 12; drivers.append(f"营收增速={rev_yoy:.1f}%(高增)")
+    elif rev_yoy > 10:
+        score += 6; drivers.append(f"营收增速={rev_yoy:.1f}%(增长)")
+    elif rev_yoy < -10:
+        score -= 10; drivers.append(f"营收增速={rev_yoy:.1f}%(下滑)")
+
+    # 扣非净利增速（profit_dedt 可能是绝对值万元，超过 500 视为非增速，跳过）
+    if 0 < profit_yoy < 500:
+        if profit_yoy > 30:
+            score += 10; drivers.append(f"净利增速={profit_yoy:.1f}%(高增)")
+        elif profit_yoy < -20:
+            score -= 10; drivers.append(f"净利增速={profit_yoy:.1f}%(下滑)")
+
+    # 资产负债率 (40-60% 合理)
+    if 40 <= debt_ratio <= 60:
+        pass  # neutral
+    elif debt_ratio > 80:
+        score -= 8; drivers.append(f"负债率={debt_ratio:.1f}%(偏高)")
+    elif debt_ratio > 60:
+        score -= 3; drivers.append(f"负债率={debt_ratio:.1f}%(略高)")
+
+    score = max(1, min(99, round(score)))
+    return {"score": score, "drivers": drivers, "label": "质量", "weight": 25}
+
+
+def _score_momentum(closes, highs, lows, volumes) -> dict:
+    """动量维度评分(0-100): 趋势+超买超卖+成交量。沿用原 _calc_quant_score 逻辑但独立评分。"""
+    from app.services.factor_lib import sma as _sma_m, macd as _macd_m, rsi as _rsi_m
+    from app.services.factor_lib import kdj as _kdj_m, bollinger as _boll_m
+
+    drivers: list[str] = []
+    macd_d = _macd_m(closes)
+    rsi_v = _rsi_m(closes)
+    kdj_d = _kdj_m(highs, lows, closes)
+    boll_d = _boll_m(closes)
+
+    last = len(closes) - 1
+    dif = macd_d["dif"][last] or 0
+    dea = macd_d["dea"][last] or 0
+    bar = macd_d["bar"][last] or 0
+    rsi_now = rsi_v[-1] if rsi_v else 50
+    k_now = kdj_d["k"][-1] if kdj_d["k"] else 50
+    d_now = kdj_d["d"][-1] if kdj_d["d"] else 50
+    j_now = kdj_d["j"][-1] if kdj_d["j"] else 50
+    close = closes[-1]
+    boll_lower = boll_d["lower"][-1] or close
+    boll_upper = boll_d["upper"][-1] or close
+    boll_pos = (close - boll_lower) / (boll_upper - boll_lower) if boll_upper != boll_lower else 0.5
+    vol_ratio = volumes[-1] / (sum(volumes[-20:]) / 20) if len(volumes) >= 20 and sum(volumes[-20:]) > 0 else 1
+
+    score = 50.0
+
     # RSI
+    if rsi_now > 80: score -= 15; drivers.append(f"RSI={rsi_now:.0f}(超买)")
+    elif rsi_now > 70: score -= 5; drivers.append(f"RSI={rsi_now:.0f}(偏买)")
+    elif rsi_now < 20: score += 15; drivers.append(f"RSI={rsi_now:.0f}(超卖)")
+    elif rsi_now < 30: score += 5; drivers.append(f"RSI={rsi_now:.0f}(偏卖)")
+
+    # KDJ
+    if j_now > 100: score -= 5; drivers.append("KDJ超买")
+    elif j_now < 0: score += 10; drivers.append("KDJ超卖")
+    elif k_now > d_now and j_now > 50: score += 5; drivers.append("KDJ金叉区域")
+
+    # MACD
+    if dif > dea and bar > 0: score += 8; drivers.append("MACD多头")
+    elif dif < dea and bar < 0: score -= 8; drivers.append("MACD空头")
+    elif dif > dea: score += 3; drivers.append("MACD偏多")
+    elif dif < dea: score -= 3; drivers.append("MACD偏空")
+
+    # 布林
+    if boll_pos > 0.9: score -= 5; drivers.append("触及上轨")
+    elif boll_pos < 0.1: score += 10; drivers.append("触及下轨")
+
+    # 量
+    if vol_ratio > 2: score += 5; drivers.append(f"放量{vol_ratio:.1f}x")
+    elif vol_ratio < 0.5: score -= 3; drivers.append(f"缩量{vol_ratio:.1f}x")
+
+    score = max(1, min(99, round(score)))
+    return {"score": score, "drivers": drivers, "label": "动量", "weight": 25}
+
+
+def _score_sentiment(holders: dict | None, margin: dict | None) -> dict:
+    """情绪维度评分(0-100): 筹码集中度 + 融资态度。"""
+    drivers: list[str] = []
+    score = 50.0
+
+    # 股东人数趋势：集中=看多
+    if holders and holders.get("trend") == "concentrated":
+        score += 15
+        drivers.append("筹码集中")
+    elif holders and holders.get("trend") == "dispersed":
+        score -= 10
+        drivers.append("筹码分散")
+    elif not holders:
+        drivers.append("无股东数据")
+
+    # 融资余额变化倾向（连续买入看多）
+    if margin:
+        rzye = _safe_float(margin.get("rzye"))
+        rzmre = _safe_float(margin.get("rzmre"))
+        if rzmre > rzye * 0.05:
+            score += 10
+            drivers.append("融资大幅买入")
+        elif rzmre > 0:
+            score += 3
+            drivers.append("融资净买入")
+    else:
+        drivers.append("无融资数据")
+
+    score = max(1, min(99, round(score)))
+    return {"score": score, "drivers": drivers, "label": "情绪", "weight": 25}
+
+
+def _score_dimensions(basic, financial, closes, highs, lows, volumes, holders, margin) -> dict:
+    """四维度评分 → 加权综合。"""
+    dims = [
+        _score_valuation(basic),
+        _score_quality(financial),
+        _score_momentum(closes, highs, lows, volumes),
+        _score_sentiment(holders, margin),
+    ]
+
+    total = sum(d["score"] * d["weight"] for d in dims) / 100
+    total = round(max(1, min(99, total)))
+
+    if total >= 75: risk = "低风险"
+    elif total >= 60: risk = "中低风险"
+    elif total >= 40: risk = "中风险"
+    elif total >= 25: risk = "中高风险"
+    else: risk = "高风险"
+
+    return {"total": total, "risk": risk, "dimensions": dims}
+
+
+def _calc_compat_score(rsi, k, d, j, dif, dea, bar, boll_pos, vol_ratio):
+    """兼容旧版动量评分——作为 _compute_diagnosis 内的初始评分，
+    后续被 _score_dimensions 四维度评分的 total/risk 覆盖。"""
+    score = 50
     if rsi > 80: score -= 15
     elif rsi > 70: score -= 5
     elif rsi < 20: score += 15
     elif rsi < 30: score += 5
-    # KDJ
     if j > 100: score -= 5
     elif j < 0: score += 10
     elif k > d and j > 50: score += 5
-    # MACD
     if dif > dea and bar > 0: score += 8
     elif dif < dea and bar < 0: score -= 8
     elif dif > dea: score += 3
     elif dif < dea: score -= 3
-    # 布林
     if boll_pos > 0.9: score -= 5
     elif boll_pos < 0.1: score += 10
-    # 量
     if vol_ratio > 2: score += 5
     elif vol_ratio < 0.5: score -= 3
 
     score = max(1, min(99, score))
-
     if score >= 75: risk = "低风险"
     elif score >= 60: risk = "中低风险"
     elif score >= 40: risk = "中风险"
@@ -450,6 +669,43 @@ async def get_diagnosis(stock_code: str, request: Request, user: dict = Depends(
     report["holders"] = await _fetch_holder_snapshot(stock_code)
     report["margin"] = await _fetch_margin_snapshot(stock_code)
 
+    # 解析实际 ts_code 用于 daily_basic 查询
+    final_code = stock_code
+    if "." not in final_code:
+        async with async_session() as _ds:
+            for suffix in [".SH", ".SZ"]:
+                _rs = await _ds.execute(text("SELECT 1 FROM stocks WHERE ts_code=:c LIMIT 1"), {"c": stock_code + suffix})
+                if _rs.first():
+                    final_code = stock_code + suffix
+                    break
+    report["daily_basic"] = await _fetch_daily_basic_snapshot(final_code)
+
+    # 四维度评分覆盖初始动量分
+    q = report.get("quant", {})
+    if q:
+        dims = _score_dimensions(
+            report.get("daily_basic"),
+            report.get("financial"),
+            report.get("_closes", []),
+            report.get("_highs", []),
+            report.get("_lows", []),
+            report.get("_volumes", []),
+            report.get("holders"),
+            report.get("margin"),
+        )
+        q["score"] = dims["total"]
+        q["risk"] = dims["risk"]
+        q["dimensions"] = dims["dimensions"]
+        # 更新建议
+        q["suggestion"] = _gen_suggestion(dims["total"], dims["risk"], q.get("close", 0), q.get("key_levels", {}))
+        # 清理内部传递的序列
+        for _k in ("_closes", "_highs", "_lows", "_volumes"):
+            q.pop(_k, None)
+        report.pop("_closes", None)
+        report.pop("_highs", None)
+        report.pop("_lows", None)
+        report.pop("_volumes", None)
+
     await cache_set(cache_key, report, ttl=_settings.cache_diagnosis_ttl)
     return _build_response(report, tier, cache_hit=False, cache_date=today)
 
@@ -505,14 +761,55 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
             "stock_code": stock_code,
             "stock_name": stock_name,
             "quant": quant,
+            # 四维度评分重建所需原始序列
+            "_closes": closes,
+            "_highs": highs,
+            "_lows": lows,
+            "_volumes": vols,
             "kline": kline,
             "indicators": indicators,
-            "financial": None,  # _enhance_financials() 单独填充
+            "financial": None,
         }
     except Exception as e:
         import logging
         logging.getLogger("diagnosis").exception(f"_compute_diagnosis({stock_code}) failed: {e}")
         return None
+
+
+async def _fetch_daily_basic_snapshot(code: str) -> dict | None:
+    """从 daily_basic 表读取最新估值指标（PE/PB/总市值），当日缓存。"""
+    today = date.today().isoformat()
+    cache_key = f"basic:{code}:{today}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached if cached else None
+
+    from sqlalchemy import text as _text
+    row = None
+    async with async_session() as sess:
+        for offset in range(7):
+            td = (date.today() - timedelta(days=offset)).strftime("%Y%m%d")
+            r = await sess.execute(
+                _text("SELECT pe, pb, total_mv, turnover_rate FROM daily_basic "
+                      "WHERE ts_code = :ts AND trade_date = :td"),
+                {"ts": code, "td": td},
+            )
+            row = r.first()
+            if row:
+                break
+
+    if not row:
+        await cache_set(cache_key, {}, ttl=86400)
+        return None
+
+    result = {
+        "pe": _safe_float(row[0]),
+        "pb": _safe_float(row[1]),
+        "total_mv": _safe_float(row[2]),      # 万元
+        "turnover_rate": _safe_float(row[3]),
+    }
+    await cache_set(cache_key, result, ttl=86400)
+    return result
 
 
 async def _fetch_financial_snapshot(stock_code: str) -> dict | None:
@@ -616,6 +913,7 @@ def _build_response(report: dict, tier: int, cache_hit: bool, cache_date: str = 
         "financial": report.get("financial"),
         "holders": report.get("holders"),
         "margin": report.get("margin"),
+        "daily_basic": report.get("daily_basic"),
     }
 
     ext = {"cache_hit": cache_hit}

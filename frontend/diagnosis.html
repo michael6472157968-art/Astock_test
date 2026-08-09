@@ -204,12 +204,32 @@ function renderDiagnosis(r, code, isFav) {
     ? '<button class="btn btn-sm btn-outline" disabled id="favBtn">✓ 已自选</button>'
     : '<button class="btn btn-sm btn-primary" onclick="addFavorite(\'' + escAttr(code) + '\',\'' + escAttr(stockName) + '\')" id="favBtn">+ 自选</button>';
   var html = '<h2 class="page-title" id="diagStockName">' + stockName + ' 量化诊股报告 ' + favBtnHtml + '</h2>';
-  html += '<div class="stat-grid" style="margin-bottom:20px">';
-  html += '<div class="stat-card"><div class="stat-label">量化评分</div><div class="stat-value">' + (q.score || '--') + '</div></div>';
-  html += '<div class="stat-card"><div class="stat-label">风险等级</div><div class="stat-value ' + riskClass(q.risk) + '">' + (q.risk || '--') + '</div></div>';
-  html += '<div class="stat-card"><div class="stat-label">最新收盘价</div><div class="stat-value">' + (q.close || '--') + '</div></div>';
-  html += '<div class="stat-card"><div class="stat-label">ATR波动</div><div class="stat-value" style="font-size:1rem;">' + ((q.indicators && q.indicators.atr) || '--') + '</div></div>';
-  html += '</div>';
+  var dims = q.dimensions || [];
+  if (dims.length) {
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header">四维度评分 · 综合分 <span style="font-weight:700;font-size:1.1rem;">' + (q.score || '--') + '</span> · <span class="' + riskClass(q.risk) + '">' + (q.risk || '--') + '</span></span></div><div class="card-body">';
+    var dimColors = { '估值': '#f59e0b', '质量': '#3b82f6', '动量': '#ef4444', '情绪': '#8b5cf6' };
+    dims.forEach(function(d) {
+      var c = dimColors[d.label] || '#64748b';
+      html += '<div style="margin-bottom:12px;">';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
+      html += '<span style="font-size:0.78rem;font-weight:600;min-width:40px;color:' + c + ';">' + d.label + '</span>';
+      html += '<span style="font-size:0.78rem;font-weight:700;">' + d.score + '</span>';
+      html += '<span style="font-size:0.68rem;color:var(--color-text-muted);">(权' + d.weight + ')</span>';
+      html += '<div style="flex:1;height:6px;background:var(--color-border);border-radius:3px;overflow:hidden;">';
+      html += '<div style="height:100%;width:' + d.score + '%;background:' + c + ';border-radius:3px;"></div></div>';
+      html += '</div>';
+      html += '<div style="font-size:0.72rem;color:var(--color-text-muted);padding-left:48px;">' + (d.drivers && d.drivers.length ? d.drivers.join(' · ') : '—') + '</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  } else {
+    html += '<div class="stat-grid" style="margin-bottom:20px">';
+    html += '<div class="stat-card"><div class="stat-label">量化评分</div><div class="stat-value">' + (q.score || '--') + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">风险等级</div><div class="stat-value ' + riskClass(q.risk) + '">' + (q.risk || '--') + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">最新收盘价</div><div class="stat-value">' + (q.close || '--') + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">ATR波动</div><div class="stat-value" style="font-size:1rem;">' + ((q.indicators && q.indicators.atr) || '--') + '</div></div>';
+    html += '</div>';
+  }
 
   if (q.indicators) {
     var ind = q.indicators;
