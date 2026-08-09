@@ -448,13 +448,12 @@ function onSearchKeydown(e) {
 
 function selectSearchItem(el) {
   if (!el) return;
-  var code = el.getAttribute('data-code');
   var name = el.getAttribute('data-name');
   var already = el.querySelector('.si-added');
   if (already) return;
 
-  var norm = normalizeStockCode(el.getAttribute('data-symbol'));
-  API.post('/alerts/favorites', { stock_code: norm, stock_name: name }).then(function(r) {
+  var code = el.getAttribute('data-code');
+  API.post('/alerts/favorites', { stock_code: code, stock_name: name }).then(function(r) {
     document.getElementById('favSearchDropdown').classList.remove('show');
     document.getElementById('favSearchInput').value = '';
     _searchActive = -1;
