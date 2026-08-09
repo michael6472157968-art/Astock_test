@@ -18,7 +18,7 @@ import math
 import os
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import text
@@ -34,6 +34,9 @@ _OUT_DIR = _BACKEND / "data" / "verification_results"
 N_GROUPS = 5
 MIN_CROSS_SECTION = 50
 MIN_STOCK_DAYS = 40
+
+# ── regime 借用 ic_analysis 的函数 ──
+from .ic_analysis import _classify_regime, _load_index_data
 
 
 def _now() -> str:
@@ -203,8 +206,24 @@ async def analyze_group(pool_name: str, n_forward: int, lookback: int, sync: boo
     stocks = list(stock_data.keys())
     logger.info(f"Universe: {len(stocks)} stocks")
 
-    # ── 逐日分组 ──
+    # ── 加载大盘指数 + 预分类每天的市场状态 ──
+    async with get_session() as session:
+        idx_data = await _load_index_data(session, dates)
+    idx_closes = [idx_data.get(d) for d in dates]
+    last_valid = None
+    for i in range(len(idx_closes)):
+        if idx_closes[i] is None:
+            idx_closes[i] = last_valid
+        else:
+            last_valid = idx_closes[i]
+    regime_cache: dict[str, str] = {}
+    for di, td in enumerate(dates):
+        regime_cache[td] = _classify_regime(idx_closes, di) if idx_closes[di] else "unknown"
+
+    # ── 逐日分组（按 regime 分段） ──
     group_returns: dict[int, list[float]] = {g: [] for g in range(N_GROUPS)}
+    # regime_returns: {regime: {group: [ret, ...]}}
+    regime_returns: dict[str, dict[int, list[float]]] = {}
     date_labels: list[str] = []
     skipped = 0
 
@@ -270,6 +289,16 @@ async def analyze_group(pool_name: str, n_forward: int, lookback: int, sync: boo
                 group_returns[g].append(sum(rets) / len(rets))
 
         date_labels.append(td)
+        regime = regime_cache.get(td, "unknown")
+        regime_returns.setdefault(regime, {g: [] for g in range(N_GROUPS)})
+        for g in range(N_GROUPS):
+            if groups[g]:
+                rets = []
+                for idx in groups[g]:
+                    code, row, row_fwd = row_tuples[idx]
+                    rets.append((row_fwd["close"] - row["close"]) / row["close"])
+                if rets:
+                    regime_returns[regime][g].append(sum(rets) / len(rets))
 
     if skipped:
         logger.info(f"Skipped {skipped}/{len(dates)} dates")
@@ -319,8 +348,41 @@ async def analyze_group(pool_name: str, n_forward: int, lookback: int, sync: boo
     print(f"\n{'='*70}")
     print(f"  Group Backtest — {pool_name}  |  Forward T+{n_forward}  |  {N_GROUPS} groups")
     print(f"{'='*70}")
-    print(f"{'Group':<10}{'Mean Daily Ret':>16}{'Ann. Ret':>12}{'Sharpe':>10}")
-    print("-" * 70)
+
+    all_regimes = sorted(set(regime_returns.keys()))
+    for regime in all_regimes:
+        rets_by_g = regime_returns[regime]
+        rname = {"bull": "单边上涨", "bear": "单边下跌", "range": "震荡", "volatile": "高波动", "unknown": "未知"}.get(regime, regime)
+        n_days = max(len(rets_by_g.get(g, [])) for g in range(N_GROUPS))
+        print(f"\n  [{rname}] ({n_days} days)")
+        print(f"  {'Group':<10}{'Mean Daily Ret':>16}{'Ann. Ret':>12}{'Sharpe':>10}")
+        print("  " + "-" * 64)
+        for g in range(N_GROUPS):
+            rets = rets_by_g.get(g, [])
+            if rets:
+                m = sum(rets) / len(rets)
+                std = (sum((v - m) ** 2 for v in rets) / (len(rets) - 1)) ** 0.5 if len(rets) > 1 else 0
+                ann = (1 + m) ** (252 / n_forward) - 1 if m > -1 else 0
+                sr = m / std * (252 / n_forward) ** 0.5 if std > 0 else 0
+            else:
+                m = ann = sr = 0
+            print(f"    Q{g:<9}{m*100:>+13.4f}%{ann*100:>+11.2f}%{sr:>+10.3f}")
+
+        # monotonic check per-regime
+        means = {g: (sum(rets_by_g[g]) / len(rets_by_g[g]) if rets_by_g.get(g) else 0) for g in range(N_GROUPS)}
+        mono = all(means[i] >= means[i + 1] for i in range(N_GROUPS - 1))
+        spread_regime = []
+        r0 = rets_by_g.get(0, [])
+        r4 = rets_by_g.get(N_GROUPS - 1, [])
+        for i in range(min(len(r0), len(r4))):
+            spread_regime.append(r0[i] - r4[i])
+        avg_spread = (sum(spread_regime) / len(spread_regime) * 100) if spread_regime else 0
+        print(f"    Q0-Q{N_GROUPS-1} spread: {avg_spread:.3f}% avg | Monotonic: {'PASS' if mono else 'FAIL'}")
+
+    # 全窗口
+    print(f"\n  [全窗口]")
+    print(f"  {'Group':<10}{'Mean Daily Ret':>16}{'Ann. Ret':>12}{'Sharpe':>10}")
+    print("  " + "-" * 64)
     for g in range(N_GROUPS):
         rets = group_returns[g]
         if rets:
