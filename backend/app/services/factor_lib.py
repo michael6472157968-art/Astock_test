@@ -194,6 +194,11 @@ def minmax_norm(series: list[float]) -> list[float]:
     return [round((v - lo) / rng, 6) for v in series]
 
 
+def clip(series: list[float], lo: float, hi: float) -> list[float]:
+    """Clip values to [lo, hi] range。⚠️ 会修改输入数组以节省内存。"""
+    return [lo if v < lo else (hi if v > hi else v) for v in series]
+
+
 def rank_pct(series: list[float]) -> list[float]:
     """百分位排名归一化到 [0, 1]。比 min-max 更抗极端值。"""
     n = len(series)

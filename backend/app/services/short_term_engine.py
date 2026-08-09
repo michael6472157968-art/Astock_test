@@ -15,7 +15,7 @@ from sqlalchemy import text
 from app.core.cache import cache_set
 from app.core.database import async_session
 from app.core.settings import get_settings
-from app.services.factor_lib import rank_pct, zscore
+from app.services.factor_lib import clip, minmax_norm, rank_pct, winsorize_mad, zscore
 
 logger = logging.getLogger("short_term")
 _settings = get_settings()
@@ -138,7 +138,10 @@ class ShortTermEngine:
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d3.close) / NULLIF(d3.close, 0) * 100 AS chg3,
                    CAST(d.volume AS REAL) / NULLIF(av.avg_vol, 0) AS vol_ratio,
-                   CASE WHEN db.turnover_rate IS NOT NULL AND db.turnover_rate > 0 THEN db.turnover_rate ELSE NULL END AS turnover
+                   CASE WHEN db.turnover_rate IS NOT NULL AND db.turnover_rate > 0 THEN db.turnover_rate ELSE NULL END AS turnover,
+                   CASE WHEN db.pe IS NOT NULL AND db.pe > 0 THEN db.pe ELSE NULL END AS pe,
+                   CASE WHEN db.pb IS NOT NULL AND db.pb > 0 THEN db.pb ELSE NULL END AS pb,
+                   CASE WHEN db.total_mv IS NOT NULL AND db.total_mv > 0 THEN db.total_mv ELSE NULL END AS total_mv
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td3) d3 ON d3.ts_code = d.ts_code
@@ -159,8 +162,8 @@ class ShortTermEngine:
         r = await session.execute(sql, {
             "td": trade_date, "td2": td2 or trade_date, "td3": td3, "lim": POOL_SIZE * 3,
         })
-        return self._score_rows(r, "T+3追涨", ["chg3", "vol_ratio", "pct_chg", "turnover"],
-                                [0.35, 0.25, 0.20, 0.20], limit=POOL_SIZE * 3)
+        return self._score_rows(r, "T+3追涨", ["chg3", "vol_ratio", "pct_chg", "turnover", "pe", "pb", "total_mv"],
+                                [0.25, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10], limit=POOL_SIZE * 3)
 
     # ── T+3 低吸 ──
     async def _t3_dip(self, session, trade_date: str, dates: list) -> list:
@@ -177,7 +180,11 @@ class ShortTermEngine:
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d5.close) / NULLIF(d5.close, 0) * 100 AS chg5,
                    CAST(d.volume AS REAL) / NULLIF(av.avg_vol, 0) AS vol_ratio,
-                   (d.close - dlo.min_low) / NULLIF(dlo.min_low, 0) * 100 AS dist_from_low
+                   (d.close - dlo.min_low) / NULLIF(dlo.min_low, 0) * 100 AS dist_from_low,
+                   CASE WHEN db.turnover_rate IS NOT NULL THEN db.turnover_rate ELSE NULL END AS turnover,
+                   CASE WHEN db.pe IS NOT NULL AND db.pe > 0 THEN db.pe ELSE NULL END AS pe,
+                   CASE WHEN db.pb IS NOT NULL AND db.pb > 0 THEN db.pb ELSE NULL END AS pb,
+                   CASE WHEN db.total_mv IS NOT NULL AND db.total_mv > 0 THEN db.total_mv ELSE NULL END AS total_mv
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td5) d5 ON d5.ts_code = d.ts_code
@@ -187,6 +194,7 @@ class ShortTermEngine:
             JOIN (SELECT ts_code, MIN(low) AS min_low FROM stock_daily
                   WHERE trade_date <= :td AND trade_date >= :td20 GROUP BY ts_code
             ) dlo ON dlo.ts_code = d.ts_code
+            LEFT JOIN daily_basic db ON db.ts_code = d.ts_code AND db.trade_date = d.trade_date
             WHERE d.trade_date = :td
               AND (d.close - d5.close) / NULLIF(d5.close, 0) * 100 < -3
               AND d.pct_chg > 0 AND d.close > d.open
@@ -206,8 +214,8 @@ class ShortTermEngine:
             "td4": td4 or trade_date, "td5": td5, "td20": td20 or trade_date,
             "lim": POOL_SIZE * 3,
         })
-        return self._score_rows(r, "T+3低吸", ["chg5", "vol_ratio", "dist_from_low", "pct_chg"],
-                                [0.30, 0.25, 0.25, 0.20], oversold_field="dist_from_low",
+        return self._score_rows(r, "T+3低吸", ["chg5", "vol_ratio", "dist_from_low", "pct_chg", "pe", "pb", "total_mv"],
+                                [0.20, 0.15, 0.20, 0.15, 0.12, 0.08, 0.10], oversold_field="dist_from_low",
                                 limit=POOL_SIZE * 3)
 
     # ── T+7 追涨 ──
@@ -228,7 +236,10 @@ class ShortTermEngine:
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d10.close) / NULLIF(d10.close, 0) * 100 AS chg10,
                    (ma5.ma5 - ma5.ma10) / NULLIF(ma5.ma10, 0) * 100 AS ma_slope,
-                   CASE WHEN db.turnover_rate IS NOT NULL THEN db.turnover_rate ELSE NULL END AS turnover
+                   CASE WHEN db.turnover_rate IS NOT NULL THEN db.turnover_rate ELSE NULL END AS turnover,
+                   CASE WHEN db.pe IS NOT NULL AND db.pe > 0 THEN db.pe ELSE NULL END AS pe,
+                   CASE WHEN db.pb IS NOT NULL AND db.pb > 0 THEN db.pb ELSE NULL END AS pb,
+                   CASE WHEN db.total_mv IS NOT NULL AND db.total_mv > 0 THEN db.total_mv ELSE NULL END AS total_mv
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td10) d10 ON d10.ts_code = d.ts_code
@@ -253,8 +264,8 @@ class ShortTermEngine:
             "td": trade_date, "td4": td4 or trade_date, "td9": td9 or trade_date,
             "td10": td10, "td19": td19 or trade_date, "lim": POOL_SIZE * 3,
         })
-        return self._score_rows(r, "T+7追涨", ["chg10", "ma_slope", "pct_chg", "turnover"],
-                                [0.30, 0.25, 0.25, 0.20], limit=POOL_SIZE * 3)
+        return self._score_rows(r, "T+7追涨", ["chg10", "ma_slope", "pct_chg", "turnover", "pe", "pb", "total_mv"],
+                                [0.25, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10], limit=POOL_SIZE * 3)
 
     # ── T+7 低吸 ──
     async def _t7_dip(self, session, trade_date: str, dates: list) -> list:
@@ -273,7 +284,11 @@ class ShortTermEngine:
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d10.close) / NULLIF(d10.close, 0) * 100 AS chg10,
                    (d.close - d3.close) / NULLIF(d3.close, 0) * 100 AS chg3_recent,
-                   (hi60.max_high - d.close) / NULLIF(hi60.max_high, 0) * 100 AS drawdown
+                   (hi60.max_high - d.close) / NULLIF(hi60.max_high, 0) * 100 AS drawdown,
+                   CASE WHEN db.turnover_rate IS NOT NULL THEN db.turnover_rate ELSE NULL END AS turnover,
+                   CASE WHEN db.pe IS NOT NULL AND db.pe > 0 THEN db.pe ELSE NULL END AS pe,
+                   CASE WHEN db.pb IS NOT NULL AND db.pb > 0 THEN db.pb ELSE NULL END AS pb,
+                   CASE WHEN db.total_mv IS NOT NULL AND db.total_mv > 0 THEN db.total_mv ELSE NULL END AS total_mv
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td10) d10 ON d10.ts_code = d.ts_code
@@ -281,6 +296,7 @@ class ShortTermEngine:
             JOIN (SELECT ts_code, MAX(high) AS max_high FROM stock_daily
                   WHERE trade_date <= :td AND trade_date >= :td60 GROUP BY ts_code
             ) hi60 ON hi60.ts_code = d.ts_code
+            LEFT JOIN daily_basic db ON db.ts_code = d.ts_code AND db.trade_date = d.trade_date
             WHERE d.trade_date = :td
               AND (d.close - d10.close) / NULLIF(d10.close, 0) * 100 < 0
               AND (d.close - d3.close) / NULLIF(d3.close, 0) * 100 > 0
@@ -294,34 +310,44 @@ class ShortTermEngine:
             "td": trade_date, "td3": td3, "td10": td10, "td60": td60 or trade_date,
             "lim": POOL_SIZE * 3,
         })
-        return self._score_rows(r, "T+7低吸", ["drawdown", "chg3_recent", "chg10", "pct_chg"],
-                                [0.30, 0.25, 0.25, 0.20], oversold_field="drawdown",
+        return self._score_rows(r, "T+7低吸", ["drawdown", "chg3_recent", "chg10", "pct_chg", "pe", "pb", "total_mv"],
+                                [0.25, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10], oversold_field="drawdown",
                                 limit=POOL_SIZE * 3)
 
     # ── 评分排序 ──
 
-    # 需反向排名的字段（原始值越小得分越高）——对齐旧 _normalize 语义
+    # 基础因子列索引（SQL SELECT 固定位置: col0=ts_code, col1=name, col2=close,
+    # col3=pct_chg, col4=volume, col5+=derived fields + daily_basic fields）
+    _BASE_COLS = 5
+
+    # 需反向排名的字段（原始值越小得分越高）
     _INVERT_FIELDS: set[str] = {"dist_from_low"}
+
+    # zscore 归一化因子：基本面因子用 winsorize_mad → zscore → clip → minmax
+    # 比 rank_pct 更能反映真实分位数差异（PE从15到30的gap比第80到第90百分位更有意义）
+    _ZSCORE_FIELDS: set[str] = {"pe", "pb", "total_mv"}
 
     def _score_rows(self, rows, reason_prefix: str, fields: list[str],
                     weights: list[float], oversold_field: str | None = None,
                     limit: int = POOL_SIZE) -> list:
-        """横截面百分位排名 × 权重 → 综合评分排序。
+        """横截面评分：基本面因子(zscore) + 技术因子(rank_pct) → 加权排序。
 
-        对每个因子，在所有候选中用 rank_pct 做横截面排名（标准 quant 做法），
-        替代过去的 per-field ad-hoc _normalize。反向因子取 (1 - rank_pct)。
-        vol_ratio 特殊处理：按距离 1.0 的远近排名（越接近1.0分越高）。
+        归一化策略：
+        - 基本面因子（PE/PB/市值）：winsorize_mad(5σ) → zscore → clip[-3,3] → minmax[0,1]
+          对于反向因子（PE/PB越低越好），用 (1 - score) 翻转
+        - 技术因子（涨跌幅/量比/换手/均线斜率）：rank_pct 横截面排名
+        - vol_ratio 特殊处理：按 |val - 1.0| 排名（越接近1越高分）
         """
         if not rows:
             return []
 
-        # 提取每个因子的候选值列表
+        # 提取每个因子值，按字段名而非列索引对齐
         field_vals_all: dict[str, list[float]] = {f: [] for f in fields}
         raw_items: list[dict] = []
         for row in rows:
             fv = {}
             for i, f in enumerate(fields):
-                idx = 5 + i
+                idx = self._BASE_COLS + i
                 val = float(row[idx]) if idx < len(row) and row[idx] is not None else 0.0
                 fv[f] = val
                 field_vals_all[f].append(val)
@@ -333,23 +359,31 @@ class ShortTermEngine:
                 "fv": fv,
             })
 
-        # 每个因子做横截面 rank_pct
-        rank_cache: dict[str, list[float]] = {}
+        # 每个因子做归一化
+        norm_cache: dict[str, list[float]] = {}
         for f in fields:
             vals = field_vals_all[f]
             if f == "vol_ratio":
                 # 按 |val - 1.0| 排名（越小越接近1.0），反向取分
                 dist = [abs(v - 1.0) for v in vals]
-                rank_cache[f] = [round(1.0 - r, 6) for r in rank_pct(dist)]
+                norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct(dist)]
+            elif f in self._ZSCORE_FIELDS:
+                # 基本面因子：winsorize → zscore → clip → minmax
+                w = winsorize_mad(vals, 5.0)
+                z = zscore(w)
+                c = clip(z, -3.0, 3.0)
+                normed = minmax_norm(c)
+                # PE/PB/市值 越低越好 → 反向
+                norm_cache[f] = [round(1.0 - v, 6) for v in normed]
             elif f in self._INVERT_FIELDS:
-                rank_cache[f] = [round(1.0 - r, 6) for r in rank_pct(vals)]
+                norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct(vals)]
             else:
-                rank_cache[f] = rank_pct(vals)
+                norm_cache[f] = rank_pct(vals)
 
         # 加权评分
         scored = []
         for idx, item in enumerate(raw_items):
-            score = sum(rank_cache[f][idx] * w for f, w in zip(fields, weights))
+            score = sum(norm_cache[f][idx] * w for f, w in zip(fields, weights))
             entry = {
                 "stock_code": item["code"],
                 "stock_name": item["name"],
