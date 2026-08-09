@@ -32,8 +32,62 @@ _WEIGHTS_PATH = _BACKEND / "data" / "factor_weights.json"
 _OUT_DIR = _BACKEND / "data" / "verification_results"
 
 FORWARD_N = [1, 3, 5, 10, 20]
-MIN_STOCK_DAYS = 60  # 股票至少要有这么多交易日才纳入
-MIN_CROSS_SECTION = 50  # 每天至少这么多股票才算有效截面
+MIN_STOCK_DAYS = 60
+MIN_CROSS_SECTION = 50
+
+# ── 市场状态分类 ──
+REGIME_LOOKBACK = 20  # MA20 窗口
+BULL_SLOPE = 0.3      # MA20 斜率 > +0.3%/天 → 单边上涨
+BEAR_SLOPE = -0.3     # MA20 斜率 < -0.3%/天 → 单边下跌
+
+
+def _classify_regime(idx_closes: list[float], di: int) -> str:
+    """基于大盘指数截至 di 天的 MA20 斜率 + 位置 + 波动率分类。
+
+    返回: "bull" | "bear" | "range" | "volatile"
+    """
+    if di < REGIME_LOOKBACK + 1:
+        return "unknown"
+
+    window = idx_closes[di - REGIME_LOOKBACK:di + 1]
+    # 窗口中有 None 无法分类，退回 unknown
+    if any(v is None for v in window):
+        return "unknown"
+    ma20 = sum(window) / REGIME_LOOKBACK
+    current = idx_closes[di]
+
+    # MA20 斜率: 两端均值的差 / 时间跨度
+    first_half = window[:10]
+    last_half = window[-10:]
+    slope = ((sum(last_half) / 10) - (sum(first_half) / 10)) / (sum(first_half) / 10) * 100 / 10
+
+    # 波动率: 20日振幅 / 均值的标准差
+    mean_w = sum(window) / len(window)
+    var = sum((v - mean_w) ** 2 for v in window) / len(window)
+    vol = (var ** 0.5) / mean_w * 100 if mean_w > 0 else 0
+
+    # 高波动优先
+    if vol > 3.0:
+        return "volatile"
+
+    if slope > BULL_SLOPE and current > ma20:
+        return "bull"
+    elif slope < BEAR_SLOPE and current < ma20:
+        return "bear"
+    else:
+        return "range"
+
+
+async def _load_index_data(session, dates: list[str]) -> dict[str, float]:
+    """加载上证指数 000001.SH 的收盘价序列，返回 {date: close}。"""
+    if not dates:
+        return {}
+    r = await session.execute(text(
+        "SELECT trade_date, close FROM stock_daily "
+        "WHERE ts_code = '000001.SH' AND trade_date BETWEEN :d0 AND :d1 "
+        "ORDER BY trade_date"
+    ), {"d0": dates[0], "d1": dates[-1]})
+    return {row[0]: float(row[1] or 0) for row in r.fetchall()}
 
 
 def _now() -> str:
@@ -297,12 +351,32 @@ async def analyze_pool(pool_name: str, lookback: int, sync: bool = False) -> dic
             logger.error(f"Not enough stocks: {len(stock_data)}")
             return None
 
-    # ── 逐日 IC 计算 ──
-    ic_rows: list[dict] = []  # [{date, factor, N, ic}, ...]
-    factor_ics: dict[str, dict[int, list[float]]] = {}  # {factor: {N: [ic, ...]}}
+        # ── 加载大盘指数 + 预分类每天的市场状态 ──
+        idx_data = await _load_index_data(session, dates)
+        idx_closes = [idx_data.get(d) for d in dates]
+        # 对缺失值做前向填充
+        last_valid = None
+        for i in range(len(idx_closes)):
+            if idx_closes[i] is None:
+                idx_closes[i] = last_valid
+            else:
+                last_valid = idx_closes[i]
+        regime_cache: dict[str, str] = {}
+        for di, td in enumerate(dates):
+            regime_cache[td] = _classify_regime(idx_closes, di) if idx_closes[di] else "unknown"
+
+        regime_counts: dict[str, int] = {}
+        for r in regime_cache.values():
+            regime_counts[r] = regime_counts.get(r, 0) + 1
+        logger.info(f"Regime distribution: {regime_counts}")
+
+    # ── 逐日 IC 计算（按状态分段） ──
+    ic_rows: list[dict] = []  # [{date, factor, N, ic, regime}, ...]
+    # factor_ics: {factor: {N: {regime: [ic, ...]}}}
+    factor_ics: dict[str, dict[int, dict[str, list[float]]]] = {}
 
     for f in fields:
-        factor_ics[f] = {N: [] for N in FORWARD_N}
+        factor_ics[f] = {N: {} for N in FORWARD_N}
 
     skipped = 0
     for di, td in enumerate(dates):
@@ -341,6 +415,8 @@ async def analyze_pool(pool_name: str, lookback: int, sync: bool = False) -> dic
             skipped += 1
             continue
 
+        regime = regime_cache.get(td, "unknown")
+
         for f in fields:
             f_vals: list[float] = []
             fwd_by_N: dict[int, list[float]] = {N: [] for N in FORWARD_N}
@@ -364,23 +440,28 @@ async def analyze_pool(pool_name: str, lookback: int, sync: bool = False) -> dic
                     continue
                 ic = _spearman(f_vals, fwd_by_N[N])
                 if not math.isnan(ic):
-                    ic_rows.append({"date": td, "factor": f, "N": N, "ic": round(ic, 6)})
-                    factor_ics[f][N].append(ic)
+                    ic_rows.append({"date": td, "factor": f, "N": N, "ic": round(ic, 6), "regime": regime})
+                    factor_ics[f][N].setdefault(regime, []).append(ic)
 
     if skipped > 0:
         logger.info(f"Skipped {skipped}/{len(dates)} dates (< {MIN_CROSS_SECTION} stocks)")
 
-    # ── 汇总 ──
+    # ── 汇总（全窗口 + 按 regime 分段） ──
     summary = []
+    all_regimes = sorted(set(r for row in ic_rows for r in [row["regime"]]))
+
     for f in fields:
-        entry = {"pool": pool_name, "factor": f}
+        entry: dict = {"pool": pool_name, "factor": f}
+        # 全窗口
         for N in FORWARD_N:
-            ics = factor_ics[f][N]
-            if ics:
-                mean_ic = sum(ics) / len(ics)
-                std_ic = _std(ics, mean_ic)
+            all_ics = []
+            for regime_ics in factor_ics[f][N].values():
+                all_ics.extend(regime_ics)
+            if all_ics:
+                mean_ic = sum(all_ics) / len(all_ics)
+                std_ic = _std(all_ics, mean_ic)
                 ic_ir = round(mean_ic / std_ic, 4) if std_ic > 0 else 0.0
-                pos_ratio = round(sum(1 for v in ics if v > 0) / len(ics), 4)
+                pos_ratio = round(sum(1 for v in all_ics if v > 0) / len(all_ics), 4)
                 entry[f"IC_{N}d_mean"] = round(mean_ic, 4)
                 entry[f"IC_{N}d_ir"] = ic_ir
                 entry[f"IC_{N}d_pos"] = pos_ratio
@@ -388,20 +469,32 @@ async def analyze_pool(pool_name: str, lookback: int, sync: bool = False) -> dic
                 entry[f"IC_{N}d_mean"] = None
                 entry[f"IC_{N}d_ir"] = None
                 entry[f"IC_{N}d_pos"] = None
+
+        # 按 regime
+        for regime in all_regimes:
+            for N in FORWARD_N:
+                ics = factor_ics[f][N].get(regime, [])
+                if ics and len(ics) >= 3:
+                    mean_ic = sum(ics) / len(ics)
+                    entry[f"IC_{N}d_{regime}"] = round(mean_ic, 4)
+                else:
+                    entry[f"IC_{N}d_{regime}"] = None
         summary.append(entry)
 
     # ── 写 CSV ──
     ts = _now()
     seq_path = _OUT_DIR / f"ic_sequence_{pool_name}_{ts}.csv"
     with open(seq_path, "w", newline="", encoding="utf-8-sig") as fh:
-        w = csv.DictWriter(fh, fieldnames=["date", "factor", "N", "ic"])
+        w = csv.DictWriter(fh, fieldnames=["date", "factor", "N", "ic", "regime"])
         w.writeheader()
         w.writerows(ic_rows)
     logger.info(f"IC sequence → {seq_path} ({len(ic_rows)} rows)")
 
     sum_path = _OUT_DIR / f"ic_summary_{pool_name}_{ts}.csv"
     with open(sum_path, "w", newline="", encoding="utf-8-sig") as fh:
-        fields_sum = ["pool", "factor"] + [f"IC_{N}d_{m}" for N in FORWARD_N for m in ["mean", "ir", "pos"]]
+        base_fields = ["pool", "factor"] + [f"IC_{N}d_{m}" for N in FORWARD_N for m in ["mean", "ir", "pos"]]
+        regime_fields = [f"IC_{N}d_{r}" for r in all_regimes for N in FORWARD_N]
+        fields_sum = base_fields + regime_fields
         w = csv.DictWriter(fh, fieldnames=fields_sum)
         w.writeheader()
         w.writerows(summary)
@@ -411,15 +504,32 @@ async def analyze_pool(pool_name: str, lookback: int, sync: bool = False) -> dic
     print(f"\n{'='*80}")
     print(f"  Rank IC Summary — {pool_name}")
     print(f"{'='*80}")
+
+    # 全窗口
     header = f"{'Factor':<20}" + "".join(f"  N={N:<4d}" for N in FORWARD_N)
-    print(header)
-    print("-" * 80)
+    print("  [全窗口]")
+    print("  " + header)
+    print("  " + "-" * len(header))
     for s in summary:
-        line = f"{s['factor']:<20}"
+        line = f"  {s['factor']:<18}"
         for N in FORWARD_N:
             v = s.get(f"IC_{N}d_mean")
             line += f"  {v:+.4f}" if v is not None else "     N/A"
         print(line)
+
+    # 按 regime 分段
+    for regime in all_regimes:
+        rname = {"bull": "单边上涨", "bear": "单边下跌", "range": "震荡", "volatile": "高波动", "unknown": "未知"}.get(regime, regime)
+        print(f"\n  [{rname}]")
+        print("  " + f"{'Factor':<20}" + "".join(f"  N={N:<4d}" for N in FORWARD_N))
+        print("  " + "-" * len(header))
+        for s in summary:
+            line = f"  {s['factor']:<18}"
+            for N in FORWARD_N:
+                v = s.get(f"IC_{N}d_{regime}")
+                line += f"  {v:+.4f}" if v is not None else "     N/A"
+            print(line)
+
     print(f"\nCSV: {seq_path}\n     {sum_path}")
 
     return {"summary": summary, "ic_rows": ic_rows, "seq_path": str(seq_path), "sum_path": str(sum_path)}
