@@ -335,6 +335,25 @@ class CheckinRecord(Base):
     )
 
 
+class ResearchExperiment(Base):
+    """因子验证实验日记——记录每次 IC/分组回测的配置与结果。"""
+    __tablename__ = "research_experiments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    experiment_id = Column(String(30), nullable=False, index=True)
+    pool_name = Column(String(30), default="")
+    config_hash = Column(String(20), default="")
+    date_start = Column(String(10), default="")
+    date_end = Column(String(10), default="")
+    train_len = Column(Integer, default=0)
+    test_len = Column(Integer, default=0)
+    lookback = Column(Integer, default=0)
+    ic_summary = Column(Text, default="[]")
+    group_result = Column(Text, default="{}")
+    status = Column(String(20), default="pending")
+    created_at = Column(DateTime, default=_now)
+
+
 class MarketGuess(Base):
     __tablename__ = "market_guesses"
 
