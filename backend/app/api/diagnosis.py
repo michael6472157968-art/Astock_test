@@ -19,100 +19,10 @@ from sqlalchemy import select
 router = APIRouter(prefix="/api/v1/diagnosis", tags=["诊股"])
 _settings = get_settings()
 
-# ── 技术指标计算 ──
-
-def _sma(values: list[float], n: int) -> list[float]:
-    out = []
-    for i in range(len(values)):
-        if i < n - 1:
-            out.append(None)
-        else:
-            out.append(sum(values[i - n + 1:i + 1]) / n)
-    return out
-
-
-def _ema(values: list[float], n: int) -> list[float]:
-    out = []
-    k = 2 / (n + 1)
-    for i, v in enumerate(values):
-        if i == 0:
-            out.append(v)
-        else:
-            out.append(v * k + out[-1] * (1 - k))
-    return out
-
-
-def _macd(closes: list[float]) -> dict:
-    ema12 = _ema(closes, 12)
-    ema26 = _ema(closes, 26)
-    dif = [a - b if a is not None and b is not None else None for a, b in zip(ema12, ema26)]
-    dea = _ema([d if d is not None else 0 for d in dif], 9)
-    macd_bar = [(d - dea[i]) * 2 if d is not None else None for i, d in enumerate(dif)]
-    return {"dif": dif, "dea": dea, "bar": macd_bar}
-
-
-def _rsi(closes: list[float], n: int = 14) -> list[float]:
-    out = []
-    gains, losses = [], []
-    for i in range(1, len(closes)):
-        chg = closes[i] - closes[i - 1]
-        gains.append(max(chg, 0))
-        losses.append(max(-chg, 0))
-    for i in range(n, len(gains) + 1):
-        avg_gain = sum(gains[i - n:i]) / n
-        avg_loss = sum(losses[i - n:i]) / n
-        if avg_loss == 0:
-            out.append(100)
-        else:
-            rs = avg_gain / avg_loss
-            out.append(round(100 - 100 / (1 + rs), 2))
-    return out  # length = len(closes) - 1 - n + 1
-
-
-def _kdj(highs: list[float], lows: list[float], closes: list[float], n: int = 9) -> dict:
-    k_vals, d_vals, j_vals = [], [], []
-    for i in range(n - 1, len(closes)):
-        hh = max(highs[i - n + 1:i + 1])
-        ll = min(lows[i - n + 1:i + 1])
-        rsv = (closes[i] - ll) / (hh - ll) * 100 if hh != ll else 50
-        k_prev = k_vals[-1] if k_vals else 50
-        d_prev = d_vals[-1] if d_vals else 50
-        k = k_prev * 2 / 3 + rsv / 3
-        d = d_prev * 2 / 3 + k / 3
-        j = 3 * k - 2 * d
-        k_vals.append(round(k, 2))
-        d_vals.append(round(d, 2))
-        j_vals.append(round(j, 2))
-    return {"k": k_vals, "d": d_vals, "j": j_vals}
-
-
-def _bollinger(closes: list[float], n: int = 20) -> dict:
-    ma = _sma(closes, n)
-    upper, lower = [], []
-    for i in range(len(ma)):
-        if ma[i] is None:
-            upper.append(None); lower.append(None)
-        else:
-            std = _stddev(closes[i - n + 1:i + 1], ma[i])
-            upper.append(round(ma[i] + 2 * std, 2))
-            lower.append(round(ma[i] - 2 * std, 2))
-    return {"mid": ma, "upper": upper, "lower": lower}
-
-
-def _stddev(values: list[float], mean: float) -> float:
-    if len(values) < 2:
-        return 0
-    return math.sqrt(sum((v - mean) ** 2 for v in values) / (len(values) - 1))
-
-
-def _atr(highs, lows, closes, n=14):
-    trs = []
-    for i in range(1, len(closes)):
-        a = highs[i] - lows[i]
-        b = abs(highs[i] - closes[i - 1])
-        c = abs(lows[i] - closes[i - 1])
-        trs.append(max(a, b, c))
-    return _sma(trs, n)
+from app.services.factor_lib import (
+    sma as _sma, ema as _ema, macd as _macd, rsi as _rsi,
+    kdj as _kdj, bollinger as _bollinger, atr as _atr,
+)
 
 
 def _pivot_points(highs, lows, closes, lookback=20):

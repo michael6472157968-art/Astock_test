@@ -15,6 +15,7 @@ from sqlalchemy import text
 from app.core.cache import cache_set
 from app.core.database import async_session
 from app.core.settings import get_settings
+from app.services.factor_lib import rank_pct, zscore
 
 logger = logging.getLogger("short_term")
 _settings = get_settings()
@@ -298,77 +299,73 @@ class ShortTermEngine:
                                 limit=POOL_SIZE * 3)
 
     # ── 评分排序 ──
+
+    # 需反向排名的字段（原始值越小得分越高）——对齐旧 _normalize 语义
+    _INVERT_FIELDS: set[str] = {"dist_from_low"}
+
     def _score_rows(self, rows, reason_prefix: str, fields: list[str],
                     weights: list[float], oversold_field: str | None = None,
                     limit: int = POOL_SIZE) -> list:
-        """评分排序后返回指定条数。oversold_field 用于标记超卖原始值供去重。"""
-        scored = []
-        for row in rows:
-            code = row[0]
-            name = row[1]
-            close = float(row[2]) if row[2] is not None else None
-            pct_chg = float(row[3]) if row[3] is not None else 0
-            vol = float(row[4]) if len(row) > 4 and row[4] is not None else 0
+        """横截面百分位排名 × 权重 → 综合评分排序。
 
-            # 计算评分: 每项 min-max 归一化后加权
-            field_vals = {}
+        对每个因子，在所有候选中用 rank_pct 做横截面排名（标准 quant 做法），
+        替代过去的 per-field ad-hoc _normalize。反向因子取 (1 - rank_pct)。
+        vol_ratio 特殊处理：按距离 1.0 的远近排名（越接近1.0分越高）。
+        """
+        if not rows:
+            return []
+
+        # 提取每个因子的候选值列表
+        field_vals_all: dict[str, list[float]] = {f: [] for f in fields}
+        raw_items: list[dict] = []
+        for row in rows:
+            fv = {}
             for i, f in enumerate(fields):
                 idx = 5 + i
-                if idx < len(row) and row[idx] is not None:
-                    field_vals[f] = float(row[idx])
-                else:
-                    field_vals[f] = 0
+                val = float(row[idx]) if idx < len(row) and row[idx] is not None else 0.0
+                fv[f] = val
+                field_vals_all[f].append(val)
+            raw_items.append({
+                "code": row[0], "name": row[1],
+                "close": float(row[2]) if row[2] is not None else None,
+                "pct_chg": float(row[3]) if row[3] is not None else 0,
+                "vol": float(row[4]) if len(row) > 4 and row[4] is not None else 0,
+                "fv": fv,
+            })
 
-            score = sum(
-                self._normalize(field_vals.get(f, 0), f) * w
-                for f, w in zip(fields, weights)
-            )
+        # 每个因子做横截面 rank_pct
+        rank_cache: dict[str, list[float]] = {}
+        for f in fields:
+            vals = field_vals_all[f]
+            if f == "vol_ratio":
+                # 按 |val - 1.0| 排名（越小越接近1.0），反向取分
+                dist = [abs(v - 1.0) for v in vals]
+                rank_cache[f] = [round(1.0 - r, 6) for r in rank_pct(dist)]
+            elif f in self._INVERT_FIELDS:
+                rank_cache[f] = [round(1.0 - r, 6) for r in rank_pct(vals)]
+            else:
+                rank_cache[f] = rank_pct(vals)
 
-            item = {
-                "stock_code": code,
-                "stock_name": name,
-                "close": close,
-                "change_pct": round(pct_chg, 2),
+        # 加权评分
+        scored = []
+        for idx, item in enumerate(raw_items):
+            score = sum(rank_cache[f][idx] * w for f, w in zip(fields, weights))
+            entry = {
+                "stock_code": item["code"],
+                "stock_name": item["name"],
+                "close": item["close"],
+                "change_pct": round(item["pct_chg"], 2),
                 "score": round(score * 100, 1),
-                "volume": vol,
+                "volume": item["vol"],
                 "inclusion_reason": f"{reason_prefix} 评分{round(score*100,1)}",
                 "mode": reason_prefix,
             }
-
-            # 记录超卖判断所需的原始值
-            if oversold_field and oversold_field in field_vals:
-                item["_raw_oversold_val"] = round(field_vals[oversold_field], 2)
-
-            scored.append(item)
+            if oversold_field and oversold_field in item["fv"]:
+                entry["_raw_oversold_val"] = round(item["fv"][oversold_field], 2)
+            scored.append(entry)
 
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:limit]
-
-    def _normalize(self, val: float, field: str) -> float:
-        """将原始值归一化到 [0, 1]，越大越好（对正向指标）或取绝对值（对负向指标取反）。"""
-        if field == "chg5":
-            return max(0, min(1, (val + 10) / 8))
-        if field == "chg10":
-            return max(0, min(1, (val + 15) / 20))
-        if field in ("chg3", "chg3_recent"):
-            return max(0, min(1, val / 5))
-        if field == "vol_ratio":
-            if val >= 0.5 and val <= 2.0:
-                return 1.0 - abs(val - 1.0)
-            return max(0, 1.0 - abs(val - 1.0) / 3)
-        if field == "dist_from_low":
-            return max(0, 1 - val / 15)
-        if field == "turnover":
-            if val is None or val == 0:
-                return 0.5
-            return max(0, 1 - abs(val - 5) / 15)
-        if field == "ma_slope":
-            return max(0, min(1, val / 5))
-        if field == "drawdown":
-            return max(0, min(1, val / 30))
-        if field == "pct_chg":
-            return max(0, min(1, (val + 3) / 10))
-        return 0.5
 
     def _nth_date(self, dates: list, ref_date: str, n: int) -> str | None:
         """从 dates 列表中找到 ref_date 之前第 n 个交易日。"""

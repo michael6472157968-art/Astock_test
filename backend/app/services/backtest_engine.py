@@ -12,50 +12,13 @@
 from __future__ import annotations
 
 
-def sma(series: list[float], n: int) -> list[float | None]:
-    out: list[float | None] = [None] * len(series)
-    for i in range(n - 1, len(series)):
-        out[i] = sum(series[i - n + 1 : i + 1]) / n
-    return out
-
-
-def ema(series: list[float], n: int) -> list[float]:
-    out: list[float] = []
-    k = 2 / (n + 1)
-    for i, v in enumerate(series):
-        if i == 0:
-            out.append(v)
-        else:
-            out.append(v * k + out[-1] * (1 - k))
-    return out
+from app.services.factor_lib import sma, ema, macd, rsi
 
 
 def _macd_series(closes: list[float]) -> tuple[list[float | None], list[float | None], list[float | None]]:
-    ema12 = ema(closes, 12)
-    ema26 = ema(closes, 26)
-    dif = [a - b for a, b in zip(ema12, ema26)]
-    dea = ema(dif, 9)
-    bar = [(d - dea[i]) * 2 for i, d in enumerate(dif)]
-    return dif, dea, bar
-
-
-def rsi(closes: list[float], period: int = 14) -> list[float | None]:
-    result: list[float | None] = [None] * len(closes)
-    if len(closes) <= period:
-        return result
-    gains, losses = [], []
-    for i in range(1, len(closes)):
-        d = closes[i] - closes[i - 1]
-        gains.append(d if d > 0 else 0)
-        losses.append(-d if d < 0 else 0)
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-    for i in range(period, len(gains)):
-        rsi_val = 100.0 if avg_loss == 0 else 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
-        result[i + 1] = round(rsi_val, 2)
-        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
-    return result
+    """兼容旧调用方：返回 (dif, dea, bar) 三元组。"""
+    m = macd(closes)
+    return m["dif"], m["dea"], m["bar"]
 
 
 def _signals_ma_cross(closes: list[float], _volumes: list[float]) -> list[tuple[int, str]]:
