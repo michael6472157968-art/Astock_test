@@ -208,6 +208,12 @@ var FavStore = {
     });
   },
 
+  refresh: function() {
+    this._loaded = false;
+    this._loading = null;
+    return this.loadCache();
+  },
+
   _refreshButtons: function() {
     var self = this;
     document.querySelectorAll('.spc-fav-btn').forEach(function(btn) {

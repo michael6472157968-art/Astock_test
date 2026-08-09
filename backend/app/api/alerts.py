@@ -428,3 +428,75 @@ async def favorites_stock_prices(
             stocks_out.append({"ts_code": code, "name": name, "daily": daily_list})
 
     return APIResponse(data={"stocks": stocks_out, "dates": dates}, timestamp=int(time.time()))
+
+
+# ── 股票搜索 ──
+
+import re
+
+from sqlalchemy import text as _stext
+from app.models.orm.models import Stock
+
+stocks_router = APIRouter(prefix="/api/v1/stocks", tags=["股票搜索"])
+
+
+@stocks_router.get("/search")
+async def search_stocks(q: str = "", limit: int = 10, user: dict = Depends(require_auth)):
+    """模糊搜索股票（代码+名称），返回 ts_code/symbol/name/industry。"""
+    if not user.get("user_id"):
+        raise HTTPException(401, "请先登录")
+
+    q = re.sub(r'[^\w]', '', q).strip()
+    if len(q) < 1:
+        return APIResponse(data={"items": []}, timestamp=int(time.time()))
+
+    limit = max(1, min(limit, 20))
+
+    async with async_session() as session:
+        r = await session.execute(
+            _stext(
+                """SELECT ts_code, symbol, name, COALESCE(industry,'') AS industry
+                   FROM stocks
+                   WHERE symbol LIKE :like_q OR name LIKE :like_q
+                   ORDER BY
+                     CASE WHEN symbol = :exact THEN 0 ELSE 1 END,
+                     CASE WHEN name LIKE :prefix THEN 0 ELSE 1 END,
+                     symbol
+                   LIMIT :lim"""
+            ),
+            {"like_q": f"%{q}%", "exact": q, "prefix": f"{q}%", "lim": limit},
+        )
+        rows = r.fetchall()
+
+    items = [
+        {
+            "ts_code": row[0],
+            "symbol": row[1],
+            "name": row[2],
+            "industry": row[3] or "",
+        }
+        for row in rows
+    ]
+    return APIResponse(data={"items": items}, timestamp=int(time.time()))
+
+
+@stocks_router.get("/search/{code}")
+async def get_stock_name(code: str, user: dict = Depends(require_auth)):
+    """通过 ts_code 查询股票名称，用于添加自选时补全名称。"""
+    if not user.get("user_id"):
+        raise HTTPException(401, "请先登录")
+
+    code = re.sub(r'[^\w\.]', '', code).strip()
+    if not code:
+        raise HTTPException(404, "代码不能为空")
+
+    async with async_session() as session:
+        r = await session.execute(
+            _stext("SELECT name FROM stocks WHERE ts_code = :code LIMIT 1"),
+            {"code": code},
+        )
+        row = r.fetchone()
+    if not row:
+        raise HTTPException(404, "股票不存在")
+
+    return APIResponse(data={"ts_code": code, "name": row[0]}, timestamp=int(time.time()))

@@ -252,11 +252,55 @@
   font-size: 0.75rem;
 }
 .fav-collapse-btn:hover { background: var(--color-border-light); color: var(--color-text-secondary); }
+
+/* ── Quick Search ── */
+.fav-search-wrap {
+  position: relative; margin: 0 0 12px 0; max-width: 420px;
+}
+.fav-search-wrap input {
+  width: 100%; padding: 7px 12px 7px 32px; border: 1px solid var(--color-border); border-radius: 8px;
+  font-size: 0.82rem; background: var(--color-surface); color: var(--color-text);
+  transition: border-color 0.15s;
+}
+.fav-search-wrap input:focus { outline: none; border-color: var(--color-primary); }
+.fav-search-icon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--color-text-muted); font-size: 0.85rem; pointer-events: none;
+}
+.fav-search-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+  background: var(--color-surface); border: 1px solid var(--color-border); border-top: none;
+  border-radius: 0 0 8px 8px; max-height: 360px; overflow-y: auto;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15); display: none;
+}
+.fav-search-dropdown.show { display: block; }
+.fav-search-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  cursor: pointer; border-bottom: 1px solid var(--color-border-light);
+  transition: background 0.1s;
+}
+.fav-search-item:last-child { border-bottom: none; }
+.fav-search-item:hover, .fav-search-item.active { background: var(--color-primary-light, rgba(22,119,255,0.08)); }
+.fav-search-item .si-code { font-weight: 600; font-size: 0.82rem; min-width: 56px; color: var(--color-text); }
+.fav-search-item .si-name { font-size: 0.82rem; color: var(--color-text); flex: 0 0 auto; }
+.fav-search-item .si-industry { font-size: 0.68rem; color: var(--color-text-muted); margin-left: auto; }
+.fav-search-item .si-added { font-size: 0.7rem; color: var(--color-text-muted); opacity: 0.5; font-style: italic; }
+.fav-search-empty { padding: 16px; text-align: center; color: var(--color-text-muted); font-size: 0.8rem; }
+
+@media (max-width: 640px) {
+  .fav-search-wrap { max-width: 100%; }
+}
 </style>
 </head>
 <body>
 <main class="main-content" data-chrome>
   <h2 class="page-title">我的自选</h2>
+  <div class="fav-search-wrap" id="favSearchWrap">
+    <span class="fav-search-icon">&#x1F50D;</span>
+    <input type="text" id="favSearchInput" placeholder="输入代码或名称快速添加，如 平安、600000" autocomplete="off"
+      onfocus="onSearchFocus()" oninput="onSearchInput()" onkeydown="onSearchKeydown(event)" />
+    <div class="fav-search-dropdown" id="favSearchDropdown"></div>
+  </div>
   <p class="page-desc" id="quotaDesc">加载中...</p>
   <div class="fav-quota-bar" id="quotaBar" style="display:none;">
     <span id="quotaLabel">自选额度</span>
@@ -287,7 +331,7 @@
     <button onclick="createNewGroup()">+ 新建</button>
   </div>
 </main>
-<script src="/js/app.js?v=15"></script>
+<script src="/js/app.js?v=16"></script>
 <script>
 if (Session.loggedIn()) {
   loadAll();
@@ -305,6 +349,132 @@ var _groupPage = {};       // groupId -> total visible count (0 = initial pageSi
 var _pageSize = 10;
 var _dragSrc = null;
 var _dragSrcGroupId = null;
+
+// ── Search ──
+
+var _searchTimer = 0;
+var _searchActive = -1;
+
+function onSearchFocus() {
+  if (document.getElementById('favSearchInput').value.length >= 1) {
+    doSearch();
+  }
+}
+
+function onSearchInput() {
+  clearTimeout(_searchTimer);
+  var q = document.getElementById('favSearchInput').value.trim();
+  if (q.length < 1) {
+    document.getElementById('favSearchDropdown').classList.remove('show');
+    return;
+  }
+  _searchTimer = setTimeout(doSearch, 200);
+}
+
+function doSearch() {
+  var q = document.getElementById('favSearchInput').value.trim();
+  if (q.length < 1) return;
+
+  var favCodes = {};
+  for (var i = 0; i < _allItems.length; i++) {
+    favCodes[_allItems[i].stock_code] = true;
+  }
+
+  API.get('/stocks/search?q=' + encodeURIComponent(q) + '&limit=10').then(function(r) {
+    var items = (r && r.data && r.data.items) ? r.data.items : [];
+    _searchActive = -1;
+    renderDropdown(items, favCodes);
+  }).catch(function() {
+    document.getElementById('favSearchDropdown').classList.remove('show');
+  });
+}
+
+function renderDropdown(items, favCodes) {
+  var dd = document.getElementById('favSearchDropdown');
+  if (!items.length) {
+    dd.innerHTML = '<div class="fav-search-empty">未找到匹配股票</div>';
+    dd.classList.add('show');
+    return;
+  }
+  var h = '';
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var already = favCodes[it.ts_code];
+    h += '<div class="fav-search-item' + (i === 0 ? ' active' : '') + '" data-index="' + i + '" data-code="' + it.ts_code + '" data-name="' + escHtml(it.name) + '" data-symbol="' + it.symbol + '" onmousedown="event.preventDefault();selectSearchItem(this)" onmouseenter="hoverSearchItem(' + i + ')">';
+    h += '<span class="si-code">' + it.symbol + '</span>';
+    h += '<span class="si-name">' + escHtml(it.name) + '</span>';
+    if (it.industry) h += '<span class="si-industry">' + escHtml(it.industry) + '</span>';
+    if (already) h += '<span class="si-added">已添加</span>';
+    h += '</div>';
+  }
+  dd.innerHTML = h;
+  dd.classList.add('show');
+}
+
+function hoverSearchItem(idx) {
+  _searchActive = idx;
+  var items = document.querySelectorAll('#favSearchDropdown .fav-search-item');
+  for (var i = 0; i < items.length; i++) {
+    items[i].classList.toggle('active', i === idx);
+  }
+}
+
+function onSearchKeydown(e) {
+  var dd = document.getElementById('favSearchDropdown');
+  var items = dd.querySelectorAll('.fav-search-item');
+  if (e.key === 'Escape') {
+    dd.classList.remove('show');
+    document.getElementById('favSearchInput').blur();
+    return;
+  }
+  if (!dd.classList.contains('show')) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _searchActive = Math.min(_searchActive + 1, items.length - 1);
+    hoverSearchItem(_searchActive);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _searchActive = Math.max(_searchActive - 1, 0);
+    hoverSearchItem(_searchActive);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (_searchActive >= 0 && items[_searchActive]) {
+      selectSearchItem(items[_searchActive]);
+    } else if (items.length > 0) {
+      selectSearchItem(items[0]);
+    }
+  }
+}
+
+function selectSearchItem(el) {
+  if (!el) return;
+  var code = el.getAttribute('data-code');
+  var name = el.getAttribute('data-name');
+  var already = el.querySelector('.si-added');
+  if (already) return;
+
+  var norm = normalizeStockCode(el.getAttribute('data-symbol'));
+  API.post('/alerts/favorites', { stock_code: norm, stock_name: name }).then(function(r) {
+    document.getElementById('favSearchDropdown').classList.remove('show');
+    document.getElementById('favSearchInput').value = '';
+    _searchActive = -1;
+    loadAll();
+    FavStore.refresh();
+    showToast('已添加 ' + name + '(' + (el.getAttribute('data-symbol')) + ')', 'success');
+  }).catch(function(err) {
+    var msg = (err && err.message) || '添加失败';
+    showToast(msg);
+  });
+}
+
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+  var wrap = document.getElementById('favSearchWrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('favSearchDropdown').classList.remove('show');
+    _searchActive = -1;
+  }
+});
 
 // ── Guest blur page ──
 
