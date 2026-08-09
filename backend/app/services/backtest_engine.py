@@ -128,14 +128,42 @@ _SIGNAL_FNS = {
 }
 
 
+# ── 交易成本常量 ──
+_STAMP_TAX = 0.0005    # 印花税 0.05%（仅卖出）
+_COMMISSION = 0.00025  # 佣金 0.025%
+_MIN_COMM = 5.0        # 最低佣金 5 元
+
+
+def _trade_cost(amount: float, action: str) -> float:
+    """计算单边交易成本。买入：佣金；卖出：佣金+印花税。"""
+    comm = max(amount * _COMMISSION, _MIN_COMM)
+    if action == "sell":
+        comm += amount * _STAMP_TAX
+    return comm
+
+
+def _is_limit_up(pct_chg: float | None) -> bool:
+    """涨停板检查：涨幅≥9.8%视为涨停（兼容主板10%/ST 5%/科创20%）。"""
+    if pct_chg is None:
+        return False
+    return float(pct_chg) >= 9.8
+
+
 def run(daily_data: list[dict], strategy: str = "ma_cross", initial_cash: float = 100000) -> dict:
     """执行回测，返回 {equity_curve, trades, metrics, buy_signals, sell_signals}。
 
-    daily_data: [{"trade_date": "20240102", "close": 10.5, "volume": 123456}, ...] ASC by date
+    daily_data: [{"trade_date": "20240102", "open": 10.0, "close": 10.5, "volume": 123456,
+                   "pct_chg": 0.5}, ...] ASC by date
+
+    B1: 交易成本（印花税+佣金+最低5元）计入 cash 流。
+    B2: 信号日收盘触发 → 次日开盘价成交，消除未来函数。
+    B3: 买入执行日遇涨停跳过，不成交。
     """
     dates = [r["trade_date"] for r in daily_data]
+    opens = [float(r.get("open", 0) or 0) for r in daily_data]
     closes = [float(r["close"]) for r in daily_data]
     volumes = [float(r.get("volume", 0) or 0) for r in daily_data]
+    pct_chgs = [r.get("pct_chg") for r in daily_data]
 
     signals = _SIGNAL_FNS[strategy](closes, volumes)
 
@@ -146,44 +174,67 @@ def run(daily_data: list[dict], strategy: str = "ma_cross", initial_cash: float 
     buy_sigs: list[list] = []
     sell_sigs: list[list] = []
 
-    def _execute(i: int, action: str):
-        nonlocal cash, shares
-        px = closes[i]
-        dt = dates[i]
-        if action == "buy" and cash >= 100:
-            buy_shares = int(cash * 0.98 / px / 100) * 100
-            if buy_shares <= 0:
-                buy_shares = 10  # 高价股买不起1手时至少买10股模拟
-            cost = round(buy_shares * px, 2)
-            cash -= cost
-            shares += buy_shares
-            trades.append({"date": dt, "action": "buy", "price": round(px, 2),
-                           "shares": buy_shares, "amount": cost,
-                           "reason": _reason(strategy, "buy")})
-            buy_sigs.append([dt, round(px, 2)])
-        elif action == "sell" and shares > 0:
-            proceeds = round(shares * px, 2)
-            cash += proceeds
-            trades.append({"date": dt, "action": "sell", "price": round(px, 2),
-                           "shares": shares, "amount": proceeds,
-                           "reason": _reason(strategy, "sell")})
-            sell_sigs.append([dt, round(px, 2)])
-            shares = 0
+    pending_action: str | None = None
+    pending_reason: str = ""
 
     sp = 0
-    for i in range(len(dates)):
-        while sp < len(signals) and signals[sp][0] == i:
-            _execute(i, signals[sp][1])
-            sp += 1
+    n = len(dates)
+    for i in range(n):
+        # ── Step 1: 执行 pending 交易（次日开盘价成交）──
+        if pending_action is not None and opens[i] > 0:
+            px = opens[i]
+            if pending_action == "buy":
+                # B3: 涨停不可买
+                if not _is_limit_up(pct_chgs[i]):
+                    if cash >= 100:
+                        buy_shares = int(cash * 0.98 / px / 100) * 100
+                        if buy_shares <= 0:
+                            buy_shares = 10
+                        amount = buy_shares * px
+                        fee = _trade_cost(amount, "buy")
+                        cash -= amount + fee
+                        shares += buy_shares
+                        trades.append({"date": dates[i], "action": "buy", "price": round(px, 2),
+                                       "shares": buy_shares, "amount": round(amount, 2),
+                                       "fee": round(fee, 2), "reason": pending_reason})
+                        buy_sigs.append([dates[i], round(px, 2)])
+
+            elif pending_action == "sell" and shares > 0:
+                amount = shares * px
+                fee = _trade_cost(amount, "sell")
+                cash += amount - fee
+                trades.append({"date": dates[i], "action": "sell", "price": round(px, 2),
+                               "shares": shares, "amount": round(amount, 2),
+                               "fee": round(fee, 2), "reason": pending_reason})
+                sell_sigs.append([dates[i], round(px, 2)])
+                shares = 0
+
+            pending_action = None
+
+        # ── Step 2: 从今日收盘信号生成 pending（次日执行）──
+        if i < n - 1:  # 最后一天不生成信号，因为无次日可执行
+            while sp < len(signals) and signals[sp][0] == i:
+                _, action = signals[sp]
+                if action == "buy" and shares == 0 and pending_action is None:
+                    pending_action = "buy"
+                    pending_reason = _reason(strategy, "buy")
+                elif action == "sell" and shares > 0:
+                    pending_action = "sell"
+                    pending_reason = _reason(strategy, "sell")
+                sp += 1
+
+        # ── Step 3: 按当日收盘价记录权益 ──
         equity.append([dates[i], round(cash + shares * closes[i], 2)])
 
-    # 期末强平
+    # 期末强平（按最后收盘价，含成本）
     if shares > 0:
         last_px = closes[-1]
-        cash += round(shares * last_px, 2)
+        amount = shares * last_px
+        fee = _trade_cost(amount, "sell")
+        cash += amount - fee
         trades.append({"date": dates[-1], "action": "sell", "price": round(last_px, 2),
-                       "shares": shares, "amount": round(shares * last_px, 2),
-                       "reason": "期末平仓"})
+                       "shares": shares, "amount": round(amount, 2),
+                       "fee": round(fee, 2), "reason": "期末平仓"})
         sell_sigs.append([dates[-1], round(last_px, 2)])
         shares = 0
         equity[-1][1] = round(cash, 2)
@@ -261,6 +312,8 @@ def _metrics(equity: list[list], trades: list[dict], initial: float) -> dict:
             continue
         used.add(sell_idx)
         pnl = trades[sell_idx]["amount"] - t["amount"]
+        # 买卖各含费用
+        pnl -= t.get("fee", 0) + trades[sell_idx].get("fee", 0)
         (winds if pnl > 0 else losses).append(abs(pnl))
     n = len(winds) + len(losses)
     win_rate = round(len(winds) / n * 100, 1) if n else 0

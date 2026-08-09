@@ -55,7 +55,7 @@ async def _load_daily_data(ts_code: str) -> list[dict]:
     """加载个股日线数据。DB 不足时从 Tushare 按日批量补拉并合并去重。"""
     async with async_session() as sess:
         r = await sess.execute(
-            text("SELECT trade_date,close,volume FROM stock_daily WHERE ts_code=:c"),
+            text("SELECT trade_date, open, close, volume, pct_chg FROM stock_daily WHERE ts_code=:c"),
             {"c": ts_code},
         )
         rows = r.mappings().all()
@@ -66,7 +66,8 @@ async def _load_daily_data(ts_code: str) -> list[dict]:
         dt = row["trade_date"]
         if dt not in seen:
             seen.add(dt)
-            daily.append({"trade_date": dt, "close": row["close"], "volume": row["volume"]})
+            daily.append({"trade_date": dt, "open": row["open"], "close": row["close"],
+                         "volume": row["volume"], "pct_chg": row["pct_chg"]})
 
     # 按日期排序
     daily.sort(key=lambda x: x["trade_date"])
@@ -93,8 +94,10 @@ async def _load_daily_data(ts_code: str) -> list[dict]:
         dt = str(rd.get("trade_date", ""))
         if dt not in seen:
             seen.add(dt)
-            daily.append({"trade_date": dt, "close": float(rd.get("close", 0) or 0),
-                          "volume": float(rd.get("vol", 0) or 0)})
+            daily.append({"trade_date": dt, "open": float(rd.get("open", 0) or 0),
+                          "close": float(rd.get("close", 0) or 0),
+                          "volume": float(rd.get("vol", 0) or 0),
+                          "pct_chg": float(rd.get("pct_chg", 0) or 0)})
             new_rows.append(rd)
 
     # 写入 DB
