@@ -26,7 +26,7 @@
   <div class="tabs" id="tabs"></div>
 
   <div class="stat-grid" id="poolStats" style="margin-bottom:20px">
-    <div class="stat-card"><div class="stat-label">策略总数</div><div class="stat-value" style="font-size:1.2rem;">4</div></div>
+    <div class="stat-card"><div class="stat-label">策略总数</div><div class="stat-value" style="font-size:1.2rem;">8</div></div>
     <div class="stat-card"><div class="stat-label">当前策略</div><div class="stat-value" style="font-size:1.2rem;" id="statName">热点龙头池</div></div>
     <div class="stat-card"><div class="stat-label">信号数量</div><div class="stat-value" style="font-size:1.2rem;" id="statCount">--</div></div>
     <div class="stat-card"><div class="stat-label">数据日期</div><div class="stat-value" style="font-size:1rem;" id="statDate">--</div></div>
@@ -51,13 +51,17 @@
     <p class="state-loading">加载中...</p>
   </div></div>
 </main>
-<script src="/js/app.js?v=16"></script>
+<script src="/js/app.js?v=17"></script>
 <script>
 var pools = [
   { type: 'hot_leader', name: '热点龙头池' },
   { type: 'dip_ambush', name: '低吸埋伏池' },
   { type: 'oversold_rebound', name: '超跌反弹池' },
   { type: 'steady_swing', name: '稳健波段池' },
+  { type: 'short_t3_momentum', name: 'T+3 追涨' },
+  { type: 'short_t3_dip', name: 'T+3 低吸' },
+  { type: 'short_t7_momentum', name: 'T+7 追涨' },
+  { type: 'short_t7_dip', name: 'T+7 低吸' },
 ];
 var activePool = 'hot_leader';
 var allItems = [];
@@ -164,11 +168,11 @@ function renderTable(items) {
   if (currentTradeDate && currentTradeDate.length === 8) {
     document.getElementById('statDate').textContent = currentTradeDate.substring(0,4) + '-' + currentTradeDate.substring(4,6) + '-' + currentTradeDate.substring(6,8);
   }
-  var html = '<table class="data-table"><thead><tr><th>排名</th><th>代码</th><th>名称</th><th>收盘价</th><th>涨跌幅</th><th>入选理由</th><th>自选</th></tr></thead><tbody>';
+  var html = '<table class="data-table"><thead><tr><th>排名</th><th>代码</th><th>名称</th><th>收盘价</th><th>涨跌幅</th><th>评分</th><th>入选理由</th><th>自选</th></tr></thead><tbody>';
   items.forEach(function(s, i) {
     var color = s.change_pct > 0 ? 'color:var(--color-danger)' : 'color:var(--color-success)';
     var rowCk = '<td style="cursor:pointer" onclick="location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">';
-    html += '<tr>' + rowCk + (i+1) + '</td>' + rowCk + s.stock_code + '</td>' + rowCk + s.stock_name + '</td>' + rowCk + (s.close || '--') + '</td>' + rowCk + '<span style="' + color + '">' + (s.change_pct || '--') + '%</span></td>' + rowCk + '<span style="font-size:0.75rem;color:var(--color-text-muted)">' + (s.inclusion_reason || '') + '</span></td>';
+    html += '<tr>' + rowCk + (i+1) + '</td>' + rowCk + s.stock_code + '</td>' + rowCk + s.stock_name + '</td>' + rowCk + (s.close || '--') + '</td>' + rowCk + '<span style="' + color + '">' + (s.change_pct || '--') + '%</span></td>' + rowCk + '<span style="font-weight:600">' + (s.score != null ? s.score : '--') + '</span></td>' + rowCk + '<span style="font-size:0.75rem;color:var(--color-text-muted)">' + (s.inclusion_reason || '') + '</span></td>';
     html += '<td><button class="spc-fav-btn" data-code="' + s.stock_code + '" onclick="event.stopPropagation();FavStore.toggle(this,\'' + s.stock_code + '\',\'' + (s.stock_name || s.stock_code) + '\')" title="添加自选">+</button></td>';
     html += '</tr>';
   });

@@ -9,18 +9,20 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import text
 
 from app.core.cache import cache_set
 from app.core.database import async_session
 from app.core.settings import get_settings
-from app.services.factor_lib import clip, minmax_norm, rank_pct, winsorize_mad, zscore
+from app.services.factor_lib import score_and_rank
 
 logger = logging.getLogger("short_term")
 _settings = get_settings()
 
 POOL_SIZE = 10
+_WEIGHTS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "factor_weights.json"
 
 MODE_META = {
     "short_t3_momentum":  {"name": "T+3 追涨", "period": 3, "style": "momentum"},
@@ -33,6 +35,10 @@ MODE_META = {
 class ShortTermEngine:
 
     async def compute_all(self, trade_date: str = "") -> dict:
+        # 加载因子权重配置（每次计算时重新读取，支持热更新）
+        with open(_WEIGHTS_PATH, "r", encoding="utf-8") as f:
+            fw = json.load(f)
+
         if not trade_date:
             async with async_session() as sess:
                 r = await sess.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
@@ -50,21 +56,21 @@ class ShortTermEngine:
             # ── 去重优先级链：T+3追涨 > T+3低吸 > T+7追涨 > T+7低吸 ──
             # 超卖例外：dist_from_low<=10 或 drawdown>=20 可跨池保留
 
-            t3m = await self._t3_momentum(session, trade_date, all_dates)
+            t3m = await self._t3_momentum(session, trade_date, all_dates, fw)
             excluded = {item["stock_code"] for item in t3m}
 
             # T+3低吸：排除已在T+3追涨中的股票（超卖除外）
-            t3d_candidates = await self._t3_dip_raw(session, trade_date, all_dates)
+            t3d_candidates = await self._t3_dip_raw(session, trade_date, all_dates, fw)
             t3d = self._dedup_pool(t3d_candidates, excluded, "dist_from_low", 10)
             excluded = excluded | {item["stock_code"] for item in t3d}
 
             # T+7追涨：排除已在T+3两池中的股票（无超卖豁免，momentum风格无超卖字段）
-            t7m_candidates = await self._t7_momentum_raw(session, trade_date, all_dates)
+            t7m_candidates = await self._t7_momentum_raw(session, trade_date, all_dates, fw)
             t7m = self._dedup_pool(t7m_candidates, excluded, None, None)
             excluded = excluded | {item["stock_code"] for item in t7m}
 
             # T+7低吸：排除所有高优先级池中的股票（超卖除外）
-            t7d_candidates = await self._t7_dip_raw(session, trade_date, all_dates)
+            t7d_candidates = await self._t7_dip_raw(session, trade_date, all_dates, fw)
             t7d = self._dedup_pool(t7d_candidates, excluded, "drawdown", 20, "gte")
 
         pools = {
@@ -123,13 +129,11 @@ class ShortTermEngine:
         return result
 
     # ── T+3 追涨 ──
-    async def _t3_momentum(self, session, trade_date: str, dates: list) -> list:
-        """强势股短期惯性上冲。近3日涨幅>3%，今日>1%，站上MA5，量比>1.2。"""
-        items = await self._t3_momentum_raw(session, trade_date, dates)
+    async def _t3_momentum(self, session, trade_date: str, dates: list, fw: dict) -> list:
+        items = await self._t3_momentum_raw(session, trade_date, dates, fw)
         return items[:POOL_SIZE]
 
-    async def _t3_momentum_raw(self, session, trade_date: str, dates: list):
-        """返回 T+3追涨 全部候选（最多30条），供去重使用"""
+    async def _t3_momentum_raw(self, session, trade_date: str, dates: list, fw: dict):
         td3 = self._nth_date(dates, trade_date, 3)
         if not td3:
             return []
@@ -162,16 +166,15 @@ class ShortTermEngine:
         r = await session.execute(sql, {
             "td": trade_date, "td2": td2 or trade_date, "td3": td3, "lim": POOL_SIZE * 3,
         })
-        return self._score_rows(r, "T+3追涨", ["chg3", "vol_ratio", "pct_chg", "turnover", "pe", "pb", "total_mv"],
-                                [0.25, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10], limit=POOL_SIZE * 3)
+        return score_and_rank(r.fetchall(), fw["short_t3_momentum"],
+                              "T+3追涨", limit=POOL_SIZE * 3)
 
     # ── T+3 低吸 ──
-    async def _t3_dip(self, session, trade_date: str, dates: list) -> list:
-        """回调企稳后反弹。"""
-        items = await self._t3_dip_raw(session, trade_date, dates)
+    async def _t3_dip(self, session, trade_date: str, dates: list, fw: dict) -> list:
+        items = await self._t3_dip_raw(session, trade_date, dates, fw)
         return items[:POOL_SIZE]
 
-    async def _t3_dip_raw(self, session, trade_date: str, dates: list):
+    async def _t3_dip_raw(self, session, trade_date: str, dates: list, fw: dict):
         td5 = self._nth_date(dates, trade_date, 5)
         if not td5:
             return []
@@ -214,17 +217,15 @@ class ShortTermEngine:
             "td4": td4 or trade_date, "td5": td5, "td20": td20 or trade_date,
             "lim": POOL_SIZE * 3,
         })
-        return self._score_rows(r, "T+3低吸", ["chg5", "vol_ratio", "dist_from_low", "pct_chg", "pe", "pb", "total_mv"],
-                                [0.20, 0.15, 0.20, 0.15, 0.12, 0.08, 0.10], oversold_field="dist_from_low",
-                                limit=POOL_SIZE * 3)
+        return score_and_rank(r.fetchall(), fw["short_t3_dip"],
+                              "T+3低吸", limit=POOL_SIZE * 3)
 
     # ── T+7 追涨 ──
-    async def _t7_momentum(self, session, trade_date: str, dates: list) -> list:
-        """趋势已确立顺势持股。"""
-        items = await self._t7_momentum_raw(session, trade_date, dates)
+    async def _t7_momentum(self, session, trade_date: str, dates: list, fw: dict) -> list:
+        items = await self._t7_momentum_raw(session, trade_date, dates, fw)
         return items[:POOL_SIZE]
 
-    async def _t7_momentum_raw(self, session, trade_date: str, dates: list):
+    async def _t7_momentum_raw(self, session, trade_date: str, dates: list, fw: dict):
         td10 = self._nth_date(dates, trade_date, 10)
         td4 = self._nth_date(dates, trade_date, 4)
         td9 = self._nth_date(dates, trade_date, 9)
@@ -264,16 +265,15 @@ class ShortTermEngine:
             "td": trade_date, "td4": td4 or trade_date, "td9": td9 or trade_date,
             "td10": td10, "td19": td19 or trade_date, "lim": POOL_SIZE * 3,
         })
-        return self._score_rows(r, "T+7追涨", ["chg10", "ma_slope", "pct_chg", "turnover", "pe", "pb", "total_mv"],
-                                [0.25, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10], limit=POOL_SIZE * 3)
+        return score_and_rank(r.fetchall(), fw["short_t7_momentum"],
+                              "T+7追涨", limit=POOL_SIZE * 3)
 
     # ── T+7 低吸 ──
-    async def _t7_dip(self, session, trade_date: str, dates: list) -> list:
-        """中期回调修复机会。"""
-        items = await self._t7_dip_raw(session, trade_date, dates)
+    async def _t7_dip(self, session, trade_date: str, dates: list, fw: dict) -> list:
+        items = await self._t7_dip_raw(session, trade_date, dates, fw)
         return items[:POOL_SIZE]
 
-    async def _t7_dip_raw(self, session, trade_date: str, dates: list):
+    async def _t7_dip_raw(self, session, trade_date: str, dates: list, fw: dict):
         td10 = self._nth_date(dates, trade_date, 10)
         td3 = self._nth_date(dates, trade_date, 3)
         td60 = self._nth_date(dates, trade_date, 60)
@@ -310,96 +310,10 @@ class ShortTermEngine:
             "td": trade_date, "td3": td3, "td10": td10, "td60": td60 or trade_date,
             "lim": POOL_SIZE * 3,
         })
-        return self._score_rows(r, "T+7低吸", ["drawdown", "chg3_recent", "chg10", "pct_chg", "pe", "pb", "total_mv"],
-                                [0.25, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10], oversold_field="drawdown",
-                                limit=POOL_SIZE * 3)
+        return score_and_rank(r.fetchall(), fw["short_t7_dip"],
+                              "T+7低吸", limit=POOL_SIZE * 3)
 
-    # ── 评分排序 ──
-
-    # 基础因子列索引（SQL SELECT 固定位置: col0=ts_code, col1=name, col2=close,
-    # col3=pct_chg, col4=volume, col5+=derived fields + daily_basic fields）
-    _BASE_COLS = 5
-
-    # 需反向排名的字段（原始值越小得分越高）
-    _INVERT_FIELDS: set[str] = {"dist_from_low"}
-
-    # zscore 归一化因子：基本面因子用 winsorize_mad → zscore → clip → minmax
-    # 比 rank_pct 更能反映真实分位数差异（PE从15到30的gap比第80到第90百分位更有意义）
-    _ZSCORE_FIELDS: set[str] = {"pe", "pb", "total_mv"}
-
-    def _score_rows(self, rows, reason_prefix: str, fields: list[str],
-                    weights: list[float], oversold_field: str | None = None,
-                    limit: int = POOL_SIZE) -> list:
-        """横截面评分：基本面因子(zscore) + 技术因子(rank_pct) → 加权排序。
-
-        归一化策略：
-        - 基本面因子（PE/PB/市值）：winsorize_mad(5σ) → zscore → clip[-3,3] → minmax[0,1]
-          对于反向因子（PE/PB越低越好），用 (1 - score) 翻转
-        - 技术因子（涨跌幅/量比/换手/均线斜率）：rank_pct 横截面排名
-        - vol_ratio 特殊处理：按 |val - 1.0| 排名（越接近1越高分）
-        """
-        if not rows:
-            return []
-
-        # 提取每个因子值，按字段名而非列索引对齐
-        field_vals_all: dict[str, list[float]] = {f: [] for f in fields}
-        raw_items: list[dict] = []
-        for row in rows:
-            fv = {}
-            for i, f in enumerate(fields):
-                idx = self._BASE_COLS + i
-                val = float(row[idx]) if idx < len(row) and row[idx] is not None else 0.0
-                fv[f] = val
-                field_vals_all[f].append(val)
-            raw_items.append({
-                "code": row[0], "name": row[1],
-                "close": float(row[2]) if row[2] is not None else None,
-                "pct_chg": float(row[3]) if row[3] is not None else 0,
-                "vol": float(row[4]) if len(row) > 4 and row[4] is not None else 0,
-                "fv": fv,
-            })
-
-        # 每个因子做归一化
-        norm_cache: dict[str, list[float]] = {}
-        for f in fields:
-            vals = field_vals_all[f]
-            if f == "vol_ratio":
-                # 按 |val - 1.0| 排名（越小越接近1.0），反向取分
-                dist = [abs(v - 1.0) for v in vals]
-                norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct(dist)]
-            elif f in self._ZSCORE_FIELDS:
-                # 基本面因子：winsorize → zscore → clip → minmax
-                w = winsorize_mad(vals, 5.0)
-                z = zscore(w)
-                c = clip(z, -3.0, 3.0)
-                normed = minmax_norm(c)
-                # PE/PB/市值 越低越好 → 反向
-                norm_cache[f] = [round(1.0 - v, 6) for v in normed]
-            elif f in self._INVERT_FIELDS:
-                norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct(vals)]
-            else:
-                norm_cache[f] = rank_pct(vals)
-
-        # 加权评分
-        scored = []
-        for idx, item in enumerate(raw_items):
-            score = sum(norm_cache[f][idx] * w for f, w in zip(fields, weights))
-            entry = {
-                "stock_code": item["code"],
-                "stock_name": item["name"],
-                "close": item["close"],
-                "change_pct": round(item["pct_chg"], 2),
-                "score": round(score * 100, 1),
-                "volume": item["vol"],
-                "inclusion_reason": f"{reason_prefix} 评分{round(score*100,1)}",
-                "mode": reason_prefix,
-            }
-            if oversold_field and oversold_field in item["fv"]:
-                entry["_raw_oversold_val"] = round(item["fv"][oversold_field], 2)
-            scored.append(entry)
-
-        scored.sort(key=lambda x: x["score"], reverse=True)
-        return scored[:limit]
+    # ── 辅助 ──
 
     def _nth_date(self, dates: list, ref_date: str, n: int) -> str | None:
         """从 dates 列表中找到 ref_date 之前第 n 个交易日。"""

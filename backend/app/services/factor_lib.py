@@ -285,3 +285,94 @@ def _pearson(x: list[float], y: list[float]) -> float:
         sxy += dx * dy
     denom = (sx * sy) ** 0.5
     return sxy / denom if denom != 0 else 0.0
+
+
+# ───────────────────────────── 评分引擎 ─────────────────────────────
+
+# SQL 列约定：col0=ts_code, col1=name, col2=close, col3=pct_chg, col4=volume,
+# col5+=因子列（与 config.fields 对齐顺序）
+_BASE_COLS = 5
+
+
+def score_and_rank(rows, config: dict, reason_prefix: str = "", limit: int = 10) -> list[dict]:
+    """横截面多因子评分排序——配置驱动的通用入口。
+
+    归一化策略：
+    - zscore_fields 中的因子：winsorize_mad(5σ) → zscore → clip[-3,3] → minmax[0,1]
+    - PE/PB/市值等"越低越好"的因子请在 config.invert_fields 中同时列入
+    - vol_ratio 特殊处理：按 |val - 1.0| 排名（越接近1分越高）
+    - 其他因子：rank_pct 横截面百分位排名
+    - invert_fields 中的因子：取 (1 - score) 反向
+
+    config 结构（来自 factor_weights.json）：
+      {"fields": [...], "weights": [...], "zscore_fields": [...],
+       "invert_fields": [...], "oversold_field": "drawdown"|null}
+    """
+    if not rows:
+        return []
+
+    fields: list[str] = config["fields"]
+    weights: list[float] = config["weights"]
+    zscore_fields: set[str] = set(config.get("zscore_fields", []))
+    invert_fields: set[str] = set(config.get("invert_fields", []))
+    oversold_field: str | None = config.get("oversold_field")
+
+    # 提取每个因子值
+    field_vals_all: dict[str, list[float]] = {f: [] for f in fields}
+    raw_items: list[dict] = []
+    for row in rows:
+        fv = {}
+        for i, f in enumerate(fields):
+            idx = _BASE_COLS + i
+            val = float(row[idx]) if idx < len(row) and row[idx] is not None else 0.0
+            fv[f] = val
+            field_vals_all[f].append(val)
+        raw_items.append({
+            "code": row[0], "name": row[1],
+            "close": float(row[2]) if row[2] is not None else None,
+            "pct_chg": float(row[3]) if row[3] is not None else 0,
+            "vol": float(row[4]) if len(row) > 4 and row[4] is not None else 0,
+            "fv": fv,
+        })
+
+    # 每个因子做归一化
+    norm_cache: dict[str, list[float]] = {}
+    for f in fields:
+        vals = field_vals_all[f]
+        if f == "vol_ratio":
+            dist = [abs(v - 1.0) for v in vals]
+            norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct(dist)]
+        elif f in zscore_fields:
+            w = winsorize_mad(vals, 5.0)
+            z = zscore(w)
+            c = clip(z, -3.0, 3.0)
+            normed = minmax_norm(c)
+            if f in invert_fields:
+                norm_cache[f] = [round(1.0 - v, 6) for v in normed]
+            else:
+                norm_cache[f] = normed
+        elif f in invert_fields:
+            norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct(vals)]
+        else:
+            norm_cache[f] = rank_pct(vals)
+
+    # 加权评分
+    scored = []
+    for idx, item in enumerate(raw_items):
+        score = sum(norm_cache[f][idx] * w for f, w in zip(fields, weights))
+        entry = {
+            "stock_code": item["code"],
+            "stock_name": item["name"],
+            "close": item["close"],
+            "change_pct": round(item["pct_chg"], 2),
+            "score": round(score * 100, 1),
+            "volume": item["vol"],
+            "inclusion_reason": f"{reason_prefix} 评分{round(score*100,1)}",
+            "mode": reason_prefix,
+        }
+        if oversold_field and oversold_field in item["fv"]:
+            entry["_raw_oversold_val"] = round(item["fv"][oversold_field], 2)
+        scored.append(entry)
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:limit]
