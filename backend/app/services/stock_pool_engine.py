@@ -71,13 +71,13 @@ class StockPoolEngine:
             hot = await self._hot_leader(session, trade_date, all_dates, fw)
             used = {s["stock_code"] for s in hot if s["stock_code"]}
 
-            dip = await self._dip_ambush(session, trade_date, start20, used, fw)
+            dip = await self._dip_ambush(session, trade_date, start20, all_dates, used, fw)
             used.update(s["stock_code"] for s in dip if s["stock_code"])
 
-            bounce = await self._oversold_rebound(session, trade_date, td5, used, fw)
+            bounce = await self._oversold_rebound(session, trade_date, td5, all_dates, used, fw)
             used.update(s["stock_code"] for s in bounce if s["stock_code"])
 
-            steady = await self._steady_swing(session, trade_date, used, fw)
+            steady = await self._steady_swing(session, trade_date, all_dates, used, fw)
 
         pools = {
             "hot_leader": hot, "dip_ambush": dip,
@@ -141,8 +141,10 @@ class StockPoolEngine:
 
     # ── 低吸埋伏池 ──
 
-    async def _dip_ambush(self, session, trade_date: str, start20: str, exclude: set, fw: dict) -> list:
-        td5 = self._nth_date([trade_date], trade_date, 5)  # 回退 5 天取均量
+    async def _dip_ambush(self, session, trade_date: str, start20: str, dates: list, exclude: set, fw: dict) -> list:
+        td5 = self._nth_date(dates, trade_date, 5)
+        if not td5:
+            td5 = start20
         sql = text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - low20.min_low) / NULLIF(low20.min_low, 0) * 100 AS dist_from_low,
@@ -175,8 +177,8 @@ class StockPoolEngine:
 
     # ── 超跌反弹池 ──
 
-    async def _oversold_rebound(self, session, trade_date: str, td5: str, exclude: set, fw: dict) -> list:
-        result = await self._try_oversold_rebound(session, trade_date, td5, exclude, fw)
+    async def _oversold_rebound(self, session, trade_date: str, td5: str, dates: list, exclude: set, fw: dict) -> list:
+        result = await self._try_oversold_rebound(session, trade_date, td5, dates, exclude, fw)
         if len(result) < 10:
             fallback_date = (datetime.strptime(trade_date, "%Y%m%d") - timedelta(days=5)).strftime("%Y%m%d")
             r = await session.execute(text(
@@ -185,13 +187,13 @@ class StockPoolEngine:
             ), {"fb": fallback_date})
             fb_row = r.fetchone()
             if fb_row and str(fb_row[0]) != str(td5):
-                fallback_result = await self._try_oversold_rebound(session, trade_date, str(fb_row[0]), exclude, fw)
+                fallback_result = await self._try_oversold_rebound(session, trade_date, str(fb_row[0]), dates, exclude, fw)
                 if len(fallback_result) > len(result):
                     result = fallback_result
         return result
 
-    async def _try_oversold_rebound(self, session, trade_date: str, td5: str, exclude: set, fw: dict) -> list:
-        td2 = self._nth_date([trade_date], trade_date, 2)
+    async def _try_oversold_rebound(self, session, trade_date: str, td5: str, dates: list, exclude: set, fw: dict) -> list:
+        td2 = self._nth_date(dates, trade_date, 2)
         sql = text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d5.close) / NULLIF(d5.close, 0) * 100 AS chg5,
@@ -221,8 +223,8 @@ class StockPoolEngine:
 
     # ── 稳健波段池 ──
 
-    async def _steady_swing(self, session, trade_date: str, exclude: set, fw: dict) -> list:
-        td5 = self._nth_date([trade_date], trade_date, 5)
+    async def _steady_swing(self, session, trade_date: str, dates: list, exclude: set, fw: dict) -> list:
+        td5 = self._nth_date(dates, trade_date, 5)
         sql = text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    CAST(d.volume AS REAL) / NULLIF(avg.avg_vol, 0) AS vol_ratio,

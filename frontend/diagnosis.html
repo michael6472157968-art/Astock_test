@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>个股诊股 - Stockwin</title>
-<link rel="stylesheet" href="/css/app.css?v=14" />
+<link rel="stylesheet" href="/css/app.css?v=15" />
 <script src="/lib/echarts.js"></script>
 <style>
 .signal-tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; margin:2px; }
@@ -73,7 +73,7 @@
   <div id="cacheBanner" style="display:none;margin-bottom:8px;padding:6px 12px;background:var(--color-bg-secondary);border-radius:4px;font-size:0.78rem;color:var(--color-text-muted)"></div>
   <div id="result"></div>
 </main>
-<script src="/js/app.js?v=16"></script>
+<script src="/js/app.js?v=17"></script>
 <script>
 var urlParams = new URLSearchParams(window.location.search);
 var initCode = urlParams.get('code');
@@ -348,7 +348,8 @@ function runAiAnalysis(code) {
     btn.style.display = 'none';
     var u = Session.get();
     if (u && !d.cache_hit) {
-      u.credits = Math.max(0, (u.credits || 0) - 2);
+      var aiCost = d.cost || 2;
+      u.credits = Math.max(0, (u.credits || 0) - aiCost);
       Session.save({ access_token: localStorage.getItem('access_token'), refresh_token: localStorage.getItem('refresh_token'), user_id: u.id, phone: u.phone, tier: u.tier, member_type: u.member_type, member_expire: u.member_expire, credits: u.credits });
     }
     loadQuota();

@@ -38,10 +38,6 @@ _WEIGHTS_PATH = _BACKEND / "data" / "factor_weights.json"
 _OUT_DIR = _BACKEND / "data" / "verification_results"
 
 
-def _now():
-    return datetime.now()
-
-
 def _config_hash(config: dict) -> str:
     return hashlib.md5(json.dumps(config, sort_keys=True).encode()).hexdigest()[:12]
 
@@ -169,7 +165,7 @@ async def run_experiment(pool_name: str, train_len: int = 80, test_len: int = 20
         # 保存实验日记
         async with get_session() as sess:
             exp = ResearchExperiment(
-                experiment_id=f"exp_{_now()}",
+                experiment_id=f"exp_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 pool_name=p,
                 config_hash=_config_hash(fw[p]),
                 date_start=datetime.now().strftime("%Y%m%d"),

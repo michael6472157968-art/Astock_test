@@ -1012,6 +1012,7 @@ async def ai_analysis(stock_code: str, user: dict = Depends(require_auth)):
             "stock_code": stock_code,
             "analysis": text,
             "cache_hit": cache_hit,
+            "cost": _settings.ai_analysis_cost,
         },
         timestamp=int(time.time()),
     )

@@ -66,9 +66,7 @@ def _rankdata(vals: list[float]) -> list[float]:
 def _winsorize_mad(series: list[float], n: float = 5.0) -> list[float]:
     m = sorted(series)[len(series) // 2]
     abs_dev = sorted(abs(v - m) for v in series)
-    mad = abs_dev[len(abs_dev) // 2] * 1.4826
-    if mad == 0:
-        mad = sorted(abs(v - m) for v in series)[-1] or 1.0
+    mad = abs_dev[len(abs_dev) // 2] or 1.0
     lo, hi = m - n * mad, m + n * mad
     return [max(lo, min(hi, v)) for v in series]
 
