@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -431,11 +432,6 @@ async def favorites_stock_prices(
 
 
 # ── 股票搜索 ──
-
-import re
-
-from sqlalchemy import text as _stext
-from app.models.orm.models import Stock
 
 stocks_router = APIRouter(prefix="/api/v1/stocks", tags=["股票搜索"])
 
