@@ -26,6 +26,15 @@ EOF
     echo ".env generated and persisted to volume"
 fi
 
+# Seed config files into the mounted volume if they don't exist yet
+# (/app/data is a Fly mount — it hides Docker-image files at the same path)
+for cfg in factor_weights.json; do
+    if [ ! -f "/app/data/$cfg" ]; then
+        cp "/app/data_seed/$cfg" "/app/data/$cfg"
+        echo "Seeded /app/data/$cfg from image"
+    fi
+done
+
 # Run alembic migrations before starting the app
 if [ -f alembic.ini ]; then
     echo "Running database migrations..."
