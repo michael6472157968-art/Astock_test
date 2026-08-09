@@ -17,8 +17,10 @@ COPY frontend/ /frontend/
 # Ensure data directory exists (volume mount point for SQLite)
 RUN mkdir -p /app/data
 
-# Backup seed configs so entrypoint can restore them after volume mount
-RUN mkdir -p /app/data_seed && cp /app/data/factor_weights.json /app/data_seed/ 2>/dev/null || true
+# Backup seed configs — /app/data is shadowed by Fly volume mount at runtime,
+# so config files shipped in the image must be stashed elsewhere and restored by entrypoint.
+RUN mkdir -p /app/data_seed
+COPY backend/data/factor_weights.json /app/data_seed/
 
 # Entrypoint generates .env from env vars so pydantic-settings can read it
 COPY entrypoint.sh /entrypoint.sh
