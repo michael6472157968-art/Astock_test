@@ -58,6 +58,21 @@
 .ind-tag .ind-dot { width:6px;height:6px;border-radius:50%;flex-shrink:0; }
 .ind-tag.active .ind-dot { opacity:0.5; }
 .ind-tags-sep { width:1px;height:14px;background:var(--color-border);margin:0 6px; }
+
+/* 因子诊断 */
+.fd-banner { display:inline-flex; align-items:baseline; gap:4px; margin-left:10px; }
+.fd-score { font-size:1.3rem; font-weight:800; color:var(--color-primary); }
+.fd-score-lbl { font-size:0.72rem; color:var(--color-text-muted); }
+.fd-item { padding:10px 12px; border:1px solid var(--color-border); border-radius:8px; background:var(--color-bg-secondary); }
+.fd-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.fd-name { font-size:0.85rem; font-weight:700; color:var(--color-text); }
+.fd-ic { font-size:0.7rem; padding:1px 8px; border-radius:10px; background:var(--color-bg-secondary); border:1px solid var(--color-border); color:var(--color-text-muted); }
+.fd-ic-strong { color:var(--color-primary); border-color:var(--color-primary); font-weight:700; }
+.fd-pct { font-size:0.7rem; padding:1px 8px; border-radius:10px; background:var(--color-bg-secondary); border:1px solid var(--color-border); color:var(--color-text-muted); }
+.fd-pct-signal { color:var(--color-warning); border-color:var(--color-warning); }
+.fd-bar { height:5px; background:var(--color-border); border-radius:3px; margin-top:8px; overflow:hidden; }
+.fd-fill { height:100%; border-radius:3px; transition:width 0.3s ease; }
+.fd-concl { font-size:0.76rem; color:var(--color-text-muted); margin-top:6px; line-height:1.5; }
 </style>
 </head>
 <body>
@@ -196,6 +211,58 @@ function search() {
   });
 }
 
+function renderFactorDiag(fd) {
+  if (!fd || !fd.factors || !fd.factors.length) return '';
+  var validCount = (fd.valid_count != null) ? fd.valid_count : 0;
+  var totalCount = (fd.factor_count != null) ? fd.factor_count : fd.factors.length;
+  var html = '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--color-primary);">';
+  html += '<div class="card-header">因子诊断';
+  if (fd.composite_score != null) {
+    html += '<span class="fd-banner"><span class="fd-score">' + fd.composite_score + '</span><span class="fd-score-lbl">综合得分</span></span>';
+  }
+  html += ' <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">' + validCount + '/' + totalCount + ' 个有效因子等权合成</span></div>';
+  html += '<div class="card-body" style="display:flex;flex-direction:column;gap:10px;">';
+  fd.factors.forEach(function(f) { html += renderFactorRow(f); });
+  html += '</div></div>';
+  return html;
+}
+
+function renderFactorRow(f) {
+  var name = f.name || f.code || '';
+  var ic = f.ic;
+  var icHtml;
+  if (ic != null) {
+    var icStr = (ic > 0 ? '+' : '') + ic;
+    var icCls = Math.abs(ic) >= 0.05 ? 'fd-ic fd-ic-strong' : 'fd-ic';
+    icHtml = '<span class="' + icCls + '">IC ' + icStr + '</span>';
+  } else {
+    icHtml = '<span class="fd-ic">IC —</span>';
+  }
+  var pct = f.percentile;
+  var pctHtml = (pct != null)
+    ? '<span class="fd-pct">分位 ' + pct + '%</span>'
+    : '<span class="fd-pct fd-pct-signal">信号型</span>';
+  var good = f.goodness;
+  var goodBar = (good != null)
+    ? '<div class="fd-bar"><div class="fd-fill" style="width:' + good + '%;background:' + goodColor(good) + ';"></div></div>'
+    : '';
+  var concl = f.conclusion || (f.note ? '数据未接入：' + f.note : '');
+  return '<div class="fd-item">' +
+    '<div class="fd-top">' +
+      '<span class="fd-name">' + escHtml(name) + '</span>' +
+      icHtml + pctHtml +
+    '</div>' +
+    goodBar +
+    (concl ? '<div class="fd-concl">' + escHtml(concl) + '</div>' : '') +
+  '</div>';
+}
+
+function goodColor(g) {
+  if (g >= 70) return 'var(--color-success)';
+  if (g >= 40) return 'var(--color-warning)';
+  return 'var(--color-text-muted)';
+}
+
 function renderDiagnosis(r, code, isFav) {
   var result = document.getElementById('result');
   var q = (r.data && r.data.quant) || {};
@@ -204,6 +271,8 @@ function renderDiagnosis(r, code, isFav) {
     ? '<button class="btn btn-sm btn-outline" disabled id="favBtn">✓ 已自选</button>'
     : '<button class="btn btn-sm btn-primary" onclick="addFavorite(\'' + escAttr(code) + '\',\'' + escAttr(stockName) + '\')" id="favBtn">+ 自选</button>';
   var html = '<h2 class="page-title" id="diagStockName">' + stockName + ' 量化诊股报告 ' + favBtnHtml + '</h2>';
+  var fd = (r.data && r.data.factor_diag) || null;
+  if (fd) { html += renderFactorDiag(fd); }
   var dims = q.dimensions || [];
   if (dims.length) {
     html += '<div class="card" style="margin-bottom:16px"><div class="card-header">四维度评分 · 综合分 <span style="font-weight:700;font-size:1.1rem;">' + (q.score || '--') + '</span> · <span class="' + riskClass(q.risk) + '">' + (q.risk || '--') + '</span></span></div><div class="card-body">';

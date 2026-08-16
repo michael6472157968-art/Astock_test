@@ -6,6 +6,25 @@
 <title>Stockwin</title>
 <link rel="stylesheet" href="/css/app.css?v=15" />
 <link rel="manifest" href="/manifest.json" />
+<style>
+/* 今日因子选股榜单（首页核心） */
+.fp-item { display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--color-border); border-radius:8px; background:var(--color-bg-secondary); transition: all 0.15s ease; }
+.fp-item:hover { border-color:var(--color-primary); background:var(--color-card); }
+.fp-rank { width:26px; height:26px; border-radius:6px; background:var(--color-border); color:var(--color-text); font-weight:700; font-size:0.85rem; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.fp-item:nth-child(-n+3) .fp-rank { background:linear-gradient(135deg,#f59e0b,#ef4444); color:#fff; }
+.fp-main { flex:1; min-width:0; }
+.fp-name-row { display:flex; align-items:baseline; gap:8px; }
+.fp-name { font-size:0.9rem; font-weight:700; color:var(--color-text); }
+.fp-code { font-size:0.7rem; color:var(--color-text-muted); }
+.fp-reason { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.fp-chip { font-size:0.68rem; padding:2px 8px; border-radius:10px; background:var(--color-card); border:1px solid var(--color-border); color:var(--color-text-muted); }
+.fp-chip b { color:var(--color-primary); font-weight:700; }
+.fp-right { text-align:right; flex-shrink:0; }
+.fp-score { font-size:1.1rem; font-weight:800; color:var(--color-primary); line-height:1; }
+.fp-score-lbl { font-size:0.65rem; color:var(--color-text-muted); font-weight:400; margin-left:1px; }
+.fp-price { font-size:0.78rem; color:var(--color-text); margin-top:3px; }
+.fp-pct { font-size:0.78rem; font-weight:700; }
+</style>
 <meta name="theme-color" content="#080808" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -53,6 +72,17 @@
         <div class="kpi-label">行业宽度</div>
         <div class="kpi-value" id="kpiIndustryBreadth">--</div>
         <div class="kpi-sub" id="kpiIndustryBreadthSub">--</div>
+      </div>
+    </div>
+
+    <!-- 今日因子选股榜单（首页核心） -->
+    <div class="mood-panel" id="factorPickPanel" style="margin-bottom:16px;">
+      <div class="mood-header">
+        <span class="mood-title">今日因子选股 <span style="font-size:0.7rem;color:var(--color-text-muted);font-weight:400;">反转 + 低估值 + 低换手 · 每日10只</span></span>
+        <span class="mood-date" id="factorPickDate">加载中...</span>
+      </div>
+      <div class="mood-body" style="flex-direction:column;padding:4px 12px 12px;">
+        <div id="factorPickList" style="display:flex;flex-direction:column;gap:8px;">加载中...</div>
       </div>
     </div>
 
@@ -473,6 +503,47 @@
     }).catch(function() {});
   }
 
+  function escHtml(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  // ── 今日因子选股榜单（首页核心）──
+  function loadFactorPick() {
+    API.get('/stock-pool/factor_daily').then(function(r) {
+      var items = r.data.items || [];
+      var date = r.data.trade_date || r.data.date || '';
+      document.getElementById('factorPickDate').textContent = date ? '数据日期 ' + fmtDate8(date) : '';
+      var listEl = document.getElementById('factorPickList');
+      if (!items.length) {
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--color-text-muted);font-size:0.82rem;">今日暂无因子选股信号</div>';
+        return;
+      }
+      var html = items.map(function(s, i) {
+        var pct = s.change_pct || 0;
+        var pctCls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+        var reason = (s.inclusion_reason || '').replace(/^因子选股\([^)]*\)\s*/, '');
+        var reasonChips = reason.split(' · ').map(function(part) {
+          var m = part.match(/^(.*?)(\d+)%$/);
+          if (m) return '<span class="fp-chip">' + escHtml(m[1]) + '<b>' + m[2] + '%</b></span>';
+          return '<span class="fp-chip">' + escHtml(part) + '</span>';
+        }).join('');
+        return '<div class="fp-item" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'" style="cursor:pointer">' +
+          '<span class="fp-rank">' + (i + 1) + '</span>' +
+          '<div class="fp-main">' +
+            '<div class="fp-name-row"><span class="fp-name">' + escHtml(s.stock_name || s.stock_code) + '</span><span class="fp-code">' + escHtml(s.stock_code) + '</span></div>' +
+            '<div class="fp-reason">' + reasonChips + '</div>' +
+          '</div>' +
+          '<div class="fp-right">' +
+            '<div class="fp-score">' + (s.score != null ? s.score : '--') + '<span class="fp-score-lbl">分</span></div>' +
+            '<div class="fp-price">' + (s.close != null ? s.close.toFixed(2) : '--') + '</div>' +
+            '<div class="fp-pct ' + pctCls + '">' + fmtSign(pct) + '%</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+      listEl.innerHTML = html;
+    }).catch(function() {
+      document.getElementById('factorPickList').innerHTML = '<div style="text-align:center;padding:16px;color:var(--color-text-muted);font-size:0.82rem;">因子选股加载失败</div>';
+    });
+  }
+
   // shortPoolMap 保留，供 loadMarqueeAndShortPools 使用
   var shortPoolMap = [
     { id: 'spT3Momentum', pool: 'short_t3_momentum', label: 'T+3 追涨' },
@@ -549,6 +620,7 @@
     loadDashboard();
     loadTradeCalendar();
     loadMarqueeAndShortPools();
+    loadFactorPick();
     if (inTradingHours()) {
       loadIndices(); loadMood();
       document.getElementById('refreshHint').textContent = '交易时段 | 60s 刷新';
