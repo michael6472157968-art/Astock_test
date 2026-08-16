@@ -262,6 +262,28 @@ async def _universe_cyq_concentration(sess) -> list[float]:
     return vals
 
 
+async def _stock_top_list_risk(sess, ts_code: str) -> dict:
+    """龙虎榜上榜风险：近期上榜且机构净卖出 → 看跌。"""
+    r = await sess.execute(text("""
+        SELECT trade_date FROM top_list
+        WHERE ts_code = :c ORDER BY trade_date DESC LIMIT 1
+    """), {"c": ts_code})
+    row = r.fetchone()
+    if not row:
+        return {"triggered": False, "last_date": None, "inst_net": None}
+
+    last_date = row[0]
+    r2 = await sess.execute(text("""
+        SELECT SUM(net_buy) FROM top_inst
+        WHERE ts_code = :c AND trade_date = :td
+          AND (exalter LIKE '%机构%' OR exalter LIKE '%专用%' OR exalter LIKE '%基金%'
+               OR exalter LIKE '%QFII%' OR exalter LIKE '%社保%')
+    """), {"c": ts_code, "td": last_date})
+    inst_net = r2.scalar()
+    triggered = inst_net is not None and inst_net < 0
+    return {"triggered": triggered, "last_date": last_date, "inst_net": inst_net}
+
+
 async def diagnose(ts_code: str, factor_id: str) -> dict:
     """因子诊断：该股因子值 + 全市场分位 + 结论。"""
     factors = load_factors()
@@ -348,6 +370,22 @@ async def diagnose(ts_code: str, factor_id: str) -> dict:
             uni = await _universe_cyq_concentration(sess)
             percentile = _percentile(value, uni)
             value_desc = f"筹码宽度 {value:.3f}"
+
+        elif ctype == "top_list_risk":
+            risk = await _stock_top_list_risk(sess, ts_code)
+            value_desc = f"最近上榜{risk['last_date']}" if risk["last_date"] else "近期无上榜"
+            return {
+                "factor_id": factor_id, "factor_code": meta["code"], "factor_name": meta["name"],
+                "value_desc": value_desc,
+                "market_percentile": None,
+                "triggered": risk["triggered"],
+                "conclusion": (
+                    "⚠ 龙虎榜上榜风险：近期上榜且机构净卖出，未来看跌(上榜股5日超额-1.37%)，建议减仓/回避。"
+                    if risk["triggered"] else
+                    "近期无龙虎榜上榜风险信号。"
+                ),
+                "direction": direction,
+            }
 
         elif ctype == "vol_surge_top":
             surge = await _stock_vol_surge_top(sess, ts_code, td)

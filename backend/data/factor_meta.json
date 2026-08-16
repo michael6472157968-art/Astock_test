@@ -130,5 +130,16 @@
     "env": "横截面选股 · 中长周期(20日) · 与低换手+0.382中相关",
     "desc": "筹码成本分布宽度=(cost_95pct-cost_5pct)/weight_avg，买筹码分布宽的(多轮换手充分)。中性化后更强(真alpha非市值beta)。与低换手+0.382中相关需注意。",
     "compute": {"type": "cyq_concentration", "direction": "high_good"}
+  },
+  "f13": {
+    "code": "F13",
+    "name": "龙虎榜上榜风险",
+    "dim": "量(择时)",
+    "signal": "近期龙虎榜上榜+机构净卖出 → 看跌",
+    "ic": null,
+    "perf": "上榜股5日超额-1.37%(t-6.12) · 机构净卖出-1.53%",
+    "env": "单股票择时 · 事件驱动 · 上榜看跌",
+    "desc": "龙虎榜上榜是负超额事件(上榜股5日超额-1.37%)，尤其机构净卖出/大跌上榜继续跌。出现此信号减仓/回避。",
+    "compute": {"type": "top_list_risk", "direction": "bearish_signal"}
   }
 }
