@@ -119,5 +119,16 @@
     "env": "横截面选股 · 季度频(point-in-time) · 正交补充 · 覆盖~1400只",
     "desc": "【正交补充】股东户数变化率，买户数减少的（筹码向少数人集中=机构吸筹）。与量价/价值全正交，是独立信息源。数据覆盖约1400只(25%)，缺失股票降级提示。",
     "compute": {"type": "holder_change", "direction": "low_good"}
+  },
+  "f12": {
+    "code": "F12",
+    "name": "筹码宽度 concentration",
+    "dim": "筹码",
+    "signal": "买筹码成本分布宽的（换手充分）",
+    "ic": 0.038,
+    "perf": "IC +0.038 · t+16 · 中性化t+27 · 多空毛+12.7% 夏普1.04 · 正年份8/9",
+    "env": "横截面选股 · 中长周期(20日) · 与低换手+0.382中相关",
+    "desc": "筹码成本分布宽度=(cost_95pct-cost_5pct)/weight_avg，买筹码分布宽的(多轮换手充分)。中性化后更强(真alpha非市值beta)。与低换手+0.382中相关需注意。",
+    "compute": {"type": "cyq_concentration", "direction": "high_good"}
   }
 }

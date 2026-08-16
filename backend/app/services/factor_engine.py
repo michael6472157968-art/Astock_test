@@ -229,6 +229,39 @@ async def _universe_holder_change(sess) -> list[float]:
     return changes
 
 
+async def _stock_cyq_concentration(sess, ts_code: str) -> float | None:
+    """该股筹码宽度 = (cost_95pct - cost_5pct) / weight_avg。"""
+    r = await sess.execute(text("""
+        SELECT cost_5pct, cost_95pct, weight_avg FROM cyq_perf
+        WHERE ts_code = :c AND cost_5pct IS NOT NULL AND cost_95pct IS NOT NULL
+          AND weight_avg IS NOT NULL AND weight_avg > 0
+        ORDER BY trade_date DESC LIMIT 1
+    """), {"c": ts_code})
+    row = r.fetchone()
+    if not row:
+        return None
+    c5, c95, wa = float(row[0]), float(row[1]), float(row[2])
+    return (c95 - c5) / wa if wa > 0 else None
+
+
+async def _universe_cyq_concentration(sess) -> list[float]:
+    """全市场筹码宽度分布（每股最新一期）。"""
+    r = await sess.execute(text("""
+        SELECT cy.cost_5pct, cy.cost_95pct, cy.weight_avg
+        FROM cyq_perf cy
+        JOIN (SELECT ts_code, MAX(trade_date) AS max_td FROM cyq_perf GROUP BY ts_code) t
+          ON t.ts_code = cy.ts_code AND t.max_td = cy.trade_date
+        WHERE cy.cost_5pct IS NOT NULL AND cy.cost_95pct IS NOT NULL
+          AND cy.weight_avg IS NOT NULL AND cy.weight_avg > 0
+    """))
+    vals = []
+    for c5, c95, wa in r.fetchall():
+        c5, c95, wa = float(c5), float(c95), float(wa)
+        if wa > 0:
+            vals.append((c95 - c5) / wa)
+    return vals
+
+
 async def diagnose(ts_code: str, factor_id: str) -> dict:
     """因子诊断：该股因子值 + 全市场分位 + 结论。"""
     factors = load_factors()
@@ -307,6 +340,14 @@ async def diagnose(ts_code: str, factor_id: str) -> dict:
             uni = await _universe_holder_change(sess)
             percentile = _percentile(value, uni)
             value_desc = f"股东户数变化 {value*100:+.1f}%"
+
+        elif ctype == "cyq_concentration":
+            value = await _stock_cyq_concentration(sess, ts_code)
+            if value is None:
+                return {"error": "筹码数据未接入"}
+            uni = await _universe_cyq_concentration(sess)
+            percentile = _percentile(value, uni)
+            value_desc = f"筹码宽度 {value:.3f}"
 
         elif ctype == "vol_surge_top":
             surge = await _stock_vol_surge_top(sess, ts_code, td)
