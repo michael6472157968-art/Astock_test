@@ -21,43 +21,17 @@
 .fc-ic { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 6px; }
 .fc-env { font-size: 0.72rem; color: var(--color-text-muted); line-height: 1.5; }
 .fc-desc { font-size: 0.78rem; color: var(--color-text); margin-top: 6px; line-height: 1.5; }
-.match-item { padding: 10px 12px; background: var(--color-bg); border-radius: 8px; margin-bottom: 8px; border-left: 3px solid var(--color-primary); }
-.match-item .mi-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.strength-tag { font-size: 0.7rem; padding: 1px 8px; border-radius: 10px; font-weight: 600; }
-.strength-强 { background: rgba(20,177,67,.15); color: #14b143; }
-.strength-中 { background: rgba(245,158,11,.15); color: #f59e0b; }
-.strength-反向 { background: rgba(239,35,42,.15); color: #ef232a; }
-.diag-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
-.diag-card { flex: 1 1 calc(33% - 8px); min-width: 200px; text-align: center; padding: 14px; background: var(--color-bg); border-radius: 8px; }
-.diag-card .val { font-size: 1.15rem; font-weight: 700; }
-.diag-card .label { font-size: 0.72rem; color: var(--color-text-muted); margin-top: 2px; }
-.diag-conclusion { padding: 14px; background: var(--color-bg); border-radius: 8px; line-height: 1.7; font-size: 0.9rem; }
 .state-empty { color: var(--color-text-muted); font-size: 0.85rem; padding: 8px 0; }
 </style>
 </head>
 <body>
 <main class="main-content" data-chrome>
   <h2 class="page-title">Stockwin 因子库</h2>
-  <p class="page-desc">9 个经 10 年数据验证的有效因子 · 配置驱动 · 支持实时更新</p>
+  <p class="page-desc">经 10 年数据验证的有效因子 · 配置驱动 · 实时更新</p>
 
   <!-- 因子库展示 -->
   <div class="card"><div class="card-header">📚 因子库 <span id="factorTotal" style="font-size:0.75rem;color:var(--color-text-muted);font-weight:400;"></span></div><div class="card-body">
     <div id="factorLib"><div class="state-empty">加载因子库...</div></div>
-  </div></div>
-
-  <!-- 因子自动匹配 -->
-  <div class="card" style="margin-top:16px"><div class="card-header">🔍 因子自动匹配 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">输入股票，系统推荐当前最适配的因子</span></div><div class="card-body">
-    <div class="form-group"><label class="form-label">股票代码</label><input class="form-input" id="matchCode" value="000001.SZ" style="max-width:240px" oninput="this.value=filterStockInput(this.value)" /></div>
-    <button class="btn btn-primary" id="btnMatch" onclick="runMatch()">🔍 自动匹配</button>
-    <div id="matchResult" style="margin-top:12px"></div>
-  </div></div>
-
-  <!-- 因子诊断 -->
-  <div class="card" style="margin-top:16px"><div class="card-header">🔬 因子诊断 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">选因子分析该股全市场分位，给出结论</span></div><div class="card-body">
-    <div class="form-group"><label class="form-label">股票代码</label><input class="form-input" id="diagCode" value="000001.SZ" style="max-width:240px" oninput="this.value=filterStockInput(this.value)" /></div>
-    <div class="form-group"><label class="form-label">因子（编号检索）</label><select class="form-input" id="factorSelect" style="max-width:240px"></select></div>
-    <button class="btn btn-primary" id="btnDiag" onclick="runDiagnose()">诊断</button>
-    <div id="diagResult" style="margin-top:12px"></div>
   </div></div>
 </main>
 <script src="/lib/echarts.js"></script>
@@ -69,7 +43,6 @@
 })();
 
 var _factors = {};  // key -> meta
-var _selected = null;
 
 function escHtml(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
@@ -79,7 +52,6 @@ function loadFactorLib() {
     if (!r.data || !r.data.categories) { document.getElementById('factorLib').innerHTML = '<div class="state-empty">因子库加载失败</div>'; return; }
     document.getElementById('factorTotal').textContent = '共 ' + r.data.total + ' 个';
     renderFactorLib(r.data.categories);
-    populateSelect(r.data.categories);
   }).catch(function() {
     document.getElementById('factorLib').innerHTML = '<div class="state-empty">因子库加载失败</div>';
   });
@@ -99,9 +71,8 @@ function renderFactorLib(categories) {
     html += '<div class="factor-cards">';
     categories[dim].forEach(function(f) {
       _factors[f.key] = f;
-      var active = _selected === f.key ? ' active' : '';
       var icTxt = f.ic !== null && f.ic !== undefined ? ('IC ' + (f.ic>0?'+':'') + f.ic) : '';
-      html += '<div class="factor-card' + active + '" id="fc-' + f.key + '" onclick="selectFactor(\'' + f.key + '\')">';
+      html += '<div class="factor-card" id="fc-' + f.key + '">';
       html += '<div class="fc-top"><span class="fc-code">' + escHtml(f.code) + '</span><span class="fc-name">' + escHtml(f.name) + '</span><span class="dim-tag ' + dimClass(f.dim) + '">' + escHtml(f.dim) + '</span></div>';
       html += '<div class="fc-ic">' + escHtml(f.signal) + (icTxt ? ' · ' + escHtml(icTxt) : '') + '</div>';
       html += '<div class="fc-env">' + escHtml(f.env) + '</div>';
@@ -111,81 +82,6 @@ function renderFactorLib(categories) {
     html += '</div>';
   });
   document.getElementById('factorLib').innerHTML = html;
-}
-
-function populateSelect(categories) {
-  var sel = document.getElementById('factorSelect');
-  sel.innerHTML = '';
-  Object.keys(categories).forEach(function(dim) {
-    var group = document.createElement('optgroup');
-    group.label = dim;
-    categories[dim].forEach(function(f) {
-      var opt = document.createElement('option');
-      opt.value = f.key;
-      opt.textContent = f.code + ' ' + f.name;
-      group.appendChild(opt);
-    });
-    sel.appendChild(group);
-  });
-}
-
-function selectFactor(key) {
-  _selected = key;
-  document.querySelectorAll('.factor-card').forEach(function(c) { c.classList.remove('active'); });
-  var el = document.getElementById('fc-' + key);
-  if (el) el.classList.add('active');
-  document.getElementById('factorSelect').value = key;
-}
-
-// 因子自动匹配
-function runMatch() {
-  var code = normalizeStockCode(document.getElementById('matchCode').value);
-  var btn = document.getElementById('btnMatch');
-  var el = document.getElementById('matchResult');
-  if (!code) { el.innerHTML = '<div class="state-empty">请输入股票代码</div>'; return; }
-  btn.disabled = true; btn.textContent = '匹配中...';
-  el.innerHTML = '<div class="state-empty">匹配中...</div>';
-  API.post('/backtest/match', {stock_code: code}).then(function(r) {
-    if (!r.data) { el.innerHTML = '<div class="state-empty">' + escHtml(r.message || '匹配失败') + '</div>'; return; }
-    var matches = r.data.matches || [];
-    if (!matches.length) { el.innerHTML = '<div class="state-empty">' + escHtml(r.data.note || '无匹配因子') + '</div>'; return; }
-    var html = '';
-    matches.forEach(function(m) {
-      html += '<div class="match-item"><div class="mi-head"><span class="fc-code">' + escHtml(m.factor_code) + '</span> ' + escHtml(m.factor_name) +
-        ' <span class="strength-tag strength-' + m.strength + '">' + escHtml(m.strength) + '</span></div>';
-      html += '<div style="font-size:0.8rem;color:var(--color-text-muted);margin:4px 0;">' + escHtml(m.value_desc) + (m.percentile != null ? ' · 分位' + m.percentile + '%' : '') + '</div>';
-      html += '<div style="font-size:0.82rem;color:var(--color-text);line-height:1.6;">' + escHtml(m.reason) + '</div></div>';
-    });
-    el.innerHTML = html;
-  }).catch(function(e) {
-    el.innerHTML = '<div class="state-empty">匹配失败: ' + escHtml(e.message || '') + '</div>';
-  }).finally(function() { btn.disabled = false; btn.textContent = '🔍 自动匹配'; });
-}
-
-// 因子诊断
-function runDiagnose() {
-  var code = normalizeStockCode(document.getElementById('diagCode').value);
-  var fid = document.getElementById('factorSelect').value;
-  var btn = document.getElementById('btnDiag');
-  var el = document.getElementById('diagResult');
-  if (!code) { el.innerHTML = '<div class="state-empty">请输入股票代码</div>'; return; }
-  if (!fid) { el.innerHTML = '<div class="state-empty">请先选择因子</div>'; return; }
-  btn.disabled = true; btn.textContent = '诊断中...';
-  el.innerHTML = '<div class="state-empty">诊断中...</div>';
-  API.post('/backtest/run', {stock_code: code, factor_id: fid}).then(function(r) {
-    var d = r.data;
-    if (!d || d.error) { el.innerHTML = '<div class="state-empty">' + escHtml((d && d.error) || r.message || '诊断失败') + '</div>'; return; }
-    var strengthCls = d.strength ? ('strength-' + d.strength) : '';
-    var html = '<div class="diag-grid">';
-    html += '<div class="diag-card"><div class="val">' + escHtml(d.factor_code) + '</div><div class="label">因子编号</div></div>';
-    html += '<div class="diag-card"><div class="val" style="font-size:1rem;">' + escHtml(d.value_desc || '-') + '</div><div class="label">因子值</div></div>';
-    html += '<div class="diag-card"><div class="val">' + (d.market_percentile != null ? d.market_percentile + '%' : '-') + '</div><div class="label">全市场分位</div></div>';
-    html += '</div>';
-    html += '<div class="diag-conclusion"><span class="strength-tag ' + strengthCls + '">' + escHtml(d.strength || '') + '</span> <span style="font-weight:600;">' + escHtml(d.factor_name) + '</span><br>' + escHtml(d.conclusion || '') + '</div>';
-    el.innerHTML = html;
-  }).catch(function(e) {
-    el.innerHTML = '<div class="state-empty">诊断失败: ' + escHtml(e.message || '') + '</div>';
-  }).finally(function() { btn.disabled = false; btn.textContent = '诊断'; });
 }
 
 loadFactorLib();
