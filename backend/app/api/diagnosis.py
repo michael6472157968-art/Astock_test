@@ -757,11 +757,20 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
         except Exception:
             pass
 
+        # 风险信号扫描（放量见顶/龙虎榜上榜，独立于选股因子）
+        risks = []
+        try:
+            from app.services.factor_engine import scan_risks
+            risks = await scan_risks(code)
+        except Exception:
+            pass
+
         return {
             "stock_code": stock_code,
             "stock_name": stock_name,
             "quant": quant,
             "factor_diag": factor_diag,
+            "risks": risks,
             # 四维度评分重建所需原始序列
             "_closes": closes,
             "_highs": highs,
@@ -910,6 +919,7 @@ def _build_response(report: dict, tier: int, cache_hit: bool, cache_date: str = 
         "stock_name": report["stock_name"],
         "quant": report["quant"],
         "factor_diag": report.get("factor_diag"),
+        "risks": report.get("risks", []),
         "kline": report.get("kline"),
         "indicators": report.get("indicators"),
         "financial": report.get("financial"),

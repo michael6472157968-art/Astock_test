@@ -408,42 +408,6 @@ async def diagnose(ts_code: str, factor_id: str) -> dict:
             percentile = _percentile(value, uni)
             value_desc = f"融资买入占比 {value*100:.1f}%"
 
-        elif ctype == "top_list_risk":
-            risk = await _stock_top_list_risk(sess, ts_code)
-            value_desc = f"最近上榜{risk['last_date']}" if risk["last_date"] else "近期无上榜"
-            return {
-                "factor_id": factor_id, "factor_code": meta["code"], "factor_name": meta["name"],
-                "value_desc": value_desc,
-                "market_percentile": None,
-                "triggered": risk["triggered"],
-                "conclusion": (
-                    "⚠ 龙虎榜上榜风险：近期上榜且机构净卖出，未来看跌(上榜股5日超额-1.37%)，建议减仓/回避。"
-                    if risk["triggered"] else
-                    "近期无龙虎榜上榜风险信号。"
-                ),
-                "direction": direction,
-            }
-
-        elif ctype == "vol_surge_top":
-            surge = await _stock_vol_surge_top(sess, ts_code, td)
-            value_desc = (
-                f"量比{surge['vol_ratio']}，当日{surge['pct_chg']:+.1f}%"
-                if surge["vol_ratio"] is not None and surge["pct_chg"] is not None
-                else "量比/涨跌数据不足"
-            )
-            return {
-                "factor_id": factor_id, "factor_code": meta["code"], "factor_name": meta["name"],
-                "value_desc": value_desc,
-                "market_percentile": None,
-                "triggered": surge["triggered"],
-                "conclusion": (
-                    "⚠ 触发放量见顶信号：量比>2 且上涨，未来看跌(看跌准确率+13.9pp)，建议减仓/回避。"
-                    if surge["triggered"] else
-                    "未触发放量见顶信号，无看跌预警。"
-                ),
-                "direction": direction,
-            }
-
         else:
             return {"error": f"未知计算类型 {ctype}"}
 
@@ -573,3 +537,44 @@ async def diagnose_all(ts_code: str) -> dict:
         "valid_count": n_valid,
         "factors": items,
     }
+
+
+async def scan_risks(ts_code: str) -> list[dict]:
+    """扫描风险信号（放量见顶/龙虎榜上榜），返回触发的风险列表。
+
+    风险信号独立于选股因子：是「单股票择时/风险预警」，不是横截面选股排序，
+    不参与等权综合得分。见 data/risk_signals.json。
+    """
+    import json
+    from pathlib import Path
+
+    risk_path = Path(__file__).resolve().parent.parent.parent / "data" / "risk_signals.json"
+    with open(risk_path, "r", encoding="utf-8") as f:
+        signals = json.load(f)
+
+    risks: list[dict] = []
+    async with async_session() as sess:
+        td = await _stock_latest_date(sess, ts_code)
+        if not td:
+            return risks
+        for rid, meta in signals.items():
+            ctype = meta["compute"]["type"]
+            if ctype == "vol_surge_top":
+                surge = await _stock_vol_surge_top(sess, ts_code, td)
+                if surge["triggered"]:
+                    risks.append({
+                        "signal_id": rid, "code": meta["code"], "name": meta["name"],
+                        "desc": meta["desc"],
+                        "detail": (f"量比{surge['vol_ratio']}，当日{surge['pct_chg']:+.1f}%"
+                                   if surge["vol_ratio"] is not None and surge["pct_chg"] is not None
+                                   else "量比数据不足"),
+                    })
+            elif ctype == "top_list_risk":
+                risk = await _stock_top_list_risk(sess, ts_code)
+                if risk["triggered"]:
+                    risks.append({
+                        "signal_id": rid, "code": meta["code"], "name": meta["name"],
+                        "desc": meta["desc"],
+                        "detail": f"最近上榜{risk['last_date']}，机构净卖出",
+                    })
+    return risks

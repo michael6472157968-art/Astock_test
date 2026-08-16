@@ -271,6 +271,22 @@ function goodColor(g) {
   return 'var(--color-text-muted)';
 }
 
+function renderRisks(risks) {
+  if (!risks || !risks.length) return '';
+  var html = '<div class="card" style="margin-bottom:16px;border-left:4px solid var(--color-danger);">';
+  html += '<div class="card-header">⚠️ 风险提示</div>';
+  html += '<div class="card-body" style="display:flex;flex-direction:column;gap:10px;">';
+  risks.forEach(function(r) {
+    html += '<div style="padding:10px 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-bg-secondary);">';
+    html += '<div style="font-weight:700;color:var(--color-danger);">' + escHtml(r.name) + ' <span style="font-size:0.7rem;color:var(--color-text-muted);font-weight:400;">' + escHtml(r.code) + '</span></div>';
+    if (r.detail) html += '<div style="font-size:0.78rem;color:var(--color-text-muted);margin-top:4px;">' + escHtml(r.detail) + '</div>';
+    html += '<div style="font-size:0.75rem;color:var(--color-text);margin-top:4px;line-height:1.5;">' + escHtml(r.desc) + '</div>';
+    html += '</div>';
+  });
+  html += '</div></div>';
+  return html;
+}
+
 function renderDiagnosis(r, code, isFav) {
   var result = document.getElementById('result');
   var q = (r.data && r.data.quant) || {};
@@ -281,6 +297,8 @@ function renderDiagnosis(r, code, isFav) {
   var html = '<h2 class="page-title" id="diagStockName">' + stockName + ' 因子诊股报告 ' + favBtnHtml + '</h2>';
   var fd = (r.data && r.data.factor_diag) || null;
   if (fd) { html += renderFactorDiag(fd); }
+  var risks = (r.data && r.data.risks) || [];
+  if (risks.length) { html += renderRisks(risks); }
   // 主评分由上方「因子诊断」承担(等权因子综合分)，此处不再展示四维度评分(估值/质量/动量/情绪)，
   // 只保留客观行情数据。技术指标/信号见下方。
   html += '<div class="stat-grid" style="margin-bottom:20px">';

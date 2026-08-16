@@ -1,0 +1,18 @@
+{
+  "vol_surge_top": {
+    "code": "R1",
+    "name": "放量见顶",
+    "signal": "量比>2且涨 → 看跌",
+    "perf": "看跌准确率 +13.9pp",
+    "desc": "唯一有效的时间序列择时alpha：日线量比>2且当日上涨，未来看跌。出现此信号减仓/回避。",
+    "compute": {"type": "vol_surge_top"}
+  },
+  "top_list_risk": {
+    "code": "R2",
+    "name": "龙虎榜上榜风险",
+    "signal": "近期上榜+机构净卖出 → 看跌",
+    "perf": "上榜股5日超额-1.37%(t-6.12)",
+    "desc": "龙虎榜上榜是负超额事件，尤其机构净卖出继续跌。出现此信号减仓/回避。",
+    "compute": {"type": "top_list_risk"}
+  }
+}
