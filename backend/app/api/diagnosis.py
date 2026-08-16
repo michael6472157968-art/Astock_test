@@ -505,13 +505,6 @@ async def get_quota(request: Request, user: dict = Depends(require_auth_optional
         tier = 0
         user_id = 0
 
-    # 游客必须先登录
-    if tier == 0:
-        return APIResponse(
-            data={"cost": 1, "tier": tier, "require_login": True},
-            timestamp=int(time.time()),
-        )
-
     if tier >= 2:
         return APIResponse(
             data={
@@ -520,6 +513,13 @@ async def get_quota(request: Request, user: dict = Depends(require_auth_optional
                 "require_login": False,
                 "rule": "VIP免费诊股",
             },
+            timestamp=int(time.time()),
+        )
+
+    if tier == 0:
+        # 取消游客门禁：游客免费诊股
+        return APIResponse(
+            data={"cost": 0, "tier": 0, "require_login": False, "rule": "游客免费诊股"},
             timestamp=int(time.time()),
         )
 
@@ -620,23 +620,15 @@ async def get_diagnosis(stock_code: str, request: Request, user: dict = Depends(
         tier = 0
         user_id = 0
 
-    # 游客必须先登录
-    if tier == 0:
-        return APIResponse(
-            code=403,
-            message="请先登录后再使用诊股功能",
-            data={"require_login": True},
-            timestamp=int(time.time()),
-        ).model_dump()
-
+    # 取消游客门禁：游客(tier=0)可直接诊股不扣分，注册用户扣1分，VIP免费
     today = date.today().isoformat()
     cache_key = f"diag_v2:{stock_code}"
     cached = await cache_get(cache_key)
     if cached:
         return _build_response(cached, tier, cache_hit=True, cache_date=today)
 
-    # 积分扣减：VIP免费，注册用户扣1分
-    if tier < 2:
+    # 积分扣减：仅注册用户(tier=1)扣1分，游客/VIP不扣
+    if 0 < tier < 2:
         async with async_session() as session:
             u_result = await session.execute(select(User).where(User.id == user_id))
             u = u_result.scalar_one_or_none()
