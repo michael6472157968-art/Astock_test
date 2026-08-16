@@ -57,7 +57,8 @@
   },
   "factor_daily": {
     "fields": ["chg42", "pb", "turnover"],
-    "weights": [0.40, 0.35, 0.25],
+    "weights": [0.333, 0.333, 0.333],
+    "labels": ["反转(近42日跌幅)", "价值(低PB)", "低换手"],
     "zscore_fields": [],
     "invert_fields": ["chg42", "pb", "turnover"],
     "oversold_field": null

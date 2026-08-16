@@ -420,9 +420,15 @@ def score_and_rank(rows, config: dict, reason_prefix: str = "",
                 norm_cache[f] = rank_pct(vals)
 
     # 加权评分
+    labels = config.get("labels", fields)  # 因子中文标签（入选理由用），缺省回退字段名
     scored = []
     for idx, item in enumerate(raw_items):
         score = sum(norm_cache[f][idx] * w for f, w in zip(fields, weights))
+        # 入选理由：各因子分位（0-100，越高=越符合该因子买入方向）
+        detail_parts = [
+            f"{lbl}{round(norm_cache[f][idx] * 100)}%"
+            for f, lbl in zip(fields, labels)
+        ]
         entry = {
             "stock_code": item["code"],
             "stock_name": item["name"],
@@ -430,7 +436,8 @@ def score_and_rank(rows, config: dict, reason_prefix: str = "",
             "change_pct": round(item["pct_chg"], 2),
             "score": round(score * 100, 1),
             "volume": item["vol"],
-            "inclusion_reason": f"{reason_prefix} 评分{round(score*100,1)}",
+            "inclusion_reason": f"{reason_prefix} " + " · ".join(detail_parts),
+            "factor_detail": detail_parts,
             "mode": reason_prefix,
         }
         if oversold_field and oversold_field in item["fv"]:
