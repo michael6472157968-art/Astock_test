@@ -233,6 +233,14 @@ async def get_stk_holdernumber(ts_code: str = "") -> list[dict]:
     return result.to_dict(orient="records")
 
 
+async def get_stk_holdernumber_range(start_date: str, end_date: str) -> list[dict]:
+    """股东人数——按公告日范围拉全市场（单次5500行上限，分段调用累积覆盖）。"""
+    result = await call_tushare("stk_holdernumber", start_date=start_date, end_date=end_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
 async def get_hsgt_top10(trade_date: str) -> list[dict]:
     """沪深港通十大成交股——北向每日活跃股。2000积分解锁。"""
     result = await call_tushare("hsgt_top10", trade_date=trade_date)

@@ -599,31 +599,44 @@ async def sync_top10_floatholders() -> int:
 
 
 async def sync_stk_holdernumber() -> int:
-    """同步股东户数——全市场最新报告期。2000积分解锁。"""
-    rows = await get_stk_holdernumber()
-    if not rows:
-        logger.info("No stk_holdernumber data")
-        return 0
+    """同步股东户数——按公告日按月分段拉全市场历史，累积覆盖各披露期。
 
-    async with async_session() as session:
-        for row in rows:
-            try:
-                await session.execute(text("""
-                    INSERT OR REPLACE INTO stk_holdernumber
-                        (ts_code, ann_date, end_date, holder_num)
-                    VALUES (:ts, :ad, :ed, :hn)
-                """), {
-                    "ts": row.get("ts_code", ""),
-                    "ad": str(row.get("ann_date", "")),
-                    "ed": str(row.get("end_date", "")),
-                    "hn": int(row.get("holder_num", 0) or 0),
-                })
-            except Exception:
-                continue
-        await session.commit()
+    股东户数各公司披露时间不一致(季报/月报/不定期)，单次全市场查询仅返回"最新一期"
+    或受5500行上限截断。故按月分段拉近24个月，累积覆盖全市场。
+    """
+    from datetime import date, timedelta
+    from app.services.tushare_client import get_stk_holdernumber_range
 
-    logger.info(f"Stk_holdernumber synced: {len(rows)} records")
-    return len(rows)
+    total = 0
+    end = date.today()
+    for m in range(24):
+        seg_end = end - timedelta(days=30 * m)
+        seg_start = seg_end - timedelta(days=30)
+        rows = await get_stk_holdernumber_range(
+            seg_start.strftime("%Y%m%d"), seg_end.strftime("%Y%m%d"))
+        if not rows:
+            continue
+        async with async_session() as session:
+            for row in rows:
+                try:
+                    await session.execute(text("""
+                        INSERT OR REPLACE INTO stk_holdernumber
+                            (ts_code, ann_date, end_date, holder_num)
+                        VALUES (:ts, :ad, :ed, :hn)
+                    """), {
+                        "ts": row.get("ts_code", ""),
+                        "ad": str(row.get("ann_date", "")),
+                        "ed": str(row.get("end_date", "")),
+                        "hn": int(row.get("holder_num", 0) or 0),
+                    })
+                except Exception:
+                    continue
+            await session.commit()
+        total += len(rows)
+        logger.info(f"Stk_holdernumber segment {seg_start}~{seg_end}: {len(rows)} records")
+
+    logger.info(f"Stk_holdernumber synced total: {total} records")
+    return total
 
 
 async def sync_historical_daily(days: int = 60) -> dict:
