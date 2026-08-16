@@ -257,38 +257,76 @@ class StockPoolEngine:
         candidates = score_and_rank(r.fetchall(), fw["steady_swing"], "稳健波段", limit=POOL_SIZE * 3)
         return [c for c in candidates if c["stock_code"] not in exclude][:POOL_SIZE]
 
-    # ── 因子选股池（每日10股，反转+价值+低换手合成）──
+    # ── 因子选股池（每日10股，进攻版：量价背离+成长+现金流合成）──
+
+    @staticmethod
+    def _corr_price_vol(pairs: list) -> float | None:
+        """近N日 (close, volume) 序列的价量相关系数（量价背离：负相关=缩量涨，越负越健康）。"""
+        n = len(pairs)
+        if n < 10:
+            return None
+        closes = [p[0] for p in pairs]
+        vols = [p[1] for p in pairs]
+        mc = sum(closes) / n
+        mv = sum(vols) / n
+        cov = sum((closes[i] - mc) * (vols[i] - mv) for i in range(n)) / n
+        sc = (sum((v - mc) ** 2 for v in closes) / n) ** 0.5
+        sv = (sum((v - mv) ** 2 for v in vols) / n) ** 0.5
+        return cov / (sc * sv) if sc > 0 and sv > 0 else None
 
     async def _factor_daily(self, session, trade_date: str, dates: list, fw: dict) -> list:
-        """因子选股：反转(chg42) + 价值(pb) + 低换手(turnover) 合成横截面排序，每日10股。"""
-        td42 = self._nth_date(dates, trade_date, 42)
-        if not td42:
+        """因子选股(进攻版)：量价背离F2 + 成长F8 + 现金流F7 合成横截面排序，每日10股。"""
+        td20 = self._nth_date(dates, trade_date, 20)
+        if not td20:
             return []
-        sql = text("""
+
+        # 1. 候选：当日全市场非ST非688/920，JOIN 最新财务(F8净利增速/F7现金流)
+        r = await session.execute(text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
-                   (d.close - d42.close) / NULLIF(d42.close, 0) * 100 AS chg42,
-                   CASE WHEN db.pb IS NOT NULL AND db.pb > 0 THEN db.pb ELSE NULL END AS pb,
-                   CASE WHEN db.turnover_rate IS NOT NULL AND db.turnover_rate > 0 THEN db.turnover_rate ELSE NULL END AS turnover
+                   fi.dt_netprofit_yoy, fi.cfps_yoy
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
-            JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td42) d42 ON d42.ts_code = d.ts_code
-            LEFT JOIN daily_basic db ON db.ts_code = d.ts_code AND db.trade_date = d.trade_date
+            LEFT JOIN fina_indicator fi ON fi.ts_code = d.ts_code
+                AND fi.end_date = (SELECT MAX(end_date) FROM fina_indicator fi2 WHERE fi2.ts_code = d.ts_code)
             WHERE d.trade_date = :td
-              AND d.close > 0 AND d42.close > 0
+              AND d.close > 0 AND d.volume > 0
               AND d.ts_code NOT LIKE '%ST%' AND s.name NOT LIKE '%ST%'
               AND d.ts_code NOT LIKE '688%' AND d.ts_code NOT LIKE '920%'
-        """)
-        r = await session.execute(sql, {"td": trade_date, "td42": td42})
-        return score_and_rank(r.fetchall(), fw["factor_daily"], "因子选股(反转+低估值+低换手)", limit=10)
+        """), {"td": trade_date})
+        cand = r.fetchall()
+        if not cand:
+            return []
+
+        # 2. 拉近20日 close/volume，算每只价量相关(F2)
+        r2 = await session.execute(text("""
+            SELECT ts_code, close, volume FROM stock_daily
+            WHERE trade_date > :td20 AND trade_date <= :td AND volume > 0
+            ORDER BY ts_code, trade_date
+        """), {"td20": td20, "td": trade_date})
+        seq: dict = {}
+        for ts_code, close, vol in r2.fetchall():
+            seq.setdefault(ts_code, []).append((float(close), float(vol)))
+
+        # 3. 构造 rows：(code, name, close, pct_chg, vol, corr, growth, cfps)
+        rows = []
+        for code, name, close, pct_chg, vol, growth, cfps in cand:
+            corr = self._corr_price_vol(seq.get(code, []))
+            rows.append((code, name, close, pct_chg, vol, corr, growth, cfps))
+
+        return score_and_rank(rows, fw["factor_daily"], "因子选股(量价背离+成长+现金流)", limit=10)
 
     # ── 持久化 ──
 
     async def _persist_pool(self, pool_type: str, items: list, calc_date: str):
         async with async_session() as session:
+            # 先删该日期该池旧结果，避免重跑时重复（INSERT OR REPLACE 依赖自增id主键，不会真正replace）
+            await session.execute(text(
+                "DELETE FROM stock_pool_results WHERE calc_date = :cd AND pool_type = :pt"
+            ), {"cd": calc_date, "pt": pool_type})
             for i, item in enumerate(items):
                 try:
                     await session.execute(text("""
-                        INSERT OR REPLACE INTO stock_pool_results
+                        INSERT INTO stock_pool_results
                             (calc_date, pool_type, rank_in_pool, ts_code, stock_name,
                              market_data_json, inclusion_reason)
                         VALUES (:cd, :pt, :rk, :ts, :nm, :md, :ir)

@@ -28,7 +28,7 @@ POOL_TYPES = {
     "short_t3_dip": {"name": "T+3 低吸", "desc": "回调企稳后反弹博弈，持股3交易日"},
     "short_t7_momentum": {"name": "T+7 追涨", "desc": "趋势确立顺势持股，持股7交易日"},
     "short_t7_dip": {"name": "T+7 低吸", "desc": "中期回调修复机会，持股7交易日"},
-    "factor_daily": {"name": "因子选股", "desc": "反转+低估值+低换手合成，每日10股"},
+    "factor_daily": {"name": "因子选股", "desc": "量价背离+成长+现金流合成，每日10股"},
 }
 
 

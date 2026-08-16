@@ -56,11 +56,11 @@
     "oversold_field": null
   },
   "factor_daily": {
-    "fields": ["chg42", "pb", "turnover"],
+    "fields": ["corr", "growth", "cfps"],
     "weights": [0.333, 0.333, 0.333],
-    "labels": ["反转(近42日跌幅)", "价值(低PB)", "低换手"],
+    "labels": ["量价背离(缩量涨)", "成长(净利增速)", "现金流(每股)"],
     "zscore_fields": [],
-    "invert_fields": ["chg42", "pb", "turnover"],
+    "invert_fields": ["corr"],
     "oversold_field": null
   }
 }
