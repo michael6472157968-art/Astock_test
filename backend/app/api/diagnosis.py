@@ -757,10 +757,19 @@ async def _compute_diagnosis(stock_code: str) -> dict | None:
         except Exception:
             pass
 
+        # 因子诊断（基于有效因子库，配置驱动——因子库更新后自动用新因子集）
+        factor_diag = None
+        try:
+            from app.services.factor_engine import diagnose_all
+            factor_diag = await diagnose_all(code)
+        except Exception:
+            pass
+
         return {
             "stock_code": stock_code,
             "stock_name": stock_name,
             "quant": quant,
+            "factor_diag": factor_diag,
             # 四维度评分重建所需原始序列
             "_closes": closes,
             "_highs": highs,
@@ -908,6 +917,7 @@ def _build_response(report: dict, tier: int, cache_hit: bool, cache_date: str = 
         "stock_code": report["stock_code"],
         "stock_name": report["stock_name"],
         "quant": report["quant"],
+        "factor_diag": report.get("factor_diag"),
         "kline": report.get("kline"),
         "indicators": report.get("indicators"),
         "financial": report.get("financial"),

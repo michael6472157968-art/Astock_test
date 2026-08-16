@@ -357,3 +357,61 @@ async def match(ts_code: str) -> dict:
     } for c in picks[:3]]
 
     return {"stock_code": ts_code, "matches": matches}
+
+
+async def diagnose_all(ts_code: str) -> dict:
+    """全因子诊断：遍历因子库所有因子，算全市场分位 + 等权综合得分。
+
+    供诊股页使用：每只股票返回所有因子的分位 + IC + 综合得分(等权)。
+    因子库更新(factor_meta.json)后自动用新因子集，无需改此函数（配置驱动）。
+    """
+    factors = load_factors()
+    items: list[dict] = []
+    goodness_sum = 0.0
+    n_valid = 0
+
+    for fid, meta in factors.items():
+        try:
+            d = await diagnose(ts_code, fid)
+        except Exception as e:
+            logger.warning(f"diagnose_all {fid} failed: {e}")
+            continue
+
+        item = {
+            "factor_id": fid,
+            "code": meta["code"],
+            "name": meta["name"],
+            "dim": meta["dim"],
+            "ic": meta.get("ic"),
+            "signal": meta.get("signal"),
+        }
+        if "error" in d:
+            item["percentile"] = None
+            item["note"] = d["error"]
+            items.append(item)
+            continue
+
+        pct = d.get("market_percentile")
+        direction = d.get("direction")
+        item["percentile"] = pct
+        item["strength"] = d.get("strength")
+        item["value_desc"] = d.get("value_desc")
+        item["conclusion"] = d.get("conclusion")
+
+        if pct is not None:
+            # 等权综合：low_good 低分位=好(100-pct)，high_good 高分位=好(pct)
+            goodness = pct if direction == "high_good" else (100 - pct)
+            item["goodness"] = round(goodness, 1)
+            goodness_sum += goodness
+            n_valid += 1
+
+        items.append(item)
+
+    composite = round(goodness_sum / n_valid, 1) if n_valid else None
+    return {
+        "ts_code": ts_code,
+        "composite_score": composite,
+        "factor_count": len(items),
+        "valid_count": n_valid,
+        "factors": items,
+    }
