@@ -195,6 +195,40 @@ async def _universe_financial(sess, field: str) -> list[float]:
     return [float(x[0]) for x in r.fetchall()]
 
 
+async def _stock_holder_change(sess, ts_code: str) -> float | None:
+    """该股最新两期股东户数变化率（负=户数减少=筹码集中）。"""
+    r = await sess.execute(text("""
+        SELECT holder_num FROM stk_holdernumber
+        WHERE ts_code = :c AND holder_num > 0
+        GROUP BY end_date ORDER BY end_date DESC LIMIT 2
+    """), {"c": ts_code})
+    rows = r.fetchall()
+    if len(rows) < 2:
+        return None
+    cur, prev = float(rows[0][0]), float(rows[1][0])
+    return (cur - prev) / prev if prev > 0 else None
+
+
+async def _universe_holder_change(sess) -> list[float]:
+    """全市场股东户数变化率分布（每股最新两期）。"""
+    from collections import defaultdict
+    r = await sess.execute(text("""
+        SELECT ts_code, end_date, MAX(holder_num) FROM stk_holdernumber
+        WHERE holder_num > 0
+        GROUP BY ts_code, end_date
+        ORDER BY ts_code, end_date DESC
+    """))
+    seq: dict = defaultdict(list)
+    for ts_code, _end_date, holder_num in r.fetchall():
+        if len(seq[ts_code]) < 2:
+            seq[ts_code].append(float(holder_num))
+    changes = []
+    for nums in seq.values():
+        if len(nums) == 2 and nums[1] > 0:
+            changes.append((nums[0] - nums[1]) / nums[1])
+    return changes
+
+
 async def diagnose(ts_code: str, factor_id: str) -> dict:
     """因子诊断：该股因子值 + 全市场分位 + 结论。"""
     factors = load_factors()
@@ -265,6 +299,14 @@ async def diagnose(ts_code: str, factor_id: str) -> dict:
             uni = await _universe_financial(sess, field)
             percentile = _percentile(value, uni)
             value_desc = f"{field}={value:.2f}"
+
+        elif ctype == "holder_change":
+            value = await _stock_holder_change(sess, ts_code)
+            if value is None:
+                return {"error": "股东户数数据未接入"}
+            uni = await _universe_holder_change(sess)
+            percentile = _percentile(value, uni)
+            value_desc = f"股东户数变化 {value*100:+.1f}%"
 
         elif ctype == "vol_surge_top":
             surge = await _stock_vol_surge_top(sess, ts_code, td)
