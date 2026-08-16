@@ -441,13 +441,13 @@ function renderNav() {
   var user = Session.get();
   var links = [
     { href: '/', label: '首页' },
-    { href: 'stock-pool.html', label: '选股池' },
+    { href: 'backtest.html', label: '因子库' },
     { href: 'diagnosis.html', label: '诊股' },
+    { href: 'stock-pool.html', label: '选股池' },
     { href: 'review.html', label: '复盘' },
     { href: 'sector-rotation.html', label: '板块' },
     { href: 'risk-list.html', label: '风险' },
     { href: 'alerts.html', label: '自选' },
-    { href: 'backtest.html', label: '回测' },
   ];
   if (Session.isAdmin()) {
     links.push({ href: 'admin-trigger.html', label: '管理' });
