@@ -150,7 +150,7 @@ class ShortTermEngine:
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td3) d3 ON d3.ts_code = d.ts_code
             JOIN (SELECT ts_code, AVG(volume) AS avg_vol FROM stock_daily
-                  WHERE trade_date = :td3 OR trade_date = :td OR trade_date = :td2 GROUP BY ts_code
+                  WHERE trade_date <= :td AND trade_date >= :td20 GROUP BY ts_code
             ) av ON av.ts_code = d.ts_code
             LEFT JOIN daily_basic db ON db.ts_code = d.ts_code AND db.trade_date = d.trade_date
             WHERE d.trade_date = :td
@@ -163,8 +163,9 @@ class ShortTermEngine:
             LIMIT :lim
         """)
         td2 = self._nth_date(dates, trade_date, 2)
+        td20 = self._nth_date(dates, trade_date, 20)
         r = await session.execute(sql, {
-            "td": trade_date, "td2": td2 or trade_date, "td3": td3, "lim": POOL_SIZE * 3,
+            "td": trade_date, "td2": td2 or trade_date, "td3": td3, "td20": td20 or trade_date, "lim": POOL_SIZE * 3,
         })
         return score_and_rank(r.fetchall(), fw["short_t3_momentum"],
                               "T+3追涨", limit=POOL_SIZE * 3)
@@ -176,7 +177,8 @@ class ShortTermEngine:
 
     async def _t3_dip_raw(self, session, trade_date: str, dates: list, fw: dict):
         td5 = self._nth_date(dates, trade_date, 5)
-        if not td5:
+        td20 = self._nth_date(dates, trade_date, 20)
+        if not td5 or not td20:
             return []
 
         sql = text("""
@@ -192,7 +194,7 @@ class ShortTermEngine:
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td5) d5 ON d5.ts_code = d.ts_code
             JOIN (SELECT ts_code, AVG(volume) AS avg_vol FROM stock_daily
-                  WHERE trade_date IN (:td5,:td4,:td3,:td2,:td) GROUP BY ts_code
+                  WHERE trade_date <= :td AND trade_date >= :td20 GROUP BY ts_code
             ) av ON av.ts_code = d.ts_code
             JOIN (SELECT ts_code, MIN(low) AS min_low FROM stock_daily
                   WHERE trade_date <= :td AND trade_date >= :td20 GROUP BY ts_code
@@ -208,14 +210,8 @@ class ShortTermEngine:
               AND d.ts_code NOT LIKE '688%' AND d.ts_code NOT LIKE '920%'
             LIMIT :lim
         """)
-        td4 = self._nth_date(dates, trade_date, 4)
-        td3 = self._nth_date(dates, trade_date, 3)
-        td2 = self._nth_date(dates, trade_date, 2)
-        td20 = self._nth_date(dates, trade_date, 20)
         r = await session.execute(sql, {
-            "td": trade_date, "td2": td2 or trade_date, "td3": td3 or trade_date,
-            "td4": td4 or trade_date, "td5": td5, "td20": td20 or trade_date,
-            "lim": POOL_SIZE * 3,
+            "td": trade_date, "td5": td5, "td20": td20, "lim": POOL_SIZE * 3,
         })
         return score_and_rank(r.fetchall(), fw["short_t3_dip"],
                               "T+3低吸", limit=POOL_SIZE * 3)
@@ -275,15 +271,13 @@ class ShortTermEngine:
 
     async def _t7_dip_raw(self, session, trade_date: str, dates: list, fw: dict):
         td10 = self._nth_date(dates, trade_date, 10)
-        td3 = self._nth_date(dates, trade_date, 3)
         td60 = self._nth_date(dates, trade_date, 60)
-        if not td10 or not td3:
+        if not td10:
             return []
 
         sql = text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d10.close) / NULLIF(d10.close, 0) * 100 AS chg10,
-                   (d.close - d3.close) / NULLIF(d3.close, 0) * 100 AS chg3_recent,
                    (hi60.max_high - d.close) / NULLIF(hi60.max_high, 0) * 100 AS drawdown,
                    CASE WHEN db.turnover_rate IS NOT NULL THEN db.turnover_rate ELSE NULL END AS turnover,
                    CASE WHEN db.pe IS NOT NULL AND db.pe > 0 THEN db.pe ELSE NULL END AS pe,
@@ -292,14 +286,12 @@ class ShortTermEngine:
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td10) d10 ON d10.ts_code = d.ts_code
-            JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td3) d3 ON d3.ts_code = d.ts_code
             JOIN (SELECT ts_code, MAX(high) AS max_high FROM stock_daily
                   WHERE trade_date <= :td AND trade_date >= :td60 GROUP BY ts_code
             ) hi60 ON hi60.ts_code = d.ts_code
             LEFT JOIN daily_basic db ON db.ts_code = d.ts_code AND db.trade_date = d.trade_date
             WHERE d.trade_date = :td
               AND (d.close - d10.close) / NULLIF(d10.close, 0) * 100 < 0
-              AND (d.close - d3.close) / NULLIF(d3.close, 0) * 100 > 0
               AND hi60.max_high > 0
               AND (hi60.max_high - d.close) / NULLIF(hi60.max_high, 0) * 100 > 10
               AND d.ts_code NOT LIKE '%ST%' AND s.name NOT LIKE '%ST%'
@@ -307,7 +299,7 @@ class ShortTermEngine:
             LIMIT :lim
         """)
         r = await session.execute(sql, {
-            "td": trade_date, "td3": td3, "td10": td10, "td60": td60 or trade_date,
+            "td": trade_date, "td10": td10, "td60": td60 or trade_date,
             "lim": POOL_SIZE * 3,
         })
         return score_and_rank(r.fetchall(), fw["short_t7_dip"],

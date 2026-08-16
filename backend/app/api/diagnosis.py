@@ -931,15 +931,71 @@ def _build_response(report: dict, tier: int, cache_hit: bool, cache_date: str = 
 # ── AI 分析 ──
 
 
+async def _load_turnover_rates(ts_code: str, daily: list[dict]) -> list[float] | None:
+    """从 daily_basic 加载与 daily 对齐的换手率序列（缺失为 0.0）。"""
+    from sqlalchemy import text as _text
+    async with async_session() as _s:
+        _r = await _s.execute(
+            _text("SELECT trade_date, turnover_rate FROM daily_basic WHERE ts_code=:c ORDER BY trade_date ASC"),
+            {"c": ts_code},
+        )
+        rows = _r.mappings().all()
+    turnover_map = {str(row["trade_date"]): float(row["turnover_rate"] or 0) for row in rows}
+    return [turnover_map.get(d["trade_date"], 0.0) for d in daily]
+
+
+async def _five_eye_reference(stock_code: str) -> dict | None:
+    """加载日线 → 跑五眼共识 → 返回供 AI 辩论参考的紧凑结论。失败返回 None。
+
+    与既有 *_test.py 用同一数据源/格式，保证"参考背景"与已验证结论同口径。
+    """
+    from app.services.calibration import _load_daily_data_fast
+    from app.services.multi_eye import consensus as _run_consensus
+
+    ts_code = stock_code
+    if "." not in ts_code:
+        from sqlalchemy import text as _text
+        async with async_session() as _s:
+            _r = await _s.execute(
+                _text("SELECT ts_code FROM stocks WHERE ts_code LIKE :p ORDER BY ts_code LIMIT 1"),
+                {"p": ts_code + ".%"},
+            )
+            _row = _r.first()
+            if _row:
+                ts_code = _row[0]
+
+    try:
+        daily = await _load_daily_data_fast(ts_code)
+        if not daily or len(daily) < 30:
+            return None
+        turnover_rates = await _load_turnover_rates(ts_code, daily)
+        cons = _run_consensus(daily, turnover_rates)
+        return {
+            "five_eye_summary": cons.summary,
+            "trend": cons.trend.get("verdict"),
+            "position": cons.position.get("verdict"),
+            "signal": cons.signal.get("verdict"),
+            "retreat_alert": cons.retreat_alert,
+        }
+    except Exception:
+        return None
+
+
 @router.post("/{stock_code}/ai-analysis")
-async def ai_analysis(stock_code: str, user: dict = Depends(require_auth)):
-    """AI 辅助解读——调用 DeepSeek 分析技术指标，扣2积分/次，同股同日缓存命中不扣。"""
+async def ai_analysis(stock_code: str, mode: str = "single", user: dict = Depends(require_auth)):
+    """AI 辅助解读——调用 DeepSeek 分析技术指标，扣2积分/次，同股同日缓存命中不扣。
+
+    mode: single=单Agent解读(默认) / debate=多空辩论+结构化评级(原型)
+    """
+    if mode not in ("single", "debate"):
+        mode = "single"
     user_id = user["user_id"]
     today = date.today().isoformat()
-    ai_cache_key = f"ai:{stock_code}:{today}"
+    ai_cache_key = f"ai_debate:{stock_code}:{today}" if mode == "debate" else f"ai:{stock_code}:{today}"
 
     cached = await cache_get(ai_cache_key)
     cache_hit = cached is not None
+    result = None
 
     if not cache_hit:
         # 先做诊股计算获取指标数据
@@ -980,13 +1036,23 @@ async def ai_analysis(stock_code: str, user: dict = Depends(require_auth)):
             await session.commit()
 
         # 调用 LLM
-        from app.services.ai_analysis import analyze_stock
+        from app.services.ai_analysis import analyze_stock, analyze_stock_debate
         try:
-            text = await analyze_stock(
-                stock_code=stock_code,
-                stock_name=report.get("stock_name", stock_code),
-                indicators_json=indicators,
-            )
+            if mode == "debate":
+                extra_evidence = await _five_eye_reference(stock_code)
+                result = await analyze_stock_debate(
+                    stock_code=stock_code,
+                    stock_name=report.get("stock_name", stock_code),
+                    indicators_json=indicators,
+                    extra_evidence=extra_evidence,
+                )
+                text = result["report"]
+            else:
+                text = await analyze_stock(
+                    stock_code=stock_code,
+                    stock_name=report.get("stock_name", stock_code),
+                    indicators_json=indicators,
+                )
         except Exception as e:
             # LLM 调用失败，退还积分
             async with async_session() as session:
@@ -1005,14 +1071,23 @@ async def ai_analysis(stock_code: str, user: dict = Depends(require_auth)):
                     await session.commit()
             raise HTTPException(status_code=502, detail=f"AI服务暂不可用: {e}")
     else:
-        text = cached
+        if mode == "debate" and isinstance(cached, dict):
+            result = cached
+            text = cached.get("report", "")
+        else:
+            text = cached
+
+    data = {
+        "stock_code": stock_code,
+        "analysis": text,
+        "cache_hit": cache_hit,
+        "cost": _settings.ai_analysis_cost,
+    }
+    if mode == "debate" and isinstance(result, dict):
+        data["rating"] = result.get("rating")
+        data["mode"] = "debate"
 
     return APIResponse(
-        data={
-            "stock_code": stock_code,
-            "analysis": text,
-            "cache_hit": cache_hit,
-            "cost": _settings.ai_analysis_cost,
-        },
+        data=data,
         timestamp=int(time.time()),
     )

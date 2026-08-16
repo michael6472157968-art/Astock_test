@@ -1,141 +1,54 @@
-"""策略回测引擎。
+"""策略回测引擎——统一回测执行器。
 
-六种策略的逐日模拟交易：
-- ma_cross: 5/20日简单移动平均交叉
-- macd_cross: MACD 金叉/死叉 (DIF上穿/下穿DEA)
-- volume_break: 放量(>1.5x20日均量)突破20日收盘高点 + MA10止损
-- boll_break: 布林带下轨突破买入 + 中轨止损
-- rsi_reversal: 14日RSI超卖(<30)买入 / 超买(>70)卖出
-- momentum: 双动量(5日/20日) + 成交量确认
+15种策略通过 strategy_lib.STRATEGIES 注册表接入。
+所有策略统一接受 daily_data 作为输入 → 返回信号列表。
+
+daily_data: [{"trade_date","open","high","low","close","volume","pct_chg"}, ...] ASC
+返回: {equity_curve, trades, metrics, buy_signals, sell_signals, drawdown_curve, monthly_returns}
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 
-from app.services.factor_lib import sma, ema, macd, rsi
-
-
-def _macd_series(closes: list[float]) -> tuple[list[float | None], list[float | None], list[float | None]]:
-    """兼容旧调用方：返回 (dif, dea, bar) 三元组。"""
-    m = macd(closes)
-    return m["dif"], m["dea"], m["bar"]
+from app.services.strategy_lib import STRATEGIES, STRATEGY_META
 
 
-def _signals_ma_cross(closes: list[float], _volumes: list[float]) -> list[tuple[int, str]]:
-    ma5 = sma(closes, 5)
-    ma20 = sma(closes, 20)
-    sigs: list[tuple[int, str]] = []
-    for i in range(1, len(closes)):
-        if None in (ma5[i], ma20[i], ma5[i - 1], ma20[i - 1]):
-            continue
-        if ma5[i - 1] <= ma20[i - 1] and ma5[i] > ma20[i]:
-            sigs.append((i, "buy"))
-        elif ma5[i - 1] >= ma20[i - 1] and ma5[i] < ma20[i]:
-            sigs.append((i, "sell"))
-    return sigs
+def _reason(strategy: str, action: str) -> str:
+    """可覆盖的信号注释。默认使用策略名+动作。"""
+    names: dict[str, dict[str, str]] = {
+        "ma_cross": {"buy": "金叉买入", "sell": "死叉卖出"},
+        "macd_cross": {"buy": "MACD金叉", "sell": "MACD死叉"},
+        "volume_break": {"buy": "放量突破买入", "sell": "跌破MA10卖出"},
+        "boll_break": {"buy": "布林下轨突破", "sell": "回归中轨"},
+        "rsi_reversal": {"buy": "RSI超卖买入", "sell": "RSI超买卖出"},
+        "momentum": {"buy": "动量突破", "sell": "动量衰减"},
+        "turtle": {"buy": "海龟突破买入", "sell": "海龟止损"},
+        "ma_bull_alignment": {"buy": "多头排列买入", "sell": "排列破坏"},
+        "boll_rebound": {"buy": "触及下轨反弹", "sell": "回归中轨卖出"},
+        "bias_reversal": {"buy": "乖离过大买入", "sell": "回归均线"},
+        "volume_shrink_break": {"buy": "缩量突破买入", "sell": "跌破MA10"},
+        "kdj_cross": {"buy": "KDJ金叉买入", "sell": "KDJ死叉卖出"},
+        "donchian_breakout": {"buy": "唐奇安突破", "sell": "通道跌破"},
+        "hammer_pattern": {"buy": "锤子线买入", "sell": "止损卖出"},
+        "engulfing_pattern": {"buy": "吞没形态买入", "sell": "止损卖出"},
+        "chan_lite":          {"buy": "缠论买入", "sell": "缠论平仓"},
+    }
+    return names.get(strategy, {}).get(action, action)
 
 
-def _signals_volume_break(closes: list[float], volumes: list[float]) -> list[tuple[int, str]]:
-    ma20_vol = sma(volumes, 20)
-    ma10 = sma(closes, 10)
-    sigs: list[tuple[int, str]] = []
-    in_pos = False
-    for i in range(20, len(closes)):
-        if None in (ma20_vol[i], ma10[i]):
-            continue
-        high20 = max(closes[i - 20 : i])  # 前20日最高价（不含当日）
-        if not in_pos and volumes[i] > 1.5 * ma20_vol[i] and closes[i] > high20:
-            sigs.append((i, "buy"))
-            in_pos = True
-        elif in_pos and closes[i] < ma10[i]:
-            sigs.append((i, "sell"))
-            in_pos = False
-    return sigs
+def _hash_params(params: dict) -> str:
+    return hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()[:12]
 
 
-def _signals_rsi_reversal(closes: list[float], _volumes: list[float]) -> list[tuple[int, str]]:
-    rsi14 = rsi(closes, 14)
-    sigs: list[tuple[int, str]] = []
-    for i in range(1, len(closes)):
-        if None in (rsi14[i], rsi14[i - 1]):
-            continue
-        if rsi14[i - 1] >= 30 and rsi14[i] < 30:
-            sigs.append((i, "buy"))
-        elif rsi14[i - 1] <= 70 and rsi14[i] > 70:
-            sigs.append((i, "sell"))
-    return sigs
-
-
-def _signals_macd_cross(closes: list[float], _volumes: list[float]) -> list[tuple[int, str]]:
-    dif, dea, _bar = _macd_series(closes)
-    sigs: list[tuple[int, str]] = []
-    for i in range(1, len(closes)):
-        if dif[i] is None or dea[i] is None or dif[i - 1] is None or dea[i - 1] is None:
-            continue
-        if dif[i - 1] <= dea[i - 1] and dif[i] > dea[i]:
-            sigs.append((i, "buy"))
-        elif dif[i - 1] >= dea[i - 1] and dif[i] < dea[i]:
-            sigs.append((i, "sell"))
-    return sigs
-
-
-def _signals_boll_break(closes: list[float], _volumes: list[float]) -> list[tuple[int, str]]:
-    n = 20
-    ma = sma(closes, n)
-    sigs: list[tuple[int, str]] = []
-    in_pos = False
-    for i in range(n, len(closes)):
-        if ma[i] is None or ma[i - 1] is None:
-            continue
-        window = closes[i - n + 1 : i + 1]
-        mean = sum(window) / n
-        std = (sum((v - mean) ** 2 for v in window) / (n - 1)) ** 0.5
-        lower = mean - 2 * std
-        mid = mean
-        if not in_pos and closes[i] < lower and closes[i - 1] >= lower:
-            sigs.append((i, "buy"))
-            in_pos = True
-        elif in_pos and closes[i] > mid:
-            sigs.append((i, "sell"))
-            in_pos = False
-    return sigs
-
-
-def _signals_momentum(closes: list[float], volumes: list[float]) -> list[tuple[int, str]]:
-    n = len(closes)
-    sigs: list[tuple[int, str]] = []
-    in_pos = False
-    for i in range(20, n):
-        roc5 = (closes[i] - closes[i - 5]) / closes[i - 5] if closes[i - 5] > 0 else 0
-        roc20 = (closes[i] - closes[i - 20]) / closes[i - 20] if closes[i - 20] > 0 else 0
-        vol_ratio = volumes[i] / (sum(volumes[i - 20 : i]) / 20) if sum(volumes[i - 20 : i]) > 0 else 1
-        if not in_pos and roc5 > 0.03 and roc20 > roc5 and vol_ratio > 1.2:
-            sigs.append((i, "buy"))
-            in_pos = True
-        elif in_pos and roc5 < -0.02:
-            sigs.append((i, "sell"))
-            in_pos = False
-    return sigs
-
-
-_SIGNAL_FNS = {
-    "ma_cross": _signals_ma_cross,
-    "macd_cross": _signals_macd_cross,
-    "volume_break": _signals_volume_break,
-    "boll_break": _signals_boll_break,
-    "rsi_reversal": _signals_rsi_reversal,
-    "momentum": _signals_momentum,
-}
-
-
-# ── 交易成本常量 ──
-_STAMP_TAX = 0.0005    # 印花税 0.05%（仅卖出）
-_COMMISSION = 0.00025  # 佣金 0.025%
-_MIN_COMM = 5.0        # 最低佣金 5 元
+# ── 交易成本 ──
+_STAMP_TAX = 0.0005
+_COMMISSION = 0.00025
+_MIN_COMM = 5.0
 
 
 def _trade_cost(amount: float, action: str) -> float:
-    """计算单边交易成本。买入：佣金；卖出：佣金+印花税。"""
     comm = max(amount * _COMMISSION, _MIN_COMM)
     if action == "sell":
         comm += amount * _STAMP_TAX
@@ -143,29 +56,35 @@ def _trade_cost(amount: float, action: str) -> float:
 
 
 def _is_limit_up(pct_chg: float | None) -> bool:
-    """涨停板检查：涨幅≥9.8%视为涨停（兼容主板10%/ST 5%/科创20%）。"""
     if pct_chg is None:
         return False
     return float(pct_chg) >= 9.8
 
 
-def run(daily_data: list[dict], strategy: str = "ma_cross", initial_cash: float = 100000) -> dict:
-    """执行回测，返回 {equity_curve, trades, metrics, buy_signals, sell_signals}。
+def cache_key(ts_code: str, strategy: str, params: dict | None = None) -> str:
+    p = _hash_params(params or {})
+    return f"bt:{ts_code}:{strategy}:{p}"
 
-    daily_data: [{"trade_date": "20240102", "open": 10.0, "close": 10.5, "volume": 123456,
-                   "pct_chg": 0.5}, ...] ASC by date
 
-    B1: 交易成本（印花税+佣金+最低5元）计入 cash 流。
-    B2: 信号日收盘触发 → 次日开盘价成交，消除未来函数。
-    B3: 买入执行日遇涨停跳过，不成交。
+def run(daily_data: list[dict], strategy: str = "ma_cross",
+        initial_cash: float = 100000) -> dict:
+    """执行回测。
+
+    B1: 交易成本（印花税+佣金+最低5元）
+    B2: 信号日收盘触发 → 次日开盘价成交（消除未来函数）
+    B3: 买入日遇涨停跳过
     """
+    if strategy not in STRATEGIES:
+        existing = ", ".join(STRATEGIES.keys())
+        return {"error": f"未知策略 '{strategy}'，可用: {existing}"}
+
+    signal_fn = STRATEGIES[strategy]
+    signals = signal_fn(daily_data)
+
     dates = [r["trade_date"] for r in daily_data]
     opens = [float(r.get("open", 0) or 0) for r in daily_data]
     closes = [float(r["close"]) for r in daily_data]
-    volumes = [float(r.get("volume", 0) or 0) for r in daily_data]
     pct_chgs = [r.get("pct_chg") for r in daily_data]
-
-    signals = _SIGNAL_FNS[strategy](closes, volumes)
 
     cash = float(initial_cash)
     shares = 0
@@ -180,11 +99,10 @@ def run(daily_data: list[dict], strategy: str = "ma_cross", initial_cash: float 
     sp = 0
     n = len(dates)
     for i in range(n):
-        # ── Step 1: 执行 pending 交易（次日开盘价成交）──
+        # Step 1: 执行 pending 交易（次日开盘）
         if pending_action is not None and opens[i] > 0:
             px = opens[i]
             if pending_action == "buy":
-                # B3: 涨停不可买
                 if not _is_limit_up(pct_chgs[i]):
                     if cash >= 100:
                         buy_shares = int(cash * 0.98 / px / 100) * 100
@@ -194,25 +112,27 @@ def run(daily_data: list[dict], strategy: str = "ma_cross", initial_cash: float 
                         fee = _trade_cost(amount, "buy")
                         cash -= amount + fee
                         shares += buy_shares
-                        trades.append({"date": dates[i], "action": "buy", "price": round(px, 2),
-                                       "shares": buy_shares, "amount": round(amount, 2),
-                                       "fee": round(fee, 2), "reason": pending_reason})
+                        trades.append({
+                            "date": dates[i], "action": "buy", "price": round(px, 2),
+                            "shares": buy_shares, "amount": round(amount, 2),
+                            "fee": round(fee, 2), "reason": pending_reason,
+                        })
                         buy_sigs.append([dates[i], round(px, 2)])
-
             elif pending_action == "sell" and shares > 0:
                 amount = shares * px
                 fee = _trade_cost(amount, "sell")
                 cash += amount - fee
-                trades.append({"date": dates[i], "action": "sell", "price": round(px, 2),
-                               "shares": shares, "amount": round(amount, 2),
-                               "fee": round(fee, 2), "reason": pending_reason})
+                trades.append({
+                    "date": dates[i], "action": "sell", "price": round(px, 2),
+                    "shares": shares, "amount": round(amount, 2),
+                    "fee": round(fee, 2), "reason": pending_reason,
+                })
                 sell_sigs.append([dates[i], round(px, 2)])
                 shares = 0
-
             pending_action = None
 
-        # ── Step 2: 从今日收盘信号生成 pending（次日执行）──
-        if i < n - 1:  # 最后一天不生成信号，因为无次日可执行
+        # Step 2: 从今日收盘信号生成 pending（次日执行）
+        if i < n - 1:
             while sp < len(signals) and signals[sp][0] == i:
                 _, action = signals[sp]
                 if action == "buy" and shares == 0 and pending_action is None:
@@ -223,26 +143,52 @@ def run(daily_data: list[dict], strategy: str = "ma_cross", initial_cash: float 
                     pending_reason = _reason(strategy, "sell")
                 sp += 1
 
-        # ── Step 3: 按当日收盘价记录权益 ──
+        # Step 3: 按当日收盘价记录权益
         equity.append([dates[i], round(cash + shares * closes[i], 2)])
 
-    # 期末强平（按最后收盘价，含成本）
+    # 期末平仓
     if shares > 0:
         last_px = closes[-1]
         amount = shares * last_px
         fee = _trade_cost(amount, "sell")
         cash += amount - fee
-        trades.append({"date": dates[-1], "action": "sell", "price": round(last_px, 2),
-                       "shares": shares, "amount": round(amount, 2),
-                       "fee": round(fee, 2), "reason": "期末平仓"})
+        trades.append({
+            "date": dates[-1], "action": "sell", "price": round(last_px, 2),
+            "shares": shares, "amount": round(amount, 2),
+            "fee": round(fee, 2), "reason": "期末平仓",
+        })
         sell_sigs.append([dates[-1], round(last_px, 2)])
         shares = 0
         equity[-1][1] = round(cash, 2)
 
+    metrics = _metrics(equity, trades, initial_cash)
+
+    # 买入持有基准（期初全仓，同一初始资金，逐日市值）
+    bh_cash = float(initial_cash)
+    bh_shares = 0
+    buy_hold_equity = []
+    for i in range(n):
+        if i == 0 and opens[i] > 0:
+            px = opens[i]
+            bs = int(bh_cash * 0.98 / px / 100) * 100
+            if bs <= 0:
+                bs = 10
+            amount = bs * px
+            bh_cash -= amount + _trade_cost(amount, "buy")
+            bh_shares += bs
+        buy_hold_equity.append([dates[i], round(bh_cash + bh_shares * closes[i], 2)])
+    if bh_shares > 0:
+        bh_cash += bh_shares * closes[-1] - _trade_cost(bh_shares * closes[-1], "sell")
+        buy_hold_equity[-1][1] = round(bh_cash, 2)
+    bh_total_ret = round((bh_cash - initial_cash) / initial_cash * 100, 2)
+    metrics["buy_hold_return"] = bh_total_ret
+    metrics["excess_return"] = round(metrics["total_return"] - bh_total_ret, 2)
+
     return {
         "equity_curve": equity,
+        "buy_hold_curve": buy_hold_equity,
         "trades": trades,
-        "metrics": _metrics(equity, trades, initial_cash),
+        "metrics": metrics,
         "buy_signals": buy_sigs,
         "sell_signals": sell_sigs,
         "drawdown_curve": _drawdown(equity),
@@ -250,8 +196,9 @@ def run(daily_data: list[dict], strategy: str = "ma_cross", initial_cash: float 
     }
 
 
+# ── 统计指标 ──
+
 def _drawdown(equity: list[list]) -> list[list]:
-    """回撤曲线：每日回撤百分比"""
     dd = []
     peak = 0.0
     for dt, v in equity:
@@ -262,32 +209,16 @@ def _drawdown(equity: list[list]) -> list[list]:
 
 
 def _monthly_returns(equity: list[list]) -> list[list]:
-    """月度收益热力图数据：[[yyyymm, return_pct], ...]"""
     by_month: dict[str, list[float]] = {}
-    for i, (dt, v) in enumerate(equity):
+    for dt, v in equity:
         ym = dt[:6]
-        if ym not in by_month:
-            by_month[ym] = [v]
-        else:
-            by_month[ym].append(v)
+        by_month.setdefault(ym, []).append(v)
     months = []
     for ym, vals in sorted(by_month.items()):
         first, last = vals[0], vals[-1]
         ret = round((last - first) / first * 100, 2) if first > 0 else 0
         months.append([ym, ret, f"{ret:+.2f}%"])
     return months
-
-
-def _reason(strategy: str, action: str) -> str:
-    m = {
-        "ma_cross": {"buy": "金叉买入", "sell": "死叉卖出"},
-        "macd_cross": {"buy": "MACD金叉", "sell": "MACD死叉"},
-        "volume_break": {"buy": "放量突破买入", "sell": "跌破MA10卖出"},
-        "boll_break": {"buy": "布林下轨突破", "sell": "回归中轨"},
-        "rsi_reversal": {"buy": "RSI超卖买入", "sell": "RSI超买卖出"},
-        "momentum": {"buy": "动量突破", "sell": "动量衰减"},
-    }
-    return m.get(strategy, {}).get(action, action)
 
 
 def _metrics(equity: list[list], trades: list[dict], initial: float) -> dict:
@@ -297,7 +228,6 @@ def _metrics(equity: list[list], trades: list[dict], initial: float) -> dict:
     years = trading_days / 252
     ann_ret = round((final_eq / initial) ** (1 / years) * 100 - 100, 2) if years > 0 else 0
 
-    # 配对交易统计（按截面配对：每笔buy匹配下一笔sell）
     winds, losses = [], []
     used: set[int] = set()
     for i, t in enumerate(trades):
@@ -312,24 +242,25 @@ def _metrics(equity: list[list], trades: list[dict], initial: float) -> dict:
             continue
         used.add(sell_idx)
         pnl = trades[sell_idx]["amount"] - t["amount"]
-        # 买卖各含费用
         pnl -= t.get("fee", 0) + trades[sell_idx].get("fee", 0)
         (winds if pnl > 0 else losses).append(abs(pnl))
+
     n = len(winds) + len(losses)
     win_rate = round(len(winds) / n * 100, 1) if n else 0
     avg_win = round(sum(winds) / len(winds), 2) if winds else 0
     avg_loss = round(sum(losses) / len(losses), 2) if losses else 0
     plr = round(avg_win / avg_loss, 2) if avg_loss else 0
 
-    # 最大回撤
     peak, max_dd = equity[0][1], 0.0
     for _, v in equity:
         peak = max(peak, v)
         max_dd = max(max_dd, (peak - v) / peak)
 
-    # 日收益率 std
     eq_vals = [v for _, v in equity]
-    d_ret = [(eq_vals[i] - eq_vals[i - 1]) / eq_vals[i - 1] for i in range(1, len(eq_vals)) if eq_vals[i - 1]]
+    d_ret = [
+        (eq_vals[i] - eq_vals[i - 1]) / eq_vals[i - 1]
+        for i in range(1, len(eq_vals)) if eq_vals[i - 1]
+    ]
     if d_ret:
         m = sum(d_ret) / len(d_ret)
         var = sum((r - m) ** 2 for r in d_ret) / len(d_ret)

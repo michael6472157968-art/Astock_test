@@ -224,9 +224,110 @@ async def get_margin(trade_date: str) -> list[dict]:
     return result.to_dict(orient="records")
 
 
-async def get_stk_holdernumber(ts_code: str) -> list[dict]:
-    """股东人数变化——历史各期。2000积分解锁。"""
-    result = await call_tushare("stk_holdernumber", ts_code=ts_code)
+async def get_stk_holdernumber(ts_code: str = "") -> list[dict]:
+    """股东人数变化——如传ts_code返回个股各期，不传返回全市场最新一期。2000积分解锁。"""
+    kwargs = {"ts_code": ts_code} if ts_code else {}
+    result = await call_tushare("stk_holdernumber", **kwargs)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_hsgt_top10(trade_date: str) -> list[dict]:
+    """沪深港通十大成交股——北向每日活跃股。2000积分解锁。"""
+    result = await call_tushare("hsgt_top10", trade_date=trade_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_top10_floatholders(ts_code: str = "") -> list[dict]:
+    """十大流通股东——全市场最新报告期。2000积分解锁。"""
+    kwargs = {"ts_code": ts_code} if ts_code else {}
+    result = await call_tushare("top10_floatholders", **kwargs)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+# ── 8000积分特色数据 ──
+
+async def get_cyq_perf(trade_date: str) -> list[dict]:
+    """筹码及胜率——全市场单日。8000积分解锁。"""
+    result = await call_tushare("cyq_perf", trade_date=trade_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_top_list(trade_date: str) -> list[dict]:
+    """龙虎榜每日明细。5000积分解锁。"""
+    result = await call_tushare("top_list", trade_date=trade_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_top_inst(trade_date: str) -> list[dict]:
+    """龙虎榜机构交易单。5000积分解锁。"""
+    result = await call_tushare("top_inst", trade_date=trade_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_dc_index(trade_date: str, idx_type: str = "行业板块") -> list[dict]:
+    """东方财富概念/行业板块。6000积分解锁。"""
+    result = await call_tushare("dc_index", trade_date=trade_date, idx_type=idx_type)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_dc_member(trade_date: str) -> list[dict]:
+    """东方财富概念成分。6000积分解锁。"""
+    result = await call_tushare("dc_member", trade_date=trade_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_broker_recommend(month: str) -> list[dict]:
+    """券商月度金股。6000积分解锁。"""
+    result = await call_tushare("broker_recommend", month=month)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_share_float(start_date: str, end_date: str) -> list[dict]:
+    """限售股解禁。5000积分解锁。"""
+    result = await call_tushare("share_float", start_date=start_date, end_date=end_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_stk_holdertrade(start_date: str, end_date: str) -> list[dict]:
+    """股东增减持。5000积分解锁。"""
+    result = await call_tushare("stk_holdertrade", start_date=start_date, end_date=end_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_express(period: str) -> list[dict]:
+    """业绩快报。2000积分解锁。"""
+    result = await call_tushare("express", period=period)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
+async def get_top10_holders(ts_code: str = "") -> list[dict]:
+    """十大股东。2000积分解锁。"""
+    kwargs = {"ts_code": ts_code} if ts_code else {}
+    result = await call_tushare("top10_holders", **kwargs)
     if result is None or (hasattr(result, 'empty') and result.empty):
         return []
     return result.to_dict(orient="records")

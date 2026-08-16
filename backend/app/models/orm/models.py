@@ -107,7 +107,12 @@ class DailyBasic(Base):
     ts_code = Column(String(20), nullable=False)
     trade_date = Column(String(8), nullable=False)
     pe = Column(Float, nullable=True)
+    pe_ttm = Column(Float, nullable=True)
     pb = Column(Float, nullable=True)
+    ps = Column(Float, nullable=True)
+    ps_ttm = Column(Float, nullable=True)
+    dv_ratio = Column(Float, nullable=True)
+    dv_ttm = Column(Float, nullable=True)
     total_mv = Column(Float, nullable=True)
     circ_mv = Column(Float, nullable=True)
     turnover_rate = Column(Float, nullable=True)
@@ -214,6 +219,31 @@ class MarginRecord(Base):
     )
 
 
+class MoneyflowRecord(Base):
+    """个股资金流向——主力/超大单/大单/中单/小单净流入。2000积分解锁。
+    按交易日全市场批量同步，金额单位：万元。"""
+    __tablename__ = "moneyflow_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ts_code = Column(String(20), nullable=False)
+    trade_date = Column(String(8), nullable=False)
+    net_mf_amount = Column(Float, nullable=True)  # 主力净流入额(万元)
+    net_mf_vol = Column(Float, nullable=True)     # 主力净流入量(手)
+    buy_elg_amount = Column(Float, nullable=True) # 超大单买入额(万元)
+    sell_elg_amount = Column(Float, nullable=True)
+    buy_lg_amount = Column(Float, nullable=True)  # 大单买入额(万元)
+    sell_lg_amount = Column(Float, nullable=True)
+    buy_md_amount = Column(Float, nullable=True)  # 中单买入额(万元)
+    sell_md_amount = Column(Float, nullable=True)
+    buy_sm_amount = Column(Float, nullable=True)  # 小单买入额(万元)
+    sell_sm_amount = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=_now)
+
+    __table_args__ = (
+        Index("ix_moneyflow_td_code", "trade_date", "ts_code", unique=True),
+    )
+
+
 class BacktestResult(Base):
     __tablename__ = "backtest_results"
 
@@ -277,7 +307,7 @@ class UserAlertConfig(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False, index=True)
     ts_code = Column(String(20), nullable=False)
-    alert_types = Column(Text, default="[]")  # JSON数组：技术面信号类型
+    alert_types = Column(Text, default="[]")
     is_active = Column(Integer, default=1)
     created_at = Column(DateTime, default=_now)
 
@@ -333,25 +363,6 @@ class CheckinRecord(Base):
     __table_args__ = (
         Index("ix_checkin_user_date_unique", "user_id", "date", unique=True),
     )
-
-
-class ResearchExperiment(Base):
-    """因子验证实验日记——记录每次 IC/分组回测的配置与结果。"""
-    __tablename__ = "research_experiments"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    experiment_id = Column(String(30), nullable=False, index=True)
-    pool_name = Column(String(30), default="")
-    config_hash = Column(String(20), default="")
-    date_start = Column(String(10), default="")
-    date_end = Column(String(10), default="")
-    train_len = Column(Integer, default=0)
-    test_len = Column(Integer, default=0)
-    lookback = Column(Integer, default=0)
-    ic_summary = Column(Text, default="[]")
-    group_result = Column(Text, default="{}")
-    status = Column(String(20), default="pending")
-    created_at = Column(DateTime, default=_now)
 
 
 class MarketGuess(Base):

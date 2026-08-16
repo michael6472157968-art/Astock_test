@@ -106,14 +106,27 @@ def kdj(highs: list[float], lows: list[float], closes: list[float], n: int = 9) 
 
 
 def atr(highs: list[float], lows: list[float], closes: list[float], n: int = 14) -> list[float | None]:
-    """平均真实波幅 ATR。前 n 天返回 None。"""
-    trs: list[float] = []
+    """平均真实波幅 ATR。前 n 天返回 None，长度与输入等长。
+
+    手写滚动均值，保证 atr[i] 对应截至 closes[i] 的 ATR（无错位/未来函数）。
+    """
+    out: list[float | None] = [None] * len(closes)
+    if len(closes) <= n:
+        return out
+    # tr[i] = 截至第 i 日的真实波幅（i>=1），首日置 0 占位
+    trs: list[float] = [0.0] * len(closes)
     for i in range(1, len(closes)):
         a = highs[i] - lows[i]
         b = abs(highs[i] - closes[i - 1])
         c = abs(lows[i] - closes[i - 1])
-        trs.append(max(a, b, c))
-    return sma(trs, n)
+        trs[i] = max(a, b, c)
+    # 滚动窗口 [i-n+1, i] 的 TR 均值，从 i=n 起（前 n 天无值）
+    window_sum = sum(trs[1:n + 1])
+    out[n] = window_sum / n
+    for i in range(n + 1, len(closes)):
+        window_sum += trs[i] - trs[i - n]
+        out[i] = window_sum / n
+    return out
 
 
 # ───────────────────────────── 量价因子 ─────────────────────────────
@@ -211,6 +224,30 @@ def rank_pct(series: list[float]) -> list[float]:
     return result
 
 
+def rank_pct_external(values: list[float], universe: list[float]) -> list[float]:
+    """在 universe 基准上对 values 做百分位排名。
+    universe 应代表全市场横截面值（如全市场 PE），values 是候选池子集。
+    返回值 ∈ [0, 1] 基于 universe 的排名位置，而非池内排名。
+    """
+    if len(universe) < 2:
+        return rank_pct(values)
+    sorted_u = sorted(universe)
+    nu = len(sorted_u)
+    result = []
+    for v in values:
+        # binary search for v's position in sorted_u
+        lo, hi = 0, nu - 1
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if sorted_u[mid] < v:
+                lo = mid + 1
+            else:
+                hi = mid
+        rank = lo
+        result.append(round(rank / (nu - 1), 6))
+    return result
+
+
 def filter_suspended(closes: list[float]) -> list[bool]:
     """标记疑似停牌日：收盘价连续持平（基于前复权价）。"""
     if len(closes) < 2:
@@ -294,7 +331,8 @@ def _pearson(x: list[float], y: list[float]) -> float:
 _BASE_COLS = 5
 
 
-def score_and_rank(rows, config: dict, reason_prefix: str = "", limit: int = 10) -> list[dict]:
+def score_and_rank(rows, config: dict, reason_prefix: str = "",
+                   limit: int = 10, universe_rows: list | None = None) -> list[dict]:
     """横截面多因子评分排序——配置驱动的通用入口。
 
     归一化策略：
@@ -303,6 +341,9 @@ def score_and_rank(rows, config: dict, reason_prefix: str = "", limit: int = 10)
     - vol_ratio 特殊处理：按 |val - 1.0| 排名（越接近1分越高）
     - 其他因子：rank_pct 横截面百分位排名
     - invert_fields 中的因子：取 (1 - score) 反向
+
+    如果提供了 universe_rows（全市场当日横截面），rank_pct 会在全市场基准上计算，
+    而非仅在 rows 内部排名。这确保 IC 验证结果可推广到实时评分场景。
 
     config 结构（来自 factor_weights.json）：
       {"fields": [...], "weights": [...], "zscore_fields": [...],
@@ -317,7 +358,7 @@ def score_and_rank(rows, config: dict, reason_prefix: str = "", limit: int = 10)
     invert_fields: set[str] = set(config.get("invert_fields", []))
     oversold_field: str | None = config.get("oversold_field")
 
-    # 提取每个因子值
+    # 提取候选池因子值
     field_vals_all: dict[str, list[float]] = {f: [] for f in fields}
     raw_items: list[dict] = []
     for row in rows:
@@ -335,13 +376,29 @@ def score_and_rank(rows, config: dict, reason_prefix: str = "", limit: int = 10)
             "fv": fv,
         })
 
+    # 提取全市场基准值（如果提供）
+    universe_vals_all: dict[str, list[float]] = {}
+    if universe_rows:
+        for f in fields:
+            uvals = []
+            for row in universe_rows:
+                idx = _BASE_COLS + fields.index(f)
+                if idx < len(row) and row[idx] is not None:
+                    uvals.append(float(row[idx]))
+            universe_vals_all[f] = uvals
+
     # 每个因子做归一化
     norm_cache: dict[str, list[float]] = {}
     for f in fields:
         vals = field_vals_all[f]
         if f == "vol_ratio":
-            dist = [abs(v - 1.0) for v in vals]
-            norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct(dist)]
+            if universe_vals_all and f in universe_vals_all:
+                udist = [abs(v - 1.0) for v in universe_vals_all[f]]
+                dist = [abs(v - 1.0) for v in vals]
+                norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct_external(dist, udist)]
+            else:
+                dist = [abs(v - 1.0) for v in vals]
+                norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct(dist)]
         elif f in zscore_fields:
             w = winsorize_mad(vals, 5.0)
             z = zscore(w)
@@ -352,9 +409,15 @@ def score_and_rank(rows, config: dict, reason_prefix: str = "", limit: int = 10)
             else:
                 norm_cache[f] = normed
         elif f in invert_fields:
-            norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct(vals)]
+            if universe_vals_all and f in universe_vals_all:
+                norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct_external(vals, universe_vals_all[f])]
+            else:
+                norm_cache[f] = [round(1.0 - r, 6) for r in rank_pct(vals)]
         else:
-            norm_cache[f] = rank_pct(vals)
+            if universe_vals_all and f in universe_vals_all:
+                norm_cache[f] = rank_pct_external(vals, universe_vals_all[f])
+            else:
+                norm_cache[f] = rank_pct(vals)
 
     # 加权评分
     scored = []

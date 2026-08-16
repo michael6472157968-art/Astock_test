@@ -708,7 +708,7 @@ async def latest_review(user: dict = Depends(require_auth_optional)):
     from app.services.market_review import MarketReviewEngine
     engine = MarketReviewEngine()
     review_data = await engine.compute(trade_date)
-    if review_data and review_data.get("content", {}).get("total"):
+    if review_data and (review_data.get("content", {}).get("temperature", {}).get("total") or review_data.get("content", {}).get("ai_summary")):
         await cache_set(f"review:{trade_date}", review_data, ttl=86400 * 60)
         review_data["is_trade_day"] = is_td
         review_data["trade_date"] = trade_date
@@ -785,7 +785,7 @@ async def review_daily(date: str = "", user: dict = Depends(require_auth_optiona
     # Recompute content
     engine = MarketReviewEngine()
     review_data = await engine.compute(date)
-    if review_data and review_data.get("content", {}).get("total"):
+    if review_data and (review_data.get("content", {}).get("temperature", {}).get("total") or review_data.get("content", {}).get("ai_summary")):
         review_data["status"] = "ready"
         review_data["is_trade_day"] = is_td
         review_data["trade_date"] = date
@@ -825,7 +825,9 @@ async def review_generate(request: Request, user: dict = Depends(require_auth_op
     engine = MarketReviewEngine()
     review_data = await engine.compute(trade_date)
 
-    if not review_data or not review_data.get("content", {}).get("total"):
+    content = review_data.get("content", {})
+    temp = content.get("temperature", {})
+    if not review_data or (not temp.get("total") and not content.get("ai_summary")):
         return APIResponse(
             data={"status": "empty", "date": trade_date, "message": "该日期暂无交易数据"},
             timestamp=int(time.time()),
@@ -868,7 +870,10 @@ async def review_download(date: str = "", fmt: str = "md", user: dict = Depends(
         if cached and cached.get("content", {}).get("total"):
             await cache_set(f"review:{date}", cached, ttl=86400 * 60)
 
-    if not cached or not cached.get("content", {}).get("total"):
+    if not cached or not cached.get("content"):
+        raise HTTPException(status_code=404, detail="报告不存在或数据为空")
+    temp = cached.get("content", {}).get("temperature", {})
+    if not temp.get("total") and not cached.get("content", {}).get("ai_summary"):
         raise HTTPException(status_code=404, detail="报告不存在或数据为空")
 
     if fmt == "pdf":
@@ -890,36 +895,89 @@ async def review_download(date: str = "", fmt: str = "md", user: dict = Depends(
 
 
 def _build_markdown(date: str, dt_label: str, c: dict) -> str:
-    md = f"# 每日市场复盘简报 — {dt_label}\n\n"
-    md += f"## 大盘概览\n\n"
-    md += f"- 全市场: **{c['total']}** 只\n"
-    md += f"- 上涨: **{c['up_count']}** | 平盘: **{c.get('flat_count', 0)}** | 下跌: **{c['down_count']}**\n"
-    md += f"- 涨停: **{c['limit_up']}** 只 | 跌停: **{c['limit_down']}** 只\n"
-    md += f"- 平均涨跌幅: **{c['avg_pct']:+.2f}%**\n"
-    md += f"- 涨跌比: **{c.get('up_ratio', 0)}%**\n\n"
+    md = f"# AI 量化每日复盘 — {dt_label}\n\n"
 
-    if c.get("top_gainers"):
-        md += "## 涨幅 TOP5\n\n"
-        md += "| 名称 | 涨幅 | 行业 |\n|------|------|------|\n"
-        for s in c["top_gainers"]:
-            md += f"| {s['name']} | {s['pct']:+.2f}% | {s.get('industry', '')} |\n"
+    # Dimension 1: Market temperature
+    t = c.get("temperature", {})
+    if t and t.get("total"):
+        md += f"## 大盘温度 — {t.get('width_label', '')}\n\n"
+        md += f"- 全市场: **{t['total']}** 只\n"
+        md += f"- 上涨: **{t.get('up_count', 0)}** | 平盘: **{t.get('flat_count', 0)}** | 下跌: **{t.get('down_count', 0)}**\n"
+        md += f"- 涨停: **{t.get('limit_up', 0)}** 只 | 跌停: **{t.get('limit_down', 0)}** 只\n"
+        md += f"- 平均涨跌幅: **{t.get('avg_pct', 0):+.2f}%**\n"
+        md += f"- 涨跌比: **{t.get('up_ratio', 0)}%**\n"
+        md += f"- 成交额: **{t.get('total_amount_yi', 0):.0f}** 亿 | 均换手: **{t.get('avg_turnover', 0)}%**\n"
+        md += f"- 情绪分: **{t.get('sentiment_score', '')}**\n\n"
+
+        if t.get("top_gainers"):
+            md += "### 涨幅 TOP5\n\n| 名称 | 涨幅 | 行业 |\n|------|------|------|\n"
+            for s in t["top_gainers"]:
+                md += f"| {s['name']} | {s['pct']:+.2f}% | {s.get('industry', '')} |\n"
+            md += "\n"
+        if t.get("top_losers"):
+            md += "### 跌幅 TOP5\n\n| 名称 | 跌幅 | 行业 |\n|------|------|------|\n"
+            for s in t["top_losers"]:
+                md += f"| {s['name']} | {s['pct']:+.2f}% | {s.get('industry', '')} |\n"
+            md += "\n"
+        if t.get("top_sectors"):
+            md += "### 行业涨幅 TOP5\n\n| 行业 | 平均涨幅 |\n|------|----------|\n"
+            for s in t["top_sectors"]:
+                md += f"| {s['name']} | {s['avg_pct']:+.2f}% |\n"
+            md += "\n"
+
+    # Dimension 2: Smart money
+    sm = c.get("smart_money", {})
+    if sm and sm.get("smart_money_label"):
+        md += f"## 聪明钱共识 — {sm.get('smart_money_label', '')}\n\n"
+        md += f"- 北向净流入: **{sm.get('northbound_net_yi', 0):+.1f}** 亿\n"
+        if sm.get("northbound_5d_trend"):
+            trend_str = " → ".join(f"{v:+.1f}" for v in sm["northbound_5d_trend"])
+            md += f"- 北向5日趋势: {trend_str} 亿\n"
+        md += f"- 融资余额变化: **{sm.get('margin_balance_change_yi', 0):+.1f}** 亿\n"
+        md += f"- 融资余额总量: **{sm.get('margin_balance_total_yi', 0):.0f}** 亿\n\n"
+
+    # Dimension 3: Limit-up deep
+    lu = c.get("limit_up_deep", {})
+    if lu and lu.get("total_limit_up", 0) > 0:
+        md += f"## 涨停深度复盘\n\n"
+        md += f"- 涨停: **{lu.get('total_limit_up', 0)}** | 炸板: **{lu.get('zhaban', 0)}** | 封板率: **{lu.get('seal_rate', 0)}%**\n"
+        md += f"- 首板: **{lu.get('first_board', 0)}** | 连板: **{lu.get('lianban_count', 0)}**\n"
+        if lu.get("lianban_king"):
+            k = lu["lianban_king"]
+            md += f"- 连板龙头: **{k.get('name', '')}** ({k.get('boards', 0)}板) +{k.get('pct_chg', 0)}%\n"
+        if lu.get("top_concepts"):
+            md += f"- 热门概念: {' / '.join(lu['top_concepts'])}\n"
         md += "\n"
 
-    if c.get("top_losers"):
-        md += "## 跌幅 TOP5\n\n"
-        md += "| 名称 | 跌幅 | 行业 |\n|------|------|------|\n"
-        for s in c["top_losers"]:
-            md += f"| {s['name']} | {s['pct']:+.2f}% | {s.get('industry', '')} |\n"
-        md += "\n"
+    # Dimension 4: Earnings bombs
+    eb = c.get("earnings_bombs", {})
+    if eb:
+        warnings = eb.get("warnings", [])
+        md += f"## 业绩预警 ({len(warnings)}条)\n\n"
+        if warnings:
+            md += "| 名称 | 预警类型 | PE | 涨跌 |\n|------|---------|----|------|\n"
+            for w in warnings:
+                md += f"| {w.get('name', '')} | {w.get('type', '')} | {w.get('pe', '-')} | {w.get('pct_chg', 0):+.2f}% |\n"
+            md += "\n"
+        if eb.get("note"):
+            md += f"*{eb['note']}*\n\n"
 
-    if c.get("top_sectors"):
-        md += "## 行业涨幅 TOP5\n\n"
-        md += "| 行业 | 平均涨幅 |\n|------|----------|\n"
-        for s in c["top_sectors"]:
-            md += f"| {s['name']} | {s['avg_pct']:+.2f}% |\n"
-        md += "\n"
+    # Dimension 6: Anomaly signals
+    an = c.get("anomaly", {})
+    if an:
+        md += f"## 异常信号\n\n"
+        md += f"- 高换手(>10%): **{len(an.get('high_turnover', []))}** 只\n"
+        md += f"- 放量(量比>3): **{len(an.get('volume_surge', []))}** 只\n"
+        md += f"- 5日急涨(>20%): **{len(an.get('rapid_rise_5d', []))}** 只\n"
+        md += f"- 5日急跌(<-20%): **{len(an.get('rapid_drop_5d', []))}** 只\n\n"
 
-    md += f"---\n*报告由 Stockwin 短线助手自动生成 · {dt_label}*\n"
+    # Dimension 8: AI summary
+    ai = c.get("ai_summary", {})
+    if ai and ai.get("text"):
+        md += f"## AI 总结\n\n> {ai['text']}\n\n"
+        md += f"*生成模型: {ai.get('model', 'AI')}*\n\n"
+
+    md += f"---\n*报告由 Stockwin AI量化复盘自动生成 · {dt_label}*\n"
     return md
 
 

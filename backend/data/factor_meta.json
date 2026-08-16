@@ -1,0 +1,112 @@
+{
+  "f1": {
+    "code": "F1",
+    "name": "反转 return_42d",
+    "dim": "价格",
+    "signal": "买近2月跌得多的（均值回归）",
+    "ic": -0.056,
+    "perf": "IC -0.056 · 净+21% 夏普1.15 · 换手30.6% · 正年份9/11",
+    "env": "横截面选股 · 短周期(5-10天调仓) · 熊市强牛市弱 · 42d窗口抱团年有效",
+    "desc": "买近42日跌幅大的股票、卖涨幅大的。最强单因子，须剔除股价<3元退市风险(幸存者偏差砍半)。",
+    "compute": {"type": "return", "window": 42, "direction": "low_good"}
+  },
+  "f2": {
+    "code": "F2",
+    "name": "量价背离 a101_16",
+    "dim": "量",
+    "signal": "买价量负相关(缩量涨/放量跌)",
+    "ic": 0.056,
+    "perf": "IC +0.056 · 净+11.5% 夏普1.39 · 换手33-38%",
+    "env": "横截面选股 · 全市场 · 2020结构性行情抗跌",
+    "desc": "价量负相关(缩量上涨健康/放量下跌危险)。与放量见顶同源，换到横截面维度。",
+    "compute": {"type": "corr_price_vol", "window": 20, "direction": "low_good"}
+  },
+  "f3": {
+    "code": "F3",
+    "name": "低波动 vol_21d",
+    "dim": "量",
+    "signal": "买低波动",
+    "ic": -0.069,
+    "perf": "IC -0.069",
+    "env": "横截面选股 · 防御性 · 震荡市",
+    "desc": "低波动异象(低风险高收益，A股显著)。买近21日波动率低的股票。与低换手F10正关联(+0.64)同源，二选一避免冗余。",
+    "compute": {"type": "vol", "window": 21, "direction": "low_good"}
+  },
+  "f4": {
+    "code": "F4",
+    "name": "价值 BP=1/pb",
+    "dim": "基本面",
+    "signal": "买低市净率",
+    "ic": 0.061,
+    "perf": "IC +0.061 · 净+12% 夏普0.62 · 换手4.9%",
+    "env": "横截面选股 · 中长周期(季度调仓) · 抱团年有效",
+    "desc": "账面市值比，买低PB(低估)。换手极低(成本几乎0)，是降换手主力腿。低PB天然偏小盘。",
+    "compute": {"type": "daily_basic_field", "field": "pb", "direction": "low_good"}
+  },
+  "f5": {
+    "code": "F5",
+    "name": "价值 SP=1/ps_ttm",
+    "dim": "基本面",
+    "signal": "买低市销率",
+    "ic": 0.047,
+    "perf": "IC +0.047 · 净+11.2% 夏普0.75",
+    "env": "横截面选股 · 中长周期 · 抱团年有效",
+    "desc": "销售收益率，买低PS(营收估值低)。",
+    "compute": {"type": "daily_basic_field", "field": "ps_ttm", "direction": "low_good"}
+  },
+  "f6": {
+    "code": "F6",
+    "name": "价值 DP=dv_ttm",
+    "dim": "基本面",
+    "signal": "买高股息",
+    "ic": 0.049,
+    "perf": "IC +0.049 · 净+8.5% 夏普0.52",
+    "env": "横截面选股 · 中长周期 · 防御性",
+    "desc": "股息率TTM，买高股息。防御性强，适合震荡/熊市。",
+    "compute": {"type": "daily_basic_field", "field": "dv_ttm", "direction": "high_good"}
+  },
+  "f7": {
+    "code": "F7",
+    "name": "现金流质量 cfps_yoy",
+    "dim": "基本面",
+    "signal": "买经营现金流强",
+    "ic": null,
+    "perf": "IC t=16.1(每股现金流同比) · 净+5.2% 夏普0.64",
+    "env": "横截面选股 · 季度频(point-in-time) · 中长周期",
+    "desc": "【正交补充】每股现金流同比增速，买真金白银经营现金流强的。IC仅0.0135(量级小)，但与所有量价/价值因子正交(corr≈0)，是分散化第三腿。市场奖励现金流，不奖励账面盈利(ROE/ROA证伪)。",
+    "compute": {"type": "financial_field", "field": "cfps_yoy", "direction": "high_good"}
+  },
+  "f8": {
+    "code": "F8",
+    "name": "成长 扣非净利同比",
+    "dim": "基本面",
+    "signal": "买扣非净利增速高",
+    "ic": null,
+    "perf": "IC t=8.1 · 净+5.8% 夏普0.56",
+    "env": "横截面选股 · 季度频 · 中长周期 · 2020成长行情有效",
+    "desc": "【正交补充】扣非净利润同比增速，买增速高的。IC仅0.0153(全库最弱，t=8.1刚过阈值)，但与量价/价值因子正交，与价值BP轻微负相关(-0.115)偏成长风格。",
+    "compute": {"type": "financial_field", "field": "dt_netprofit_yoy", "direction": "high_good"}
+  },
+  "f9": {
+    "code": "F9",
+    "name": "放量见顶",
+    "dim": "量(择时)",
+    "signal": "量比>2且涨 → 看跌",
+    "ic": null,
+    "perf": "看跌准确率 +13.9pp",
+    "env": "单股票择时 · 不看市场状态 · 低频低换手",
+    "desc": "唯一有效的时间序列择时alpha：日线量比>2且当日上涨，未来看跌。出现此信号减仓/回避。",
+    "compute": {"type": "vol_surge_top", "direction": "bearish_signal"}
+  },
+  "f10": {
+    "code": "F10",
+    "name": "低换手 turnover_rate",
+    "dim": "量",
+    "signal": "买换手率低的（交易冷清）",
+    "ic": -0.109,
+    "perf": "IC -0.109 · t=-30.1 · 全价值域最强",
+    "env": "横截面选股 · 全市场 · 防御性 · 与低波动F3正关联(+0.64)需择一",
+    "desc": "低换手异象：交易冷清股未来跑赢。IC t=-30 全库第二强(仅次于量价背离F2)。与低波动F3正关联0.64，二选一避免冗余。",
+    "compute": {"type": "daily_basic_field", "field": "turnover_rate", "direction": "low_good"}
+  }
+}

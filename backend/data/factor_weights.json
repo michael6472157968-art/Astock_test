@@ -21,8 +21,8 @@
     "oversold_field": null
   },
   "short_t7_dip": {
-    "fields": ["drawdown", "chg3_recent", "chg10", "pct_chg", "pe", "pb", "total_mv"],
-    "weights": [0.25, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10],
+    "fields": ["drawdown", "chg10", "pct_chg", "pe", "pb", "total_mv"],
+    "weights": [0.30, 0.20, 0.15, 0.15, 0.10, 0.10],
     "zscore_fields": ["pe", "pb", "total_mv"],
     "invert_fields": [],
     "oversold_field": "drawdown"
@@ -53,6 +53,13 @@
     "weights": [0.30, 0.20, 0.15, 0.15, 0.10, 0.10],
     "zscore_fields": ["pe", "pb", "total_mv"],
     "invert_fields": [],
+    "oversold_field": null
+  },
+  "factor_daily": {
+    "fields": ["chg42", "pb", "turnover"],
+    "weights": [0.40, 0.35, 0.25],
+    "zscore_fields": [],
+    "invert_fields": ["chg42", "pb", "turnover"],
     "oversold_field": null
   }
 }

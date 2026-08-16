@@ -1,0 +1,37 @@
+{
+  "version": 3,
+  "calibrated_at": "2026-08-12T16:30:00",
+  "sample_size": 1000,
+  "batches": 3,
+  "batch_sizes": [300, 300, 400],
+  "batch_dates_total": 401777,
+  "forward_days": "per_eye",
+  "eye_forward_days": {
+    "candle": 5,
+    "indicator": 15,
+    "chan": 30,
+    "wave": 40,
+    "gann": 30
+  },
+  "cross_val_stability": {
+    "candle": "±0.7pp",
+    "indicator": "±0.9pp",
+    "chan": "±0.8pp",
+    "wave": "±1.6pp",
+    "gann": "±0.9pp"
+  },
+  "trend_weight": {
+    "candle": { "up": 0.28, "down": 0.26 },
+    "indicator": { "up": 0.34, "down": 0.31 },
+    "chan": { "up": 0.39, "down": 0.36 },
+    "wave": { "up": 0.39, "down": 0.37 },
+    "gann": { "up": 0.42, "down": 0.39 }
+  },
+  "signal_weight": {
+    "candle": { "buy": 0.30, "sell": 0.27 },
+    "indicator": { "buy": 0.37, "sell": 0.39 },
+    "chan": { "buy": 0.39, "sell": 0.37 },
+    "wave": { "buy": 0.34, "sell": 0.42 },
+    "gann": { "buy": 0.40, "sell": 0.40 }
+  }
+}

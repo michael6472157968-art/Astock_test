@@ -3,40 +3,62 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>策略回测 - Stockwin</title>
+<title>Stockwin 因子库 - Stockwin</title>
 <link rel="stylesheet" href="/css/app.css?v=15" />
 <style>
-.metrics-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
-.metric-card { flex: 1 1 calc(25% - 9px); min-width: 130px; text-align: center; padding: 14px 8px; background: var(--color-bg); border-radius: 8px; }
-.metric-card .val { font-size: 1.3rem; font-weight: 700; }
-.metric-card .label { font-size: 0.75rem; color: var(--color-text-muted); margin-top: 2px; }
-.val.pos { color: var(--color-danger); }  .val.neg { color: var(--color-success); }
-#eqChart { width: 100%; height: 400px; margin-bottom: 12px; }
-#ddChart { width: 100%; height: 200px; margin-bottom: 12px; }
-#heatChart { width: 100%; height: 280px; margin-bottom: 12px; }
-.heat-cell { fill: var(--color-bg); stroke: var(--color-border); }
+.factor-cards { display: flex; flex-wrap: wrap; gap: 12px; }
+.factor-card { flex: 1 1 calc(33% - 8px); min-width: 260px; padding: 14px 14px 12px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 10px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.factor-card:hover { border-color: var(--color-primary); }
+.factor-card.active { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-translucent, rgba(72,120,255,.15)); }
+.fc-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.fc-code { font-weight: 700; color: var(--color-primary); font-size: 0.9rem; white-space: nowrap; }
+.fc-name { font-weight: 600; font-size: 0.95rem; }
+.dim-tag { font-size: 0.68rem; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+.dim-价格 { background: rgba(72,120,255,.15); color: #4878ff; }
+.dim-量 { background: rgba(245,158,11,.15); color: #f59e0b; }
+.dim-基本面 { background: rgba(20,177,67,.15); color: #14b143; }
+.dim-量择时, .dim-量\(择时\) { background: rgba(239,35,42,.15); color: #ef232a; }
+.fc-ic { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 6px; }
+.fc-env { font-size: 0.72rem; color: var(--color-text-muted); line-height: 1.5; }
+.fc-desc { font-size: 0.78rem; color: var(--color-text); margin-top: 6px; line-height: 1.5; }
+.match-item { padding: 10px 12px; background: var(--color-bg); border-radius: 8px; margin-bottom: 8px; border-left: 3px solid var(--color-primary); }
+.match-item .mi-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.strength-tag { font-size: 0.7rem; padding: 1px 8px; border-radius: 10px; font-weight: 600; }
+.strength-强 { background: rgba(20,177,67,.15); color: #14b143; }
+.strength-中 { background: rgba(245,158,11,.15); color: #f59e0b; }
+.strength-反向 { background: rgba(239,35,42,.15); color: #ef232a; }
+.diag-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.diag-card { flex: 1 1 calc(33% - 8px); min-width: 200px; text-align: center; padding: 14px; background: var(--color-bg); border-radius: 8px; }
+.diag-card .val { font-size: 1.15rem; font-weight: 700; }
+.diag-card .label { font-size: 0.72rem; color: var(--color-text-muted); margin-top: 2px; }
+.diag-conclusion { padding: 14px; background: var(--color-bg); border-radius: 8px; line-height: 1.7; font-size: 0.9rem; }
+.state-empty { color: var(--color-text-muted); font-size: 0.85rem; padding: 8px 0; }
 </style>
 </head>
 <body>
 <main class="main-content" data-chrome>
-  <h2 class="page-title">可视化策略回测</h2>
-  <p class="page-desc">历史数据模拟回测，过往胜率不代表未来收益</p>
+  <h2 class="page-title">Stockwin 因子库</h2>
+  <p class="page-desc">9 个经 10 年数据验证的有效因子 · 配置驱动 · 支持实时更新</p>
 
-  <div class="card"><div class="card-header">回测参数</div><div class="card-body">
-    <div class="form-group"><label class="form-label">股票代码</label><input class="form-input" id="codeInput" value="000001.SZ" style="max-width:240px" oninput="this.value=filterStockInput(this.value)" /></div>
-    <div class="form-group"><label class="form-label">策略</label><select class="form-input" id="strategy" style="max-width:240px">
-      <option value="ma_cross">均线交叉 (MA5/MA20)</option>
-      <option value="macd_cross">MACD 金叉死叉</option>
-      <option value="volume_break">放量突破</option>
-      <option value="boll_break">布林带突破</option>
-      <option value="rsi_reversal">RSI 反转</option>
-      <option value="momentum">双动量</option>
-    </select></div>
-    <button class="btn btn-primary" onclick="run()">开始回测</button>
-    <p id="msg" style="margin-top:12px;color:var(--color-text-muted)"></p>
+  <!-- 因子库展示 -->
+  <div class="card"><div class="card-header">📚 因子库 <span id="factorTotal" style="font-size:0.75rem;color:var(--color-text-muted);font-weight:400;"></span></div><div class="card-body">
+    <div id="factorLib"><div class="state-empty">加载因子库...</div></div>
   </div></div>
 
-  <div id="result" style="margin-top:16px"></div>
+  <!-- 因子自动匹配 -->
+  <div class="card" style="margin-top:16px"><div class="card-header">🔍 因子自动匹配 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">输入股票，系统推荐当前最适配的因子</span></div><div class="card-body">
+    <div class="form-group"><label class="form-label">股票代码</label><input class="form-input" id="matchCode" value="000001.SZ" style="max-width:240px" oninput="this.value=filterStockInput(this.value)" /></div>
+    <button class="btn btn-primary" id="btnMatch" onclick="runMatch()">🔍 自动匹配</button>
+    <div id="matchResult" style="margin-top:12px"></div>
+  </div></div>
+
+  <!-- 因子诊断 -->
+  <div class="card" style="margin-top:16px"><div class="card-header">🔬 因子诊断 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">选因子分析该股全市场分位，给出结论</span></div><div class="card-body">
+    <div class="form-group"><label class="form-label">股票代码</label><input class="form-input" id="diagCode" value="000001.SZ" style="max-width:240px" oninput="this.value=filterStockInput(this.value)" /></div>
+    <div class="form-group"><label class="form-label">因子（编号检索）</label><select class="form-input" id="factorSelect" style="max-width:240px"></select></div>
+    <button class="btn btn-primary" id="btnDiag" onclick="runDiagnose()">诊断</button>
+    <div id="diagResult" style="margin-top:12px"></div>
+  </div></div>
 </main>
 <script src="/lib/echarts.js"></script>
 <script src="/js/app.js?v=17"></script>
@@ -46,185 +68,127 @@
   if (!Session.isVip()) Gate.showUpgradeBanner();
 })();
 
-function run() {
-  var code = normalizeStockCode(document.getElementById('codeInput').value);
-  var strategy = document.getElementById('strategy').value;
-  var btn = document.querySelector('.btn-primary');
-  var msg = document.getElementById('msg');
-  if (!code) { msg.textContent = '请输入股票代码'; return; }
-  btn.disabled = true; btn.textContent = '回测中...'; msg.textContent = '';
+var _factors = {};  // key -> meta
+var _selected = null;
 
-  API.post('/backtest/run', {stock_code: code, strategy: strategy}).then(function(r) {
-    if (!r.data || !r.data.metrics) { msg.textContent = r.message || '回测数据异常，请先同步日线数据'; msg.style.color = 'var(--color-danger)'; return; }
-    msg.textContent = '回测完成';
-    msg.style.color = 'var(--color-text-muted)';
-    render(r.data);
+function escHtml(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// 加载因子库
+function loadFactorLib() {
+  API.get('/backtest/strategies').then(function(r) {
+    if (!r.data || !r.data.categories) { document.getElementById('factorLib').innerHTML = '<div class="state-empty">因子库加载失败</div>'; return; }
+    document.getElementById('factorTotal').textContent = '共 ' + r.data.total + ' 个';
+    renderFactorLib(r.data.categories);
+    populateSelect(r.data.categories);
+  }).catch(function() {
+    document.getElementById('factorLib').innerHTML = '<div class="state-empty">因子库加载失败</div>';
+  });
+}
+
+function dimClass(dim) {
+  if (dim.indexOf('价格') >= 0) return 'dim-价格';
+  if (dim.indexOf('量') >= 0) return 'dim-量';
+  if (dim.indexOf('基本面') >= 0) return 'dim-基本面';
+  return 'dim-量';
+}
+
+function renderFactorLib(categories) {
+  var html = '';
+  Object.keys(categories).forEach(function(dim) {
+    html += '<div style="font-size:0.72rem;color:var(--color-text-muted);margin:10px 0 6px;padding-left:4px;">' + escHtml(dim) + '</div>';
+    html += '<div class="factor-cards">';
+    categories[dim].forEach(function(f) {
+      _factors[f.key] = f;
+      var active = _selected === f.key ? ' active' : '';
+      var icTxt = f.ic !== null && f.ic !== undefined ? ('IC ' + (f.ic>0?'+':'') + f.ic) : '';
+      html += '<div class="factor-card' + active + '" id="fc-' + f.key + '" onclick="selectFactor(\'' + f.key + '\')">';
+      html += '<div class="fc-top"><span class="fc-code">' + escHtml(f.code) + '</span><span class="fc-name">' + escHtml(f.name) + '</span><span class="dim-tag ' + dimClass(f.dim) + '">' + escHtml(f.dim) + '</span></div>';
+      html += '<div class="fc-ic">' + escHtml(f.signal) + (icTxt ? ' · ' + escHtml(icTxt) : '') + '</div>';
+      html += '<div class="fc-env">' + escHtml(f.env) + '</div>';
+      html += '<div class="fc-desc">' + escHtml(f.desc) + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+  document.getElementById('factorLib').innerHTML = html;
+}
+
+function populateSelect(categories) {
+  var sel = document.getElementById('factorSelect');
+  sel.innerHTML = '';
+  Object.keys(categories).forEach(function(dim) {
+    var group = document.createElement('optgroup');
+    group.label = dim;
+    categories[dim].forEach(function(f) {
+      var opt = document.createElement('option');
+      opt.value = f.key;
+      opt.textContent = f.code + ' ' + f.name;
+      group.appendChild(opt);
+    });
+    sel.appendChild(group);
+  });
+}
+
+function selectFactor(key) {
+  _selected = key;
+  document.querySelectorAll('.factor-card').forEach(function(c) { c.classList.remove('active'); });
+  var el = document.getElementById('fc-' + key);
+  if (el) el.classList.add('active');
+  document.getElementById('factorSelect').value = key;
+}
+
+// 因子自动匹配
+function runMatch() {
+  var code = normalizeStockCode(document.getElementById('matchCode').value);
+  var btn = document.getElementById('btnMatch');
+  var el = document.getElementById('matchResult');
+  if (!code) { el.innerHTML = '<div class="state-empty">请输入股票代码</div>'; return; }
+  btn.disabled = true; btn.textContent = '匹配中...';
+  el.innerHTML = '<div class="state-empty">匹配中...</div>';
+  API.post('/backtest/match', {stock_code: code}).then(function(r) {
+    if (!r.data) { el.innerHTML = '<div class="state-empty">' + escHtml(r.message || '匹配失败') + '</div>'; return; }
+    var matches = r.data.matches || [];
+    if (!matches.length) { el.innerHTML = '<div class="state-empty">' + escHtml(r.data.note || '无匹配因子') + '</div>'; return; }
+    var html = '';
+    matches.forEach(function(m) {
+      html += '<div class="match-item"><div class="mi-head"><span class="fc-code">' + escHtml(m.factor_code) + '</span> ' + escHtml(m.factor_name) +
+        ' <span class="strength-tag strength-' + m.strength + '">' + escHtml(m.strength) + '</span></div>';
+      html += '<div style="font-size:0.8rem;color:var(--color-text-muted);margin:4px 0;">' + escHtml(m.value_desc) + (m.percentile != null ? ' · 分位' + m.percentile + '%' : '') + '</div>';
+      html += '<div style="font-size:0.82rem;color:var(--color-text);line-height:1.6;">' + escHtml(m.reason) + '</div></div>';
+    });
+    el.innerHTML = html;
   }).catch(function(e) {
-    msg.textContent = '回测失败: ' + (e.message || '');
-    msg.style.color = 'var(--color-danger)';
-  }).finally(function() { btn.disabled = false; btn.textContent = '开始回测'; });
+    el.innerHTML = '<div class="state-empty">匹配失败: ' + escHtml(e.message || '') + '</div>';
+  }).finally(function() { btn.disabled = false; btn.textContent = '🔍 自动匹配'; });
 }
 
-function render(d) {
-  var m = d.metrics;
-  var t = d.trades;
-
-  function card(label, val, css) {
-    return '<div class="metric-card"><div class="val ' + css + '">' + val + '</div><div class="label">' + label + '</div></div>';
-  }
-
-  var html = '<div class="metrics-grid">';
-  html += card('累计收益', (m.total_return>=0?'+':'')+m.total_return+'%', m.total_return>=0?'pos':'neg');
-  html += card('年化收益', (m.annual_return>=0?'+':'')+m.annual_return+'%', m.annual_return>=0?'pos':'neg');
-  html += card('胜率', m.win_rate+'%', m.win_rate>=50?'pos':'');
-  html += card('盈亏比', m.profit_loss_ratio, m.profit_loss_ratio>=1?'pos':'');
-  html += card('最大回撤', m.max_drawdown+'%', 'neg');
-  html += card('夏普比率', m.sharpe_ratio, m.sharpe_ratio>=1?'pos':'');
-  html += card('交易次数', m.total_trades, '');
-  html += card('盈利/亏损', m.winning_trades+'/'+m.losing_trades, 'pos');
-  html += '</div>';
-
-  html += '<div class="card" style="margin-bottom:12px"><div class="card-header">权益曲线 & 买卖信号</div><div class="card-body"><div id="eqChart"></div></div></div>';
-  html += '<div class="card" style="margin-bottom:12px"><div class="card-header">回撤曲线</div><div class="card-body"><div id="ddChart"></div></div></div>';
-  if (d.monthly_returns && d.monthly_returns.length) {
-    html += '<div class="card" style="margin-bottom:12px"><div class="card-header">月度收益热力图</div><div class="card-body"><div id="heatChart"></div></div></div>';
-  }
-
-  html += '<div class="card" style="margin-top:16px"><div class="card-header">交易明细 (' + t.length + '笔)</div><div class="card-body"><table class="data-table"><thead><tr><th>日期</th><th>方向</th><th>价格</th><th>股数</th><th>金额</th><th>原因</th></tr></thead><tbody>';
-  for (var i = 0; i < t.length; i++) {
-    var act = t[i].action === 'buy' ? '买入' : '卖出';
-    var cls = t[i].action === 'buy' ? 'pos' : 'neg';
-    html += '<tr><td>'+t[i].date+'</td><td class="val '+cls+'">'+act+'</td><td>'+t[i].price+'</td><td>'+t[i].shares.toLocaleString()+'</td><td>'+t[i].amount.toLocaleString()+'</td><td>'+t[i].reason+'</td></tr>';
-  }
-  html += '</tbody></table></div></div>';
-
-  document.getElementById('result').innerHTML = html;
-  setTimeout(function() { initCharts(d); }, 50);
+// 因子诊断
+function runDiagnose() {
+  var code = normalizeStockCode(document.getElementById('diagCode').value);
+  var fid = document.getElementById('factorSelect').value;
+  var btn = document.getElementById('btnDiag');
+  var el = document.getElementById('diagResult');
+  if (!code) { el.innerHTML = '<div class="state-empty">请输入股票代码</div>'; return; }
+  if (!fid) { el.innerHTML = '<div class="state-empty">请先选择因子</div>'; return; }
+  btn.disabled = true; btn.textContent = '诊断中...';
+  el.innerHTML = '<div class="state-empty">诊断中...</div>';
+  API.post('/backtest/run', {stock_code: code, factor_id: fid}).then(function(r) {
+    var d = r.data;
+    if (!d || d.error) { el.innerHTML = '<div class="state-empty">' + escHtml((d && d.error) || r.message || '诊断失败') + '</div>'; return; }
+    var strengthCls = d.strength ? ('strength-' + d.strength) : '';
+    var html = '<div class="diag-grid">';
+    html += '<div class="diag-card"><div class="val">' + escHtml(d.factor_code) + '</div><div class="label">因子编号</div></div>';
+    html += '<div class="diag-card"><div class="val" style="font-size:1rem;">' + escHtml(d.value_desc || '-') + '</div><div class="label">因子值</div></div>';
+    html += '<div class="diag-card"><div class="val">' + (d.market_percentile != null ? d.market_percentile + '%' : '-') + '</div><div class="label">全市场分位</div></div>';
+    html += '</div>';
+    html += '<div class="diag-conclusion"><span class="strength-tag ' + strengthCls + '">' + escHtml(d.strength || '') + '</span> <span style="font-weight:600;">' + escHtml(d.factor_name) + '</span><br>' + escHtml(d.conclusion || '') + '</div>';
+    el.innerHTML = html;
+  }).catch(function(e) {
+    el.innerHTML = '<div class="state-empty">诊断失败: ' + escHtml(e.message || '') + '</div>';
+  }).finally(function() { btn.disabled = false; btn.textContent = '诊断'; });
 }
 
-function initCharts(d) {
-  initEquityChart(d);
-  initDrawdownChart(d);
-  if (d.monthly_returns && d.monthly_returns.length) initHeatChart(d);
-}
-
-function initEquityChart(d) {
-  var el = document.getElementById('eqChart');
-  if (!el) return;
-  if (window._ec) { window._ec.dispose(); }
-  var chart = echarts.init(el);
-  window._ec = chart;
-
-  var dates = d.equity_curve.map(function(e){return e[0];});
-  var eq = d.equity_curve.map(function(e){return e[1];});
-
-  var buys = (d.buy_signals||[]).map(function(s){return {coord:s, value:'B', itemStyle:{color:'#ef232a'}, symbol:'arrow', symbolSize:12, symbolRotate:0};});
-  var sells = (d.sell_signals||[]).map(function(s){return {coord:s, value:'S', itemStyle:{color:'#14b143'}, symbol:'arrow', symbolSize:12, symbolRotate:180};});
-
-  chart.setOption({
-    tooltip: {trigger:'axis'},
-    grid: {left:'10%', right:'4%', top:12, bottom:24},
-    xAxis: {type:'category', data:dates, axisLabel:{fontSize:8, color:'#8392A5', interval:'auto'}},
-    yAxis: {type:'value', axisLabel:{color:'#8392A5', formatter:function(v){return (v/10000).toFixed(1)+'万';}}, splitLine:{lineStyle:{color:'#8392A520'}}},
-    series: [{
-      name:'权益', type:'line', data:eq, smooth:true,
-      lineStyle:{color:'#4878ff', width:2},
-      areaStyle:{color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(72,120,255,0.15)'},{offset:1,color:'rgba(72,120,255,0.02)'}])},
-      symbol:'none',
-      markPoint:{data:buys.concat(sells), label:{fontSize:10,fontWeight:700}}
-    }]
-  });
-
-  window.addEventListener('resize', function(){ chart.resize(); });
-}
-
-function initDrawdownChart(d) {
-  var el = document.getElementById('ddChart');
-  if (!el) return;
-  if (window._dd) { window._dd.dispose(); }
-
-  var dd = d.drawdown_curve || [];
-  if (!dd.length) {
-    var eq = d.equity_curve;
-    var peak = 0;
-    dd = [];
-    for (var i = 0; i < eq.length; i++) {
-      peak = Math.max(peak, eq[i][1]);
-      dd.push([eq[i][0], peak > 0 ? +((peak - eq[i][1]) / peak * 100).toFixed(2) : 0]);
-    }
-  }
-
-  var chart = echarts.init(el);
-  window._dd = chart;
-  var dates = dd.map(function(e){return e[0];});
-  var vals = dd.map(function(e){return e[1];});
-
-  chart.setOption({
-    tooltip: {trigger:'axis', axisPointer:{type:'shadow'}},
-    grid: {left:'8%', right:'4%', top:8, bottom:20},
-    xAxis: {type:'category', data:dates, axisLabel:{fontSize:8, color:'#8392A5', interval:'auto'}},
-    yAxis: {type:'value', axisLabel:{color:'#8392A5', formatter:'{value}%'}, inverse:true, splitLine:{lineStyle:{color:'#8392A520'}}},
-    series: [{
-      name:'回撤', type:'line', data:vals, smooth:false,
-      lineStyle:{color:'#f87171', width:1.5},
-      areaStyle:{color:'rgba(248,113,113,0.12)'},
-      symbol:'none'
-    }]
-  });
-}
-
-function initHeatChart(d) {
-  var el = document.getElementById('heatChart');
-  if (!el) return;
-  if (window._hm) { window._hm.dispose(); }
-
-  var mr = d.monthly_returns;
-  var ymData = mr.map(function(e){return e[0];});
-  var retData = mr.map(function(e){return e[1];});
-
-  // Group by year
-  var years = [], yearMap = {};
-  ymData.forEach(function(ym, i) {
-    var y = ym.substring(0,4);
-    if (!yearMap[y]) { yearMap[y] = []; years.push(y); }
-    yearMap[y].push({m: +ym.substring(4,6), r: retData[i]});
-  });
-
-  var months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-  var data = [];
-  var xAxisData = years;
-  var yAxisData = months;
-
-  years.forEach(function(y, xi) {
-    var byMon = {};
-    (yearMap[y]||[]).forEach(function(v){ byMon[v.m] = v.r; });
-    for (var mi = 0; mi < 12; mi++) {
-      var r = byMon[mi+1];
-      data.push([xi, mi, r !== undefined ? r : '-']);
-    }
-  });
-
-  var chart = echarts.init(el);
-  window._hm = chart;
-
-  var maxV = Math.max.apply(null, retData.filter(function(v){return v>0;}).concat([1]));
-  var minV = Math.min.apply(null, retData.filter(function(v){return v<0;}).concat([-1]));
-
-  chart.setOption({
-    tooltip: {formatter: function(p){return p.value[2] !== '-' ? p.value[2]+'%' : '无数据';}},
-    grid: {left:'10%', right:'6%', top:8, bottom:20},
-    xAxis: {type:'category', data:years, axisLabel:{fontSize:10, color:'#8392A5'}, axisTick:{show:false}},
-    yAxis: {type:'category', data:months, axisLabel:{fontSize:10, color:'#8392A5'}},
-    visualMap: {min:minV, max:maxV, calculable:true, orient:'vertical', right:4, top:'center', itemWidth:10, itemHeight:80,
-      inRange:{color:['#14b143', '#1e293b', '#ef232a']},
-      text:['+'+maxV.toFixed(1)+'%', minV.toFixed(1)+'%'], textStyle:{color:'#8392A5',fontSize:9}},
-    series: [{
-      type:'heatmap', data:data, label:{show:true, fontSize:9, color:'#8392A5',
-        formatter:function(p){var v=p.value[2];return v!=='-'?(v>=0?'+':'')+v+'%':'';}},
-      emphasis:{itemStyle:{shadowBlur:8,shadowColor:'rgba(0,0,0,0.5)'}}
-    }]
-  });
-}
+loadFactorLib();
 </script>
 </body>
 </html>

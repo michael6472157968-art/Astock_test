@@ -79,9 +79,12 @@ class StockPoolEngine:
 
             steady = await self._steady_swing(session, trade_date, all_dates, used, fw)
 
+            factor = await self._factor_daily(session, trade_date, all_dates, fw)
+
         pools = {
             "hot_leader": hot, "dip_ambush": dip,
             "oversold_rebound": bounce, "steady_swing": steady,
+            "factor_daily": factor,
         }
         for ptype in pools:
             await cache_set(f"pool:{ptype}:{trade_date}", pools[ptype],
@@ -109,8 +112,8 @@ class StockPoolEngine:
 
     async def _hot_leader(self, session, trade_date: str, dates: list, fw: dict) -> list:
         td3 = self._nth_date(dates, trade_date, 3)
-        td2 = self._nth_date(dates, trade_date, 2)
-        if not td3:
+        td20 = self._nth_date(dates, trade_date, 20)
+        if not td3 or not td20:
             return []
 
         # Cols: ts_code, name, close, pct_chg, vol, chg3, vol_ratio, turnover, pe, pb, total_mv
@@ -126,7 +129,7 @@ class StockPoolEngine:
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td3) d3 ON d3.ts_code = d.ts_code
             JOIN (SELECT ts_code, AVG(volume) AS avg_vol FROM stock_daily
-                  WHERE trade_date IN (:td3,:td,:td2) GROUP BY ts_code
+                  WHERE trade_date <= :td AND trade_date >= :td20 GROUP BY ts_code
             ) av ON av.ts_code = d.ts_code
             LEFT JOIN daily_basic db ON db.ts_code = d.ts_code AND db.trade_date = d.trade_date
             WHERE d.trade_date = :td
@@ -136,15 +139,15 @@ class StockPoolEngine:
               AND d.ts_code NOT LIKE '688%' AND d.ts_code NOT LIKE '920%'
             LIMIT :lim
         """)
-        r = await session.execute(sql, {"td": trade_date, "td3": td3, "td2": td2 or trade_date, "lim": POOL_SIZE * 3})
+        r = await session.execute(sql, {"td": trade_date, "td3": td3, "td20": td20, "lim": POOL_SIZE * 3})
         return score_and_rank(r.fetchall(), fw["hot_leader"], "热点龙头", limit=POOL_SIZE)
 
     # ── 低吸埋伏池 ──
 
     async def _dip_ambush(self, session, trade_date: str, start20: str, dates: list, exclude: set, fw: dict) -> list:
-        td5 = self._nth_date(dates, trade_date, 5)
-        if not td5:
-            td5 = start20
+        td20 = self._nth_date(dates, trade_date, 20)
+        if not td20:
+            td20 = start20
         sql = text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - low20.min_low) / NULLIF(low20.min_low, 0) * 100 AS dist_from_low,
@@ -159,7 +162,7 @@ class StockPoolEngine:
                 WHERE trade_date <= :td AND trade_date >= :start20 GROUP BY ts_code
             ) low20 ON low20.ts_code = d.ts_code
             LEFT JOIN (SELECT ts_code, AVG(volume) AS avg_vol FROM stock_daily
-                       WHERE trade_date <= :td AND trade_date >= :td5 GROUP BY ts_code
+                       WHERE trade_date <= :td AND trade_date >= :td20 GROUP BY ts_code
             ) av ON av.ts_code = d.ts_code
             LEFT JOIN daily_basic db ON db.ts_code = d.ts_code AND db.trade_date = d.trade_date
             WHERE d.trade_date = :td
@@ -171,7 +174,7 @@ class StockPoolEngine:
               AND d.ts_code NOT LIKE '688%' AND d.ts_code NOT LIKE '920%'
             LIMIT :lim
         """)
-        r = await session.execute(sql, {"td": trade_date, "start20": start20, "td5": td5 or start20, "lim": POOL_SIZE * 3})
+        r = await session.execute(sql, {"td": trade_date, "start20": start20, "td20": td20 or start20, "lim": POOL_SIZE * 3})
         candidates = score_and_rank(r.fetchall(), fw["dip_ambush"], "低吸埋伏", limit=POOL_SIZE * 3)
         return [c for c in candidates if c["stock_code"] not in exclude][:POOL_SIZE]
 
@@ -193,7 +196,7 @@ class StockPoolEngine:
         return result
 
     async def _try_oversold_rebound(self, session, trade_date: str, td5: str, dates: list, exclude: set, fw: dict) -> list:
-        td2 = self._nth_date(dates, trade_date, 2)
+        td20 = self._nth_date(dates, trade_date, 20)
         sql = text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d5.close) / NULLIF(d5.close, 0) * 100 AS chg5,
@@ -207,7 +210,7 @@ class StockPoolEngine:
                 SELECT ts_code, close FROM stock_daily WHERE trade_date = :td5
             ) d5 ON d5.ts_code = d.ts_code
             LEFT JOIN (SELECT ts_code, AVG(volume) AS avg_vol FROM stock_daily
-                       WHERE trade_date <= :td AND trade_date >= :td5 GROUP BY ts_code
+                       WHERE trade_date <= :td AND trade_date >= :td20 GROUP BY ts_code
             ) av ON av.ts_code = d.ts_code
             LEFT JOIN daily_basic db ON db.ts_code = d.ts_code AND db.trade_date = d.trade_date
             WHERE d.trade_date = :td
@@ -217,7 +220,7 @@ class StockPoolEngine:
               AND d.pct_chg > -4
             LIMIT :lim
         """)
-        r = await session.execute(sql, {"td": trade_date, "td5": td5, "lim": POOL_SIZE * 3})
+        r = await session.execute(sql, {"td": trade_date, "td5": td5, "td20": td20 or trade_date, "lim": POOL_SIZE * 3})
         candidates = score_and_rank(r.fetchall(), fw["oversold_rebound"], "超跌反弹", limit=POOL_SIZE * 3)
         return [c for c in candidates if c["stock_code"] not in exclude][:POOL_SIZE]
 
@@ -225,6 +228,7 @@ class StockPoolEngine:
 
     async def _steady_swing(self, session, trade_date: str, dates: list, exclude: set, fw: dict) -> list:
         td5 = self._nth_date(dates, trade_date, 5)
+        td20 = self._nth_date(dates, trade_date, 20)
         sql = text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    CAST(d.volume AS REAL) / NULLIF(avg.avg_vol, 0) AS vol_ratio,
@@ -236,7 +240,7 @@ class StockPoolEngine:
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (
                 SELECT ts_code, AVG(volume) AS avg_vol FROM stock_daily
-                WHERE trade_date < :td GROUP BY ts_code
+                WHERE trade_date <= :td AND trade_date >= :td20 GROUP BY ts_code
             ) avg ON avg.ts_code = d.ts_code
             LEFT JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td5) d5 ON d5.ts_code = d.ts_code
             LEFT JOIN daily_basic db ON db.ts_code = d.ts_code AND db.trade_date = d.trade_date
@@ -249,9 +253,33 @@ class StockPoolEngine:
               AND CAST(d.volume AS REAL) / avg.avg_vol BETWEEN 0.5 AND 3.0
             LIMIT :lim
         """)
-        r = await session.execute(sql, {"td": trade_date, "td5": td5 or trade_date, "lim": POOL_SIZE * 3})
+        r = await session.execute(sql, {"td": trade_date, "td5": td5 or trade_date, "td20": td20 or trade_date, "lim": POOL_SIZE * 3})
         candidates = score_and_rank(r.fetchall(), fw["steady_swing"], "稳健波段", limit=POOL_SIZE * 3)
         return [c for c in candidates if c["stock_code"] not in exclude][:POOL_SIZE]
+
+    # ── 因子选股池（每日10股，反转+价值+低换手合成）──
+
+    async def _factor_daily(self, session, trade_date: str, dates: list, fw: dict) -> list:
+        """因子选股：反转(chg42) + 价值(pb) + 低换手(turnover) 合成横截面排序，每日10股。"""
+        td42 = self._nth_date(dates, trade_date, 42)
+        if not td42:
+            return []
+        sql = text("""
+            SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
+                   (d.close - d42.close) / NULLIF(d42.close, 0) * 100 AS chg42,
+                   CASE WHEN db.pb IS NOT NULL AND db.pb > 0 THEN db.pb ELSE NULL END AS pb,
+                   CASE WHEN db.turnover_rate IS NOT NULL AND db.turnover_rate > 0 THEN db.turnover_rate ELSE NULL END AS turnover
+            FROM stock_daily d
+            JOIN stocks s ON s.ts_code = d.ts_code
+            JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td42) d42 ON d42.ts_code = d.ts_code
+            LEFT JOIN daily_basic db ON db.ts_code = d.ts_code AND db.trade_date = d.trade_date
+            WHERE d.trade_date = :td
+              AND d.close > 0 AND d42.close > 0
+              AND d.ts_code NOT LIKE '%ST%' AND s.name NOT LIKE '%ST%'
+              AND d.ts_code NOT LIKE '688%' AND d.ts_code NOT LIKE '920%'
+        """)
+        r = await session.execute(sql, {"td": trade_date, "td42": td42})
+        return score_and_rank(r.fetchall(), fw["factor_daily"], "因子选股(反转+低估值+低换手)", limit=10)
 
     # ── 持久化 ──
 

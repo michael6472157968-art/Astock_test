@@ -170,7 +170,6 @@ def create_app() -> FastAPI:
     from app.api.membership import router as membership_router
     from app.api.credits import router as credits_router
     from app.api.user import router as user_router
-
     app.include_router(auth_router)
     app.include_router(stock_pool_router)
     app.include_router(diagnosis_router)

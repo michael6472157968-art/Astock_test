@@ -58,3 +58,9 @@ QuantDinger/
 admin-dashboard/
 demo-proxy/
 data/
+
+# 双会话进度文件（不进提交）
+PROGRESS.md
+
+# 进度读取标记（双会话同步用）
+.claude/progress_last_seen.txt
