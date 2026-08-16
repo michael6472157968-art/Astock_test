@@ -289,8 +289,8 @@ async def market_dashboard(user: dict = Depends(require_auth_optional)):
             result["industry_down"] = sum(1 for _, pct, _ in industries if pct < 0)
             result["industry_flat"] = len(industries) - result["industry_up"] - result["industry_down"]
             result["industry_breadth"] = round(result["industry_up"] / len(industries) * 100, 1)
-            # Top 8 by abs(pct_chg) for mini heatmap
-            top8 = sorted(industries, key=lambda x: abs(x[1]), reverse=True)[:8]
+            # Top 8 by pct_chg desc（按涨幅排序，涨得多的在前）
+            top8 = sorted(industries, key=lambda x: x[1], reverse=True)[:8]
             result["top_sectors"] = [{"name": n, "pct_chg": pct, "cnt": c} for n, pct, c in top8]
 
     # 3. 北向资金（DB优先——定时任务已同步到moneyflow_hsgt表）
@@ -407,9 +407,25 @@ async def market_mood(user: dict = Depends(require_auth_optional)):
                         limit_up = fb[0] or 0
                         limit_down = fb[1] or 0
 
+                # 主力资金净流入（全市场聚合，单位万元）
+                mf_r = await sess.execute(
+                    text("SELECT SUM(net_mf_amount) FROM moneyflow_records WHERE trade_date = :td"),
+                    {"td": td},
+                )
+                main_net_inflow = round(float(mf_r.scalar() or 0), 2)
+
+                # 平均获利盘（筹码 winner_rate，0-100）
+                cyq_r = await sess.execute(
+                    text("SELECT AVG(winner_rate) FROM cyq_perf WHERE trade_date = :td"),
+                    {"td": td},
+                )
+                avg_winner_rate = round(float(cyq_r.scalar() or 0), 1)
+
                 mood_data = {
                     "up": int(row[0]), "down": int(row[1]), "flat": int(row[2]),
                     "limit_up": limit_up, "limit_down": limit_down,
+                    "main_net_inflow": main_net_inflow,
+                    "avg_winner_rate": avg_winner_rate,
                     "date": td, "source": "tushare", "update_time": now_ts,
                     "is_trade_day": is_td, "trade_date": trade_date,
                 }
@@ -418,6 +434,7 @@ async def market_mood(user: dict = Depends(require_auth_optional)):
     if not mood_data:
         return APIResponse(
             data={"up": 0, "down": 0, "flat": 0, "limit_up": 0, "limit_down": 0,
+                  "main_net_inflow": 0, "avg_winner_rate": 0,
                   "date": "", "source": "none", "update_time": now_ts,
                   "is_trade_day": is_td, "trade_date": trade_date},
             timestamp=int(time.time()),

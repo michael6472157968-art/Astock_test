@@ -75,17 +75,6 @@
       </div>
     </div>
 
-    <!-- 今日因子选股榜单（首页核心） -->
-    <div class="mood-panel" id="factorPickPanel" style="margin-bottom:16px;">
-      <div class="mood-header">
-        <span class="mood-title">今日因子选股 <span style="font-size:0.7rem;color:var(--color-text-muted);font-weight:400;">量价背离 + 成长 + 现金流 · 每日10只</span></span>
-        <span class="mood-date" id="factorPickDate">加载中...</span>
-      </div>
-      <div class="mood-body" style="flex-direction:column;padding:4px 12px 12px;">
-        <div id="factorPickList" style="display:flex;flex-direction:column;gap:8px;">加载中...</div>
-      </div>
-    </div>
-
     <!-- 指数行情 -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
       <h3 style="font-size:0.95rem;font-weight:600;">指数行情</h3>
@@ -107,27 +96,25 @@
       <div class="kline-chart" id="klineChart"></div>
     </div>
 
+    <!-- 今日因子选股榜单（首页核心） -->
+    <div class="mood-panel" id="factorPickPanel" style="margin-bottom:16px;">
+      <div class="mood-header">
+        <span class="mood-title">今日因子选股 <span style="font-size:0.7rem;color:var(--color-text-muted);font-weight:400;">量价背离 + 成长 + 现金流 · 每日10只</span></span>
+        <span class="mood-date" id="factorPickDate">加载中...</span>
+      </div>
+      <div class="mood-body" style="flex-direction:column;padding:4px 12px 12px;">
+        <div id="factorPickList" style="display:flex;flex-direction:column;gap:8px;">加载中...</div>
+      </div>
+    </div>
+
     <!-- 滚动行情条 -->
     <div class="marquee-section" id="marqueeSection">
       <div class="marquee-header">
         <span class="mh-dot green"></span>
         <span class="mh-label">热门股票</span>
-        <span class="mh-dot red" style="margin-left:16px;"></span>
-        <span class="mh-label">短线优选</span>
       </div>
       <div class="marquee-wrap">
         <div class="marquee-track" id="marqueeTrack"></div>
-      </div>
-    </div>
-
-    <!-- 短线优选4池 -->
-    <div class="mood-panel" id="shortPoolPanel" style="margin-bottom:16px;">
-      <div class="mood-header"><span class="mood-title">短线优选</span><span class="mood-date" id="shortPoolDate">加载中...</span></div>
-      <div class="short-pool-grid" id="shortPoolGrid">
-        <div class="short-pool-col" id="spT3Momentum"><div class="spc-label">T+3 追涨</div><div class="spc-list">加载中...</div></div>
-        <div class="short-pool-col" id="spT3Dip"><div class="spc-label">T+3 低吸</div><div class="spc-list">加载中...</div></div>
-        <div class="short-pool-col" id="spT7Momentum"><div class="spc-label">T+7 追涨</div><div class="spc-list">加载中...</div></div>
-        <div class="short-pool-col" id="spT7Dip"><div class="spc-label">T+7 低吸</div><div class="spc-list">加载中...</div></div>
       </div>
     </div>
 
@@ -156,6 +143,8 @@
           <div class="mood-right">
             <div class="mood-limit-item"><div class="ml-num up" id="limitUpCount">--</div><div class="ml-label">涨停</div></div>
             <div class="mood-limit-item"><div class="ml-num down" id="limitDownCount">--</div><div class="ml-label">跌停</div></div>
+            <div class="mood-limit-item"><div class="ml-num" id="mainInflow">--</div><div class="ml-label">主力净流入</div></div>
+            <div class="mood-limit-item"><div class="ml-num" id="winnerRate">--</div><div class="ml-label">获利盘</div></div>
           </div>
         </div>
       </div>
@@ -352,6 +341,16 @@
       document.getElementById('moodFlatBar').style.width = (d.flat / total * 100).toFixed(1) + '%';
       document.getElementById('limitUpCount').textContent = d.limit_up;
       document.getElementById('limitDownCount').textContent = d.limit_down;
+      // 主力净流入（万元 → 亿元）
+      var inflow = d.main_net_inflow || 0;
+      var inflowEl = document.getElementById('mainInflow');
+      if (inflowEl) {
+        inflowEl.textContent = (inflow / 10000).toFixed(0) + '亿';
+        inflowEl.className = 'ml-num ' + (inflow >= 0 ? 'up' : 'down');
+      }
+      // 平均获利盘（0-100%）
+      var winnerEl = document.getElementById('winnerRate');
+      if (winnerEl) winnerEl.textContent = (d.avg_winner_rate || 0).toFixed(0) + '%';
       document.getElementById('moodDate').textContent = d.date ? '数据截止 ' + fmtDate8(d.date) : '';
     }).catch(function() {});
   }
@@ -442,33 +441,17 @@
   });
 
   function loadMarqueeAndShortPools() {
-    // 一次并行拉取热门+短线4池（原来 loadMarquee 和 loadShortPools 各拉一次，重复4个短线池API）
-    Promise.all([
-      API.get('/stock-pool/hot_leader').then(function(r) { return (r.data.items || []).slice(0, 10); }).catch(function() { return []; }),
-      API.get('/stock-pool/short_t3_momentum').then(function(r) { return { items: (r.data.items || []).slice(0, 10), trade_date: r.data.trade_date }; }).catch(function() { return { items: [], trade_date: null }; }),
-      API.get('/stock-pool/short_t3_dip').then(function(r) { return { items: (r.data.items || []).slice(0, 10), trade_date: r.data.trade_date }; }).catch(function() { return { items: [], trade_date: null }; }),
-      API.get('/stock-pool/short_t7_momentum').then(function(r) { return { items: (r.data.items || []).slice(0, 10), trade_date: r.data.trade_date }; }).catch(function() { return { items: [], trade_date: null }; }),
-      API.get('/stock-pool/short_t7_dip').then(function(r) { return { items: (r.data.items || []).slice(0, 10), trade_date: r.data.trade_date }; }).catch(function() { return { items: [], trade_date: null }; })
-    ]).then(function(results) {
-      var hotItems = results[0];
-      var shortResults = [results[1], results[2], results[3], results[4]];
-
-      // ── 1. 跑马灯（热门+短线去重合并） ──
-      var rows = [];
-      hotItems.forEach(function(s) {
-        rows.push({ name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0, tag: 'hot', tagLabel: '热门' });
-      });
-      var seen = {};
-      shortResults.forEach(function(sr) {
-        sr.items.forEach(function(s) {
-          if (!seen[s.stock_code]) { seen[s.stock_code] = true; rows.push({ name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0, tag: 'short', tagLabel: '短线' }); }
-        });
+    // 跑马灯：仅热门股（短线优选4池已删除，改为因子选股）
+    API.get('/stock-pool/hot_leader').then(function(r) {
+      var hotItems = (r.data.items || []).slice(0, 10);
+      var rows = hotItems.map(function(s) {
+        return { name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0 };
       });
       if (rows.length) {
         var items = rows.concat(rows);
         var html = items.map(function(r) {
           return '<div class="marquee-item" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(r.code) + '\'" style="cursor:pointer">' +
-            '<span class="mi-tag ' + r.tag + '">' + r.tagLabel + '</span>' +
+            '<span class="mi-tag hot">热门</span>' +
             '<span class="mi-name">' + r.name + '</span>' +
             '<span class="mi-code">' + r.code + '</span>' +
             '<span class="mi-price">' + (r.close ? r.close.toFixed(2) : '--') + '</span>' +
@@ -478,28 +461,6 @@
         document.getElementById('marqueeTrack').innerHTML = html;
         document.getElementById('marqueeTrack').classList.add('marquee-running');
       }
-
-      // ── 2. 短线优选4池列表 ──
-      var tradeDate = shortResults[0].trade_date || shortResults[1].trade_date || shortResults[2].trade_date || shortResults[3].trade_date;
-      document.getElementById('shortPoolDate').textContent = '数据日期 ' + (tradeDate || '--');
-      shortPoolMap.forEach(function(sp, i) {
-        var el = document.getElementById(sp.id);
-        var items = shortResults[i].items.slice(0, 8);
-        if (!items.length) { el.querySelector('.spc-list').innerHTML = '<div style="color:var(--color-text-muted);font-size:0.75rem;padding:8px;">暂无信号</div>'; return; }
-        var html = '';
-        items.forEach(function(s) {
-          var pct = s.change_pct || 0;
-          var cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
-          html += '<div class="spc-item"><span class="spc-name" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + (s.stock_name || s.stock_code) + '</span><button class="spc-fav-btn" data-code="' + escAttr(s.stock_code) + '" onclick="event.stopPropagation();FavStore.toggle(this,\'' + escAttr(s.stock_code) + '\',\'' + escAttr(s.stock_name || s.stock_code) + '\')" title="添加自选">+</button><span class="spc-pct ' + cls + '" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'">' + fmtSign(pct) + '%</span></div>';
-        });
-        el.querySelector('.spc-list').innerHTML = html;
-        if (FavStore._cache.length > 0) {
-          el.querySelectorAll('.spc-fav-btn').forEach(function(btn) {
-            var c = btn.getAttribute('data-code');
-            if (FavStore._cache.indexOf(c) >= 0) FavStore.setBtnAdded(btn);
-          });
-        }
-      });
     }).catch(function() {});
   }
 
@@ -543,15 +504,6 @@
       document.getElementById('factorPickList').innerHTML = '<div style="text-align:center;padding:16px;color:var(--color-text-muted);font-size:0.82rem;">因子选股加载失败</div>';
     });
   }
-
-  // shortPoolMap 保留，供 loadMarqueeAndShortPools 使用
-  var shortPoolMap = [
-    { id: 'spT3Momentum', pool: 'short_t3_momentum', label: 'T+3 追涨' },
-    { id: 'spT3Dip', pool: 'short_t3_dip', label: 'T+3 低吸' },
-    { id: 'spT7Momentum', pool: 'short_t7_momentum', label: 'T+7 追涨' },
-    { id: 'spT7Dip', pool: 'short_t7_dip', label: 'T+7 低吸' }
-  ];
-
 
   var indexTimer = null;
   function loadTradeCalendar() {

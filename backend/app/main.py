@@ -78,13 +78,11 @@ async def lifespan(app: FastAPI):
             # 数据同步完成后触发计算引擎，确保启动后数据都是新的
             logger.info("Auto-sync: compute engines...")
             from app.services.stock_pool_engine import StockPoolEngine
-            from app.services.short_term_engine import ShortTermEngine
             from app.services.sector_analysis import SectorAnalysisEngine
             from app.services.market_review import MarketReviewEngine
             from app.services.risk_scanner import RiskScanner
             from app.core.cache import cache_clear
             await StockPoolEngine().compute_all()
-            await ShortTermEngine().compute_all()
             await SectorAnalysisEngine().compute_all()
             await MarketReviewEngine().compute()
             scanner = RiskScanner()

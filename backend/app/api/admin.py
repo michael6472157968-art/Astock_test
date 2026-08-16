@@ -60,12 +60,10 @@ async def admin_cache_clear():
 async def admin_refresh_pool():
     try:
         from app.services.stock_pool_engine import StockPoolEngine
-        from app.services.short_term_engine import ShortTermEngine
         from app.services.sector_analysis import SectorAnalysisEngine
         from app.services.market_review import MarketReviewEngine
         from app.services.risk_scanner import RiskScanner
         result = await StockPoolEngine().compute_all()
-        await ShortTermEngine().compute_all()
         await SectorAnalysisEngine().compute_all()
         await MarketReviewEngine().compute()
         scanner = RiskScanner()
@@ -155,7 +153,6 @@ async def admin_run_daily_batch():
         await AlertEngine().scan_all(str(date.today()))
 
         from app.services.stock_pool_engine import StockPoolEngine
-        from app.services.short_term_engine import ShortTermEngine
         from app.services.sector_analysis import SectorAnalysisEngine
         from app.services.market_review import MarketReviewEngine
         from app.services.risk_scanner import RiskScanner
@@ -164,7 +161,6 @@ async def admin_run_daily_batch():
         await _ensure_review_table()
         await _purge_expired_reviews()
         await StockPoolEngine().compute_all()
-        await ShortTermEngine().compute_all()
         await SectorAnalysisEngine().compute_all()
         review_result = await MarketReviewEngine().compute()
         trade_date = review_result.get("date", "")

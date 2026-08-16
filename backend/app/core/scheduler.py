@@ -81,7 +81,6 @@ async def _sync_daily_all():
                                          sync_stk_holdertrade, sync_stk_holdernumber, sync_top_inst, sync_top_list,
                                          sync_top10_floatholders)
     from app.services.stock_pool_engine import StockPoolEngine
-    from app.services.short_term_engine import ShortTermEngine
     from app.services.sector_analysis import SectorAnalysisEngine
     from app.services.market_review import MarketReviewEngine
     from app.services.risk_scanner import RiskScanner
@@ -135,7 +134,6 @@ async def _sync_daily_all():
     log.info("compute: stock pool engines")
     try:
         await StockPoolEngine().compute_all()
-        await ShortTermEngine().compute_all()
         await SectorAnalysisEngine().compute_all()
         await MarketReviewEngine().compute()
         scanner = RiskScanner()
