@@ -159,32 +159,8 @@ async def sync_stock_basic() -> int:
     return len(stocks)
 
 
-async def sync_daily_data(trade_date: str = "") -> int:
-    """同步指定交易日全市场日线。默认向前搜索拉到最新有数据的交易日。"""
-    if not trade_date:
-        from app.utils.trading_calendar import is_trade_date
-        today = date.today()
-        # 从今天往回找最近5天内的交易日，找到有数据就拉
-        for offset in range(5):
-            td = (today - timedelta(days=offset)).strftime("%Y%m%d")
-            if not await is_trade_date(td):
-                continue
-            rows = await get_all_daily(td)
-            if rows:
-                trade_date = td
-                break
-        else:
-            # fallback: use DB MAX
-            from app.utils.trading_calendar import get_latest_trade_date
-            trade_date = await get_latest_trade_date()
-            rows = await get_all_daily(trade_date)
-    else:
-        rows = await get_all_daily(trade_date)
-
-    if not rows:
-        logger.info(f"No daily data for {trade_date}")
-        return 0
-
+async def _insert_daily_rows(rows: list[dict]) -> int:
+    """将全市场日线行写入 stock_daily（INSERT OR IGNORE），返回写入行数。"""
     async with async_session() as session:
         for row in rows:
             try:
@@ -196,7 +172,7 @@ async def sync_daily_data(trade_date: str = "") -> int:
                             :pre_close, :change, :pct_chg, :volume, :amount)
                 """), {
                     "ts_code": row.get("ts_code", ""),
-                    "trade_date": str(row.get("trade_date", trade_date)),
+                    "trade_date": str(row.get("trade_date", "")),
                     "open": float(row.get("open", 0) or 0),
                     "high": float(row.get("high", 0) or 0),
                     "low": float(row.get("low", 0) or 0),
@@ -210,9 +186,47 @@ async def sync_daily_data(trade_date: str = "") -> int:
             except Exception:
                 continue
         await session.commit()
-
-    logger.info(f"Daily data: {len(rows)} stocks for {trade_date}")
     return len(rows)
+
+
+async def sync_daily_data(trade_date: str = "") -> int:
+    """同步个股日线。指定 trade_date 同步单日；否则回看最近10个交易日补齐 DB 缺失的日。
+
+    历史 bug：原逻辑"往回找5天只同步第一个有数据的日"，配合 16:05 触发早于
+    Tushare 日线更新时间(约17:30+)，最新交易日个股永远滞后。改为回看补齐后，
+    即使某天触发时数据未更新，下次触发也会自动补上。
+    """
+    if trade_date:
+        rows = await get_all_daily(trade_date)
+        if not rows:
+            logger.info(f"No daily data for {trade_date}")
+            return 0
+        await _insert_daily_rows(rows)
+        logger.info(f"Daily data: {len(rows)} stocks for {trade_date}")
+        return len(rows)
+
+    from app.utils.trading_calendar import is_trade_date
+    today = date.today()
+    total = 0
+    for offset in range(10):
+        td = (today - timedelta(days=offset)).strftime("%Y%m%d")
+        if not await is_trade_date(td):
+            continue
+        # 已有个股数据(>100只)视为已同步，跳过，避免重复调 Tushare
+        async with async_session() as s:
+            r = await s.execute(text(
+                "SELECT COUNT(*) FROM stock_daily WHERE trade_date = :td "
+                "AND ts_code NOT IN ('000001.SH','000688.SH','399001.SZ','399006.SZ')"
+            ), {"td": td})
+            if (r.scalar() or 0) > 100:
+                continue
+        rows = await get_all_daily(td)
+        if not rows:
+            continue
+        await _insert_daily_rows(rows)
+        total += len(rows)
+        logger.info(f"Daily data backfilled: {len(rows)} stocks for {td}")
+    return total
 
 
 async def sync_sector_data() -> int:
@@ -320,17 +334,8 @@ async def sync_margin(trade_date: str = "") -> int:
     return len(rows)
 
 
-async def sync_daily_basic(trade_date: str = "") -> int:
-    """同步每日指标 PE/PB/市值/换手率。全市场一次API调用。"""
-    if not trade_date:
-        from app.utils.trading_calendar import get_latest_trade_date
-        trade_date = await get_latest_trade_date()
-
-    rows = await get_daily_basic(trade_date)
-    if not rows:
-        logger.info(f"No daily_basic data for {trade_date}")
-        return 0
-
+async def _insert_daily_basic_rows(rows: list[dict]) -> int:
+    """将每日指标行写入 daily_basic（INSERT OR REPLACE），返回写入行数。"""
     async with async_session() as session:
         for row in rows:
             try:
@@ -342,7 +347,7 @@ async def sync_daily_basic(trade_date: str = "") -> int:
                             :tmv, :cmv, :tr)
                 """), {
                     "ts": row.get("ts_code", ""),
-                    "td": str(row.get("trade_date", trade_date)),
+                    "td": str(row.get("trade_date", "")),
                     "pe": float(row.get("pe", 0) or 0),
                     "pet": float(row.get("pe_ttm", 0) or 0),
                     "pb": float(row.get("pb", 0) or 0),
@@ -357,9 +362,40 @@ async def sync_daily_basic(trade_date: str = "") -> int:
             except Exception:
                 continue
         await session.commit()
-
-    logger.info(f"Daily_basic synced: {len(rows)} stocks for {trade_date}")
     return len(rows)
+
+
+async def sync_daily_basic(trade_date: str = "") -> int:
+    """同步每日指标 PE/PB/市值/换手率。指定 trade_date 同步单日；否则回看最近10个交易日补齐缺失。"""
+    if trade_date:
+        rows = await get_daily_basic(trade_date)
+        if not rows:
+            logger.info(f"No daily_basic data for {trade_date}")
+            return 0
+        await _insert_daily_basic_rows(rows)
+        logger.info(f"Daily_basic synced: {len(rows)} stocks for {trade_date}")
+        return len(rows)
+
+    from app.utils.trading_calendar import is_trade_date
+    today = date.today()
+    total = 0
+    for offset in range(10):
+        td = (today - timedelta(days=offset)).strftime("%Y%m%d")
+        if not await is_trade_date(td):
+            continue
+        async with async_session() as s:
+            r = await s.execute(text(
+                "SELECT COUNT(*) FROM daily_basic WHERE trade_date = :td"
+            ), {"td": td})
+            if (r.scalar() or 0) > 100:
+                continue
+        rows = await get_daily_basic(td)
+        if not rows:
+            continue
+        await _insert_daily_basic_rows(rows)
+        total += len(rows)
+        logger.info(f"Daily_basic backfilled: {len(rows)} stocks for {td}")
+    return total
 
 
 async def sync_moneyflow_hsgt(trade_date: str = "") -> int:

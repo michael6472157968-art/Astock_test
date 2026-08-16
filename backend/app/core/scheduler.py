@@ -26,7 +26,9 @@ def start_scheduler() -> None:
 
     _scheduler.add_job(
         _sync_daily_wrapper,
-        CronTrigger(hour=16, minute=5, timezone=TZ),
+        # 18:30 而非 16:05：Tushare 个股日线(daily/daily_basic)通常 17:30+ 才更新，
+        # 16:05 触发会拉到空数据，导致最新交易日个股永远滞后
+        CronTrigger(hour=18, minute=30, timezone=TZ),
         id="sync_daily",
         name="日线数据同步",
         replace_existing=True,
