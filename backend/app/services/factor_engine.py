@@ -284,6 +284,35 @@ async def _stock_top_list_risk(sess, ts_code: str) -> dict:
     return {"triggered": triggered, "last_date": last_date, "inst_net": inst_net}
 
 
+async def _stock_margin_ratio(sess, ts_code: str) -> float | None:
+    """该股融资买入占比 = 融资买入额 / 成交额。"""
+    r = await sess.execute(text("""
+        SELECT mr.rzmre, d.amount FROM margin_records mr
+        JOIN stock_daily d ON d.ts_code = mr.ts_code AND d.trade_date = mr.trade_date
+        WHERE mr.ts_code = :c AND mr.rzmre IS NOT NULL AND d.amount > 0
+        ORDER BY mr.trade_date DESC LIMIT 1
+    """), {"c": ts_code})
+    row = r.fetchone()
+    if not row or not row[0] or not row[1]:
+        return None
+    return float(row[0]) / (float(row[1]) * 1000)  # amount 千元→元
+
+
+async def _universe_margin_ratio(sess) -> list[float]:
+    """全市场融资买入占比分布（最新一期）。"""
+    r = await sess.execute(text("""
+        SELECT mr.rzmre, d.amount FROM margin_records mr
+        JOIN stock_daily d ON d.ts_code = mr.ts_code AND d.trade_date = mr.trade_date
+        WHERE mr.trade_date = (SELECT MAX(trade_date) FROM margin_records)
+          AND mr.rzmre IS NOT NULL AND d.amount > 0
+    """))
+    vals = []
+    for rzmre, amount in r.fetchall():
+        if rzmre and amount and amount > 0:
+            vals.append(float(rzmre) / (float(amount) * 1000))  # amount 千元→元
+    return vals
+
+
 async def diagnose(ts_code: str, factor_id: str) -> dict:
     """因子诊断：该股因子值 + 全市场分位 + 结论。"""
     factors = load_factors()
@@ -370,6 +399,14 @@ async def diagnose(ts_code: str, factor_id: str) -> dict:
             uni = await _universe_cyq_concentration(sess)
             percentile = _percentile(value, uni)
             value_desc = f"筹码宽度 {value:.3f}"
+
+        elif ctype == "margin_ratio":
+            value = await _stock_margin_ratio(sess, ts_code)
+            if value is None:
+                return {"error": "融资融券数据未接入"}
+            uni = await _universe_margin_ratio(sess)
+            percentile = _percentile(value, uni)
+            value_desc = f"融资买入占比 {value*100:.1f}%"
 
         elif ctype == "top_list_risk":
             risk = await _stock_top_list_risk(sess, ts_code)

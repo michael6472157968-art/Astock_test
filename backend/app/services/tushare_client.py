@@ -224,6 +224,14 @@ async def get_margin(trade_date: str) -> list[dict]:
     return result.to_dict(orient="records")
 
 
+async def get_margin_detail(trade_date: str) -> list[dict]:
+    """融资融券明细——当日全市场个股(含ts_code)。2000积分解锁。"""
+    result = await call_tushare("margin_detail", trade_date=trade_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
 async def get_stk_holdernumber(ts_code: str = "") -> list[dict]:
     """股东人数变化——如传ts_code返回个股各期，不传返回全市场最新一期。2000积分解锁。"""
     kwargs = {"ts_code": ts_code} if ts_code else {}
