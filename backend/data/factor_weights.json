@@ -61,7 +61,8 @@
     "labels": ["反转(超跌反弹)", "量价背离(缩量涨)", "成长(净利增速)"],
     "zscore_fields": [],
     "invert_fields": ["rev42", "corr"],
-    "oversold_field": null
+    "oversold_field": null,
+    "max_per_industry": 3
   },
   "factor_long": {
     "fields": ["corr", "growth", "cfps"],
@@ -69,6 +70,7 @@
     "labels": ["量价背离(缩量涨)", "成长(净利增速)", "现金流(每股)"],
     "zscore_fields": [],
     "invert_fields": ["corr"],
-    "oversold_field": null
+    "oversold_field": null,
+    "max_per_industry": 3
   }
 }

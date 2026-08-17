@@ -283,11 +283,11 @@ class StockPoolEngine:
         if not td42 or not td20:
             return []
 
-        # 1. 候选：当日全市场非ST非688/920，JOIN 42日前close(反转) + 最新财务(F8成长)
+        # 1. 候选：当日全市场非ST非688/920，JOIN 42日前close(反转) + 最新财务(F8成长) + 行业
         r = await session.execute(text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
                    (d.close - d42.close) / NULLIF(d42.close, 0) AS rev42,
-                   fi.dt_netprofit_yoy
+                   fi.dt_netprofit_yoy, s.industry
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
             JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td42) d42 ON d42.ts_code = d.ts_code
@@ -312,13 +312,18 @@ class StockPoolEngine:
         for ts_code, close, vol in r2.fetchall():
             seq.setdefault(ts_code, []).append((float(close), float(vol)))
 
-        # 3. 构造 rows：(code, name, close, pct_chg, vol, rev42, corr, growth)
+        # 3. 构造 rows：(code, name, close, pct_chg, vol, rev42, corr, growth)，行业单独映射
         rows = []
-        for code, name, close, pct_chg, vol, rev42, growth in cand:
+        industry_map = {}
+        for code, name, close, pct_chg, vol, rev42, growth, industry in cand:
             corr = self._corr_price_vol(seq.get(code, []))
             rows.append((code, name, close, pct_chg, vol, rev42, corr, growth))
+            industry_map[code] = industry or ""
 
-        items = score_and_rank(rows, fw["factor_short"], "短线选股(反转+量价背离+成长)", limit=15)
+        items = score_and_rank(rows, fw["factor_short"], "短线选股(反转+量价背离+成长)", limit=60)
+        for it in items:
+            it["industry"] = industry_map.get(it.get("stock_code"), "")
+        items = self._apply_industry_cap(items, fw["factor_short"].get("max_per_industry", 3))
         return await self._attach_risks(items)
 
     async def _factor_long(self, session, trade_date: str, dates: list, fw: dict) -> list:
@@ -327,10 +332,10 @@ class StockPoolEngine:
         if not td20:
             return []
 
-        # 1. 候选：当日全市场非ST非688/920，JOIN 最新财务(F8净利增速/F7现金流)
+        # 1. 候选：当日全市场非ST非688/920，JOIN 最新财务(F8净利增速/F7现金流) + 行业
         r = await session.execute(text("""
             SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
-                   fi.dt_netprofit_yoy, fi.cfps_yoy
+                   fi.dt_netprofit_yoy, fi.cfps_yoy, s.industry
             FROM stock_daily d
             JOIN stocks s ON s.ts_code = d.ts_code
             LEFT JOIN fina_indicator fi ON fi.ts_code = d.ts_code
@@ -354,14 +359,37 @@ class StockPoolEngine:
         for ts_code, close, vol in r2.fetchall():
             seq.setdefault(ts_code, []).append((float(close), float(vol)))
 
-        # 3. 构造 rows：(code, name, close, pct_chg, vol, corr, growth, cfps)
+        # 3. 构造 rows：(code, name, close, pct_chg, vol, corr, growth, cfps)，行业单独映射
         rows = []
-        for code, name, close, pct_chg, vol, growth, cfps in cand:
+        industry_map = {}
+        for code, name, close, pct_chg, vol, growth, cfps, industry in cand:
             corr = self._corr_price_vol(seq.get(code, []))
             rows.append((code, name, close, pct_chg, vol, corr, growth, cfps))
+            industry_map[code] = industry or ""
 
-        items = score_and_rank(rows, fw["factor_long"], "长线选股(量价背离+成长+现金流)", limit=15)
+        items = score_and_rank(rows, fw["factor_long"], "长线选股(量价背离+成长+现金流)", limit=60)
+        for it in items:
+            it["industry"] = industry_map.get(it.get("stock_code"), "")
+        items = self._apply_industry_cap(items, fw["factor_long"].get("max_per_industry", 3))
         return await self._attach_risks(items)
+
+    @staticmethod
+    def _apply_industry_cap(items: list, max_per_industry: int = 3, limit: int = 15) -> list:
+        """行业分散：每个行业最多 max_per_industry 只，按得分顺延补录，凑满 limit 只。
+
+        输入按综合分降序排列的候选(items 已排序)，输出行业分散后的前 limit 只。
+        """
+        result: list = []
+        count: dict = {}
+        for it in items:
+            ind = it.get("industry") or "未分类"
+            if count.get(ind, 0) >= max_per_industry:
+                continue
+            count[ind] = count.get(ind, 0) + 1
+            result.append(it)
+            if len(result) >= limit:
+                break
+        return result
 
     async def _attach_risks(self, items: list) -> list:
         """为选出的股票叠加风险信号标注(R1放量见顶/R2龙虎榜)，不改排序只加标注。
