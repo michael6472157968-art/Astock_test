@@ -109,10 +109,11 @@ async def list_pool(pool_type: str, page: int = 1, page_size: int = 20,
     if not items:
         async with _sess() as s:
             r = await s.execute(_text(
-                "SELECT ts_code, stock_name, market_data_json, inclusion_reason "
-                "FROM stock_pool_results "
-                "WHERE calc_date = :cd AND pool_type = :pt "
-                "ORDER BY rank_in_pool ASC"
+                "SELECT p.ts_code, p.stock_name, p.market_data_json, p.inclusion_reason, s.industry "
+                "FROM stock_pool_results p "
+                "LEFT JOIN stocks s ON s.ts_code = p.ts_code "
+                "WHERE p.calc_date = :cd AND p.pool_type = :pt "
+                "ORDER BY p.rank_in_pool ASC"
             ), {"cd": trade_date, "pt": pool_type})
             for row in r:
                 try:
@@ -128,6 +129,7 @@ async def list_pool(pool_type: str, page: int = 1, page_size: int = 20,
                     "score": md.get("score"),
                     "risks": md.get("risks", []),
                     "risk_names": md.get("risk_names", []),
+                    "industry": row[4] or "",
                     "inclusion_reason": row[3],
                 })
             if items:
