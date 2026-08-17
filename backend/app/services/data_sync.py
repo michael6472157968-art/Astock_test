@@ -15,8 +15,8 @@ from app.models.orm.models import LimitListRecord, MarginRecord, Sector, Stock, 
 from app.services.tushare_client import (get_all_daily, get_broker_recommend, get_cyq_perf, get_daily_basic,
                                           get_express, get_hsgt_top10, get_index_daily, get_limit_list,
                                           get_margin, get_moneyflow, get_moneyflow_hsgt, get_sector_list, get_share_float,
-                                          get_stock_basic, get_stk_holdertrade, get_stk_holdernumber, get_top_inst,
-                                          get_top_list, get_top10_floatholders)
+                                          get_stock_basic, get_stk_holdertrade, get_stk_holdernumber, get_sw_daily,
+                                          get_top_inst, get_top_list, get_top10_floatholders)
 
 logger = logging.getLogger("sync")
 
@@ -248,6 +248,36 @@ async def sync_sector_data() -> int:
         await session.commit()
 
     return len(sectors)
+
+
+async def sync_sw_daily(trade_date: str = "") -> int:
+    """同步申万行业日行情到 sector_daily 表(按交易日批量)。"""
+    if not trade_date:
+        from app.utils.trading_calendar import get_latest_trade_date
+        trade_date = await get_latest_trade_date()
+    rows = await get_sw_daily(trade_date)
+    if not rows:
+        return 0
+
+    async with async_session() as session:
+        for row in rows:
+            try:
+                await session.execute(text("""
+                    INSERT OR REPLACE INTO sector_daily (code, trade_date, close, pct_chg, volume)
+                    VALUES (:code, :td, :close, :pct, :vol)
+                """), {
+                    "code": row.get("ts_code", ""),
+                    "td": str(row.get("trade_date", trade_date)),
+                    "close": float(row.get("close", 0) or 0),
+                    "pct": float(row.get("pct_change", 0) or 0),
+                    "vol": float(row.get("vol", 0) or 0),
+                })
+            except Exception:
+                continue
+        await session.commit()
+
+    logger.info(f"SW daily synced: {len(rows)} for {trade_date}")
+    return len(rows)
 
 
 async def sync_limit_list(trade_date: str = "") -> int:

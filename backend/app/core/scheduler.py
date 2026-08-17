@@ -78,8 +78,8 @@ async def _sync_daily_all():
     from app.services.data_sync import (sync_broker_recommend, sync_cyq_perf, sync_daily_basic, sync_daily_data,
                                          sync_express, sync_hsgt_top10, sync_index_daily, sync_margin,
                                          sync_moneyflow, sync_moneyflow_hsgt, sync_share_float, sync_stock_basic,
-                                         sync_stk_holdertrade, sync_stk_holdernumber, sync_top_inst, sync_top_list,
-                                         sync_top10_floatholders)
+                                         sync_stk_holdertrade, sync_stk_holdernumber, sync_sw_daily, sync_top_inst,
+                                         sync_top_list, sync_top10_floatholders)
     from app.services.stock_pool_engine import StockPoolEngine
     from app.services.sector_analysis import SectorAnalysisEngine
     from app.services.market_review import MarketReviewEngine
@@ -99,6 +99,7 @@ async def _sync_daily_all():
         ("cyq_perf", sync_cyq_perf),
         ("top_list", sync_top_list),
         ("top_inst", sync_top_inst),
+        ("sw_daily", sync_sw_daily),
     ]:
         try:
             n = await fn()

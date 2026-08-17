@@ -167,6 +167,14 @@ async def get_sector_list() -> list[dict]:
     return result.to_dict(orient="records")
 
 
+async def get_sw_daily(trade_date: str) -> list[dict]:
+    """申万行业日行情——按交易日批量返回(含一/二/三级行业)。"""
+    result = await call_tushare("sw_daily", trade_date=trade_date)
+    if result is None or (hasattr(result, 'empty') and result.empty):
+        return []
+    return result.to_dict(orient="records")
+
+
 async def get_moneyflow_hsgt(start_date: str, end_date: str) -> list[dict]:
     """沪深港通资金流向——北向/南向净流入。2000积分解锁。"""
     result = await call_tushare("moneyflow_hsgt", start_date=start_date, end_date=end_date)
