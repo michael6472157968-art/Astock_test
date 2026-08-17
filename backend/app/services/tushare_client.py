@@ -150,9 +150,10 @@ async def get_index_daily(ts_code: str, start_date: str, end_date: str) -> list[
 
 
 async def get_limit_list(trade_date: str) -> list[dict]:
-    """涨跌停列表——Tushare标准接口，120积分可调用。
-    返回字段: ts_code, trade_date, name, close, pct_chg, limit(U/D/Z), open_times, up_stat, limit_times 等."""
-    result = await call_tushare("limit_list", trade_date=trade_date)
+    """涨跌停列表——Tushare limit_list_d 接口。
+    返回字段: ts_code, trade_date, industry, name, close, pct_chg, limit(U/D/Z),
+    open_times, up_stat, limit_times, first_time, last_time, fd_amount 等."""
+    result = await call_tushare("limit_list_d", trade_date=trade_date)
     if result is None or (hasattr(result, 'empty') and result.empty):
         return []
     return result.to_dict(orient="records")
