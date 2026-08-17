@@ -318,7 +318,8 @@ class StockPoolEngine:
             corr = self._corr_price_vol(seq.get(code, []))
             rows.append((code, name, close, pct_chg, vol, rev42, corr, growth))
 
-        return score_and_rank(rows, fw["factor_short"], "短线选股(反转+量价背离+成长)", limit=15)
+        items = score_and_rank(rows, fw["factor_short"], "短线选股(反转+量价背离+成长)", limit=15)
+        return await self._attach_risks(items)
 
     async def _factor_long(self, session, trade_date: str, dates: list, fw: dict) -> list:
         """长线选股池(持有60日/季度调仓)：量价背离F2 + 成长F8 + 现金流F7，各15只。"""
@@ -359,7 +360,30 @@ class StockPoolEngine:
             corr = self._corr_price_vol(seq.get(code, []))
             rows.append((code, name, close, pct_chg, vol, corr, growth, cfps))
 
-        return score_and_rank(rows, fw["factor_long"], "长线选股(量价背离+成长+现金流)", limit=15)
+        items = score_and_rank(rows, fw["factor_long"], "长线选股(量价背离+成长+现金流)", limit=15)
+        return await self._attach_risks(items)
+
+    async def _attach_risks(self, items: list) -> list:
+        """为选出的股票叠加风险信号标注(R1放量见顶/R2龙虎榜)，不改排序只加标注。
+
+        风险信号是单股择时/风险预警(见 data/risk_signals.json)，独立于选股因子，
+        不参与综合得分。触发则标注 risks 字段供前端 ⚠️ 提示。
+        """
+        if not items:
+            return items
+        from app.services.factor_engine import scan_risks
+        for item in items:
+            code = item.get("stock_code")
+            if not code:
+                continue
+            try:
+                risks = await scan_risks(code)
+            except Exception:
+                risks = []
+            if risks:
+                item["risks"] = [r["code"] for r in risks]
+                item["risk_names"] = [r["name"] for r in risks]
+        return items
 
     # ── 持久化 ──
 
@@ -387,6 +411,8 @@ class StockPoolEngine:
                             "change_pct": item.get("change_pct"),
                             "volume_ratio": item.get("volume_ratio"),
                             "score": item.get("score"),
+                            "risks": item.get("risks", []),
+                            "risk_names": item.get("risk_names", []),
                         }),
                         "ir": item.get("inclusion_reason", ""),
                     })

@@ -24,6 +24,7 @@
 .fp-score-lbl { font-size:0.65rem; color:var(--color-text-muted); font-weight:400; margin-left:1px; }
 .fp-price { font-size:0.78rem; color:var(--color-text); margin-top:3px; }
 .fp-pct { font-size:0.78rem; font-weight:700; }
+.fp-risk { color:#e5484d; margin-left:4px; font-size:0.82rem; cursor:help; }
 </style>
 <meta name="theme-color" content="#080808" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -484,6 +485,7 @@
     var html = items.map(function(s, i) {
       var pct = s.change_pct || 0;
       var pctCls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+      var riskTag = (s.risks && s.risks.length) ? '<span class="fp-risk" title="风险信号：' + escHtml((s.risk_names || s.risks).join('、')) + '">⚠️</span>' : '';
       var reason = (s.inclusion_reason || '').replace(/^(短线|长线)选股\([^)]*\)\s*/, '');
       var reasonChips = reason.split(' · ').map(function(part) {
         var m = part.match(/^(.*?)(\d+)%$/);
@@ -493,7 +495,7 @@
       return '<div class="fp-item" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'" style="cursor:pointer">' +
         '<span class="fp-rank">' + (i + 1) + '</span>' +
         '<div class="fp-main">' +
-          '<div class="fp-name-row"><span class="fp-name">' + escHtml(s.stock_name || s.stock_code) + '</span><span class="fp-code">' + escHtml(s.stock_code) + '</span></div>' +
+          '<div class="fp-name-row"><span class="fp-name">' + escHtml(s.stock_name || s.stock_code) + '</span>' + riskTag + '<span class="fp-code">' + escHtml(s.stock_code) + '</span></div>' +
           '<div class="fp-reason">' + reasonChips + '</div>' +
         '</div>' +
         '<div class="fp-right">' +

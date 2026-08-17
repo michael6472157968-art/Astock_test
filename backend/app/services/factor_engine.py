@@ -262,12 +262,25 @@ async def _universe_cyq_concentration(sess) -> list[float]:
     return vals
 
 
-async def _stock_top_list_risk(sess, ts_code: str) -> dict:
-    """龙虎榜上榜风险：近期上榜且机构净卖出 → 看跌。"""
-    r = await sess.execute(text("""
-        SELECT trade_date FROM top_list
-        WHERE ts_code = :c ORDER BY trade_date DESC LIMIT 1
-    """), {"c": ts_code})
+async def _stock_top_list_risk(sess, ts_code: str, trade_date: str | None = None) -> dict:
+    """龙虎榜上榜风险：近10个自然日内上榜且机构净卖出 → 看跌(上榜后5日超额-1.37%衰减)。
+
+    trade_date 为参照交易日(选股/诊股当日)，限定上榜时间窗口，避免历史永久触发。
+    """
+    from datetime import datetime, timedelta
+    if trade_date:
+        td_dt = datetime.strptime(trade_date, "%Y%m%d")
+        recent = (td_dt - timedelta(days=10)).strftime("%Y%m%d")
+        r = await sess.execute(text("""
+            SELECT trade_date FROM top_list
+            WHERE ts_code = :c AND trade_date >= :recent
+            ORDER BY trade_date DESC LIMIT 1
+        """), {"c": ts_code, "recent": recent})
+    else:
+        r = await sess.execute(text("""
+            SELECT trade_date FROM top_list
+            WHERE ts_code = :c ORDER BY trade_date DESC LIMIT 1
+        """), {"c": ts_code})
     row = r.fetchone()
     if not row:
         return {"triggered": False, "last_date": None, "inst_net": None}
@@ -570,7 +583,7 @@ async def scan_risks(ts_code: str) -> list[dict]:
                                    else "量比数据不足"),
                     })
             elif ctype == "top_list_risk":
-                risk = await _stock_top_list_risk(sess, ts_code)
+                risk = await _stock_top_list_risk(sess, ts_code, td)
                 if risk["triggered"]:
                     risks.append({
                         "signal_id": rid, "code": meta["code"], "name": meta["name"],

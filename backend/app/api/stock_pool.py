@@ -126,6 +126,8 @@ async def list_pool(pool_type: str, page: int = 1, page_size: int = 20,
                     "change_pct": md.get("change_pct"),
                     "volume_ratio": md.get("volume_ratio"),
                     "score": md.get("score"),
+                    "risks": md.get("risks", []),
+                    "risk_names": md.get("risk_names", []),
                     "inclusion_reason": row[3],
                 })
             if items:
