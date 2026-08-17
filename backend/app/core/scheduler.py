@@ -76,7 +76,7 @@ def _sync_daily_wrapper():
 async def _sync_daily_all():
     """所有收盘后同步+计算合并到一个event loop中执行，避免跨loop连接泄漏。"""
     from app.services.data_sync import (sync_broker_recommend, sync_cyq_perf, sync_daily_basic, sync_daily_data,
-                                         sync_dc_index, sync_express, sync_hsgt_top10, sync_index_daily, sync_margin,
+                                         sync_express, sync_hsgt_top10, sync_index_daily, sync_margin,
                                          sync_moneyflow, sync_moneyflow_hsgt, sync_share_float, sync_stock_basic,
                                          sync_stk_holdertrade, sync_stk_holdernumber, sync_top_inst, sync_top_list,
                                          sync_top10_floatholders)
@@ -99,7 +99,6 @@ async def _sync_daily_all():
         ("cyq_perf", sync_cyq_perf),
         ("top_list", sync_top_list),
         ("top_inst", sync_top_inst),
-        ("dc_index", sync_dc_index),
     ]:
         try:
             n = await fn()

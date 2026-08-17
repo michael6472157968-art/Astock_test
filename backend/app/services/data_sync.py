@@ -13,7 +13,7 @@ from sqlalchemy import text
 from app.core.database import async_session
 from app.models.orm.models import LimitListRecord, MarginRecord, Sector, Stock, StockDaily
 from app.services.tushare_client import (get_all_daily, get_broker_recommend, get_cyq_perf, get_daily_basic,
-                                          get_dc_index, get_express, get_hsgt_top10, get_index_daily, get_limit_list,
+                                          get_express, get_hsgt_top10, get_index_daily, get_limit_list,
                                           get_margin, get_moneyflow, get_moneyflow_hsgt, get_sector_list, get_share_float,
                                           get_stock_basic, get_stk_holdertrade, get_stk_holdernumber, get_top_inst,
                                           get_top_list, get_top10_floatholders)
@@ -769,40 +769,6 @@ async def sync_top_inst(trade_date: str = "") -> int:
         await session.commit()
     logger.info(f"Top_inst synced: {len(rows)} for {trade_date}")
     return len(rows)
-
-
-async def sync_dc_index(trade_date: str = "") -> int:
-    """同步东财概念/行业板块。6000积分解锁。"""
-    if not trade_date:
-        from app.utils.trading_calendar import get_latest_trade_date
-        trade_date = await get_latest_trade_date()
-    total = 0
-    for idx_type in ["概念板块", "行业板块"]:
-        rows = await get_dc_index(trade_date, idx_type)
-        if not rows:
-            continue
-        async with async_session() as session:
-            for row in rows:
-                try:
-                    await session.execute(text("""
-                        INSERT OR REPLACE INTO dc_index
-                            (trade_date, ts_code, name, leading, leading_code, pct_change, leading_pct,
-                             total_mv, turnover_rate, up_num, down_num, idx_type, level)
-                        VALUES (:td, :ts, :nm, :ld, :lc, :pc, :lp, :tm, :tr, :un, :dn, :it, :lv)
-                    """), {
-                        "td": str(row.get("trade_date", trade_date)), "ts": row.get("ts_code", ""),
-                        "nm": row.get("name", ""), "ld": row.get("leading", ""), "lc": row.get("leading_code", ""),
-                        "pc": row.get("pct_change"), "lp": row.get("leading_pct"),
-                        "tm": row.get("total_mv"), "tr": row.get("turnover_rate"),
-                        "un": row.get("up_num"), "dn": row.get("down_num"),
-                        "it": idx_type, "lv": row.get("level"),
-                    })
-                except Exception:
-                    continue
-            await session.commit()
-        total += len(rows)
-    logger.info(f"Dc_index synced: {total} for {trade_date}")
-    return total
 
 
 async def sync_broker_recommend(month: str = "") -> int:

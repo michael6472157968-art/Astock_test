@@ -293,22 +293,6 @@ async def get_top_inst(trade_date: str) -> list[dict]:
     return result.to_dict(orient="records")
 
 
-async def get_dc_index(trade_date: str, idx_type: str = "行业板块") -> list[dict]:
-    """东方财富概念/行业板块。6000积分解锁。"""
-    result = await call_tushare("dc_index", trade_date=trade_date, idx_type=idx_type)
-    if result is None or (hasattr(result, 'empty') and result.empty):
-        return []
-    return result.to_dict(orient="records")
-
-
-async def get_dc_member(trade_date: str) -> list[dict]:
-    """东方财富概念成分。6000积分解锁。"""
-    result = await call_tushare("dc_member", trade_date=trade_date)
-    if result is None or (hasattr(result, 'empty') and result.empty):
-        return []
-    return result.to_dict(orient="records")
-
-
 async def get_broker_recommend(month: str) -> list[dict]:
     """券商月度金股。6000积分解锁。"""
     result = await call_tushare("broker_recommend", month=month)
