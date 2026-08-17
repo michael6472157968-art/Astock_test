@@ -79,12 +79,14 @@ class StockPoolEngine:
 
             steady = await self._steady_swing(session, trade_date, all_dates, used, fw)
 
-            factor = await self._factor_daily(session, trade_date, all_dates, fw)
+            factor_short = await self._factor_short(session, trade_date, all_dates, fw)
+            factor_long = await self._factor_long(session, trade_date, all_dates, fw)
 
         pools = {
             "hot_leader": hot, "dip_ambush": dip,
             "oversold_rebound": bounce, "steady_swing": steady,
-            "factor_daily": factor,
+            "factor_short": factor_short,
+            "factor_long": factor_long,
         }
         for ptype in pools:
             await cache_set(f"pool:{ptype}:{trade_date}", pools[ptype],
@@ -257,7 +259,7 @@ class StockPoolEngine:
         candidates = score_and_rank(r.fetchall(), fw["steady_swing"], "稳健波段", limit=POOL_SIZE * 3)
         return [c for c in candidates if c["stock_code"] not in exclude][:POOL_SIZE]
 
-    # ── 因子选股池（每日10股，进攻版：量价背离+成长+现金流合成）──
+    # ── 因子选股池（短线20日 + 长线60日 分层）──
 
     @staticmethod
     def _corr_price_vol(pairs: list) -> float | None:
@@ -274,8 +276,52 @@ class StockPoolEngine:
         sv = (sum((v - mv) ** 2 for v in vols) / n) ** 0.5
         return cov / (sc * sv) if sc > 0 and sv > 0 else None
 
-    async def _factor_daily(self, session, trade_date: str, dates: list, fw: dict) -> list:
-        """因子选股(进攻版)：量价背离F2 + 成长F8 + 现金流F7 合成横截面排序，每日10股。"""
+    async def _factor_short(self, session, trade_date: str, dates: list, fw: dict) -> list:
+        """短线选股池(持有20日/月度调仓)：反转F1 + 量价背离F2 + 成长F8，各15只。"""
+        td42 = self._nth_date(dates, trade_date, 42)
+        td20 = self._nth_date(dates, trade_date, 20)
+        if not td42 or not td20:
+            return []
+
+        # 1. 候选：当日全市场非ST非688/920，JOIN 42日前close(反转) + 最新财务(F8成长)
+        r = await session.execute(text("""
+            SELECT d.ts_code, s.name, d.close, d.pct_chg, d.volume,
+                   (d.close - d42.close) / NULLIF(d42.close, 0) AS rev42,
+                   fi.dt_netprofit_yoy
+            FROM stock_daily d
+            JOIN stocks s ON s.ts_code = d.ts_code
+            JOIN (SELECT ts_code, close FROM stock_daily WHERE trade_date = :td42) d42 ON d42.ts_code = d.ts_code
+            LEFT JOIN fina_indicator fi ON fi.ts_code = d.ts_code
+                AND fi.end_date = (SELECT MAX(end_date) FROM fina_indicator fi2 WHERE fi2.ts_code = d.ts_code)
+            WHERE d.trade_date = :td
+              AND d.close > 0 AND d.volume > 0
+              AND d.ts_code NOT LIKE '%ST%' AND s.name NOT LIKE '%ST%'
+              AND d.ts_code NOT LIKE '688%' AND d.ts_code NOT LIKE '920%'
+        """), {"td": trade_date, "td42": td42})
+        cand = r.fetchall()
+        if not cand:
+            return []
+
+        # 2. 拉近20日 close/volume，算价量相关(F2)
+        r2 = await session.execute(text("""
+            SELECT ts_code, close, volume FROM stock_daily
+            WHERE trade_date > :td20 AND trade_date <= :td AND volume > 0
+            ORDER BY ts_code, trade_date
+        """), {"td20": td20, "td": trade_date})
+        seq: dict = {}
+        for ts_code, close, vol in r2.fetchall():
+            seq.setdefault(ts_code, []).append((float(close), float(vol)))
+
+        # 3. 构造 rows：(code, name, close, pct_chg, vol, rev42, corr, growth)
+        rows = []
+        for code, name, close, pct_chg, vol, rev42, growth in cand:
+            corr = self._corr_price_vol(seq.get(code, []))
+            rows.append((code, name, close, pct_chg, vol, rev42, corr, growth))
+
+        return score_and_rank(rows, fw["factor_short"], "短线选股(反转+量价背离+成长)", limit=15)
+
+    async def _factor_long(self, session, trade_date: str, dates: list, fw: dict) -> list:
+        """长线选股池(持有60日/季度调仓)：量价背离F2 + 成长F8 + 现金流F7，各15只。"""
         td20 = self._nth_date(dates, trade_date, 20)
         if not td20:
             return []
@@ -297,7 +343,7 @@ class StockPoolEngine:
         if not cand:
             return []
 
-        # 2. 拉近20日 close/volume，算每只价量相关(F2)
+        # 2. 拉近20日 close/volume，算价量相关(F2)
         r2 = await session.execute(text("""
             SELECT ts_code, close, volume FROM stock_daily
             WHERE trade_date > :td20 AND trade_date <= :td AND volume > 0
@@ -313,7 +359,7 @@ class StockPoolEngine:
             corr = self._corr_price_vol(seq.get(code, []))
             rows.append((code, name, close, pct_chg, vol, corr, growth, cfps))
 
-        return score_and_rank(rows, fw["factor_daily"], "因子选股(量价背离+成长+现金流)", limit=10)
+        return score_and_rank(rows, fw["factor_long"], "长线选股(量价背离+成长+现金流)", limit=15)
 
     # ── 持久化 ──
 
