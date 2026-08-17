@@ -54,18 +54,10 @@
 <script src="/js/app.js?v=18"></script>
 <script>
 var pools = [
-  { type: 'hot_leader', name: '热点龙头池' },
-  { type: 'dip_ambush', name: '低吸埋伏池' },
-  { type: 'oversold_rebound', name: '超跌反弹池' },
-  { type: 'steady_swing', name: '稳健波段池' },
-  { type: 'short_t3_momentum', name: 'T+3 追涨' },
-  { type: 'short_t3_dip', name: 'T+3 低吸' },
-  { type: 'short_t7_momentum', name: 'T+7 追涨' },
-  { type: 'short_t7_dip', name: 'T+7 低吸' },
   { type: 'factor_short', name: '短线选股池(20日)' },
   { type: 'factor_long', name: '长线选股池(60日)' },
 ];
-var activePool = 'hot_leader';
+var activePool = 'factor_short';
 var allItems = [];
 var currentTradeDate = '';
 
@@ -193,7 +185,7 @@ document.addEventListener('click', function(e) {
 
 FavStore.loadCache();
 renderTabs();
-loadPool('hot_leader');
+loadPool('factor_short');
 </script>
 </body>
 </html>

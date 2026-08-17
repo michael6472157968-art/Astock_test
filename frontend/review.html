@@ -546,10 +546,7 @@ function buildStrategyPools(sp) {
 
   // Pool name friendly labels
   var nameMap = {
-    'hot_leader': '🔥 热门龙头', 'dip_ambush': '🎯 回调伏击',
-    'oversold_rebound': '📉 超跌反弹', 'steady_swing': '📊 稳定震荡',
-    'short_t3_momentum': '⚡ T+3追涨', 'short_t3_dip': '🔻 T+3低吸',
-    'short_t7_momentum': '🚀 T+7追涨', 'short_t7_dip': '💧 T+7低吸'
+    'factor_short': '⚡ 短线选股', 'factor_long': '📈 长线选股'
   };
 
   var h = '<div class="card"><div class="card-header">🎯 策略池表现 <span style="font-size:0.75rem;color:var(--color-text-muted);">(' + (sp.calc_date || '') + ' 收盘选股)</span></div><div class="card-body">';

@@ -1,75 +1,48 @@
 {
-  "short_t3_momentum": {
-    "fields": ["chg3", "vol_ratio", "pct_chg", "turnover", "pe", "pb", "total_mv"],
-    "weights": [0.25, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10],
-    "zscore_fields": ["pe", "pb", "total_mv"],
-    "invert_fields": [],
-    "oversold_field": null
-  },
-  "short_t3_dip": {
-    "fields": ["chg5", "vol_ratio", "dist_from_low", "pct_chg", "pe", "pb", "total_mv"],
-    "weights": [0.20, 0.15, 0.20, 0.15, 0.12, 0.08, 0.10],
-    "zscore_fields": ["pe", "pb", "total_mv"],
-    "invert_fields": ["dist_from_low"],
-    "oversold_field": "dist_from_low"
-  },
-  "short_t7_momentum": {
-    "fields": ["chg10", "ma_slope", "pct_chg", "turnover", "pe", "pb", "total_mv"],
-    "weights": [0.25, 0.15, 0.15, 0.10, 0.15, 0.10, 0.10],
-    "zscore_fields": ["pe", "pb", "total_mv"],
-    "invert_fields": [],
-    "oversold_field": null
-  },
-  "short_t7_dip": {
-    "fields": ["drawdown", "chg10", "pct_chg", "pe", "pb", "total_mv"],
-    "weights": [0.30, 0.20, 0.15, 0.15, 0.10, 0.10],
-    "zscore_fields": ["pe", "pb", "total_mv"],
-    "invert_fields": [],
-    "oversold_field": "drawdown"
-  },
-  "hot_leader": {
-    "fields": ["pct_chg", "chg3", "vol_ratio", "turnover", "pe", "pb", "total_mv"],
-    "weights": [0.30, 0.20, 0.15, 0.10, 0.10, 0.08, 0.07],
-    "zscore_fields": ["pe", "pb", "total_mv"],
-    "invert_fields": [],
-    "oversold_field": null
-  },
-  "dip_ambush": {
-    "fields": ["dist_from_low", "pct_chg", "vol_ratio", "pe", "pb", "total_mv"],
-    "weights": [0.30, 0.20, 0.15, 0.15, 0.10, 0.10],
-    "zscore_fields": ["pe", "pb", "total_mv"],
-    "invert_fields": ["dist_from_low"],
-    "oversold_field": null
-  },
-  "oversold_rebound": {
-    "fields": ["chg5", "pct_chg", "vol_ratio", "pe", "pb", "total_mv"],
-    "weights": [0.35, 0.20, 0.15, 0.12, 0.10, 0.08],
-    "zscore_fields": ["pe", "pb", "total_mv"],
-    "invert_fields": ["chg5"],
-    "oversold_field": null
-  },
-  "steady_swing": {
-    "fields": ["vol_ratio", "pct_chg", "chg5", "pe", "pb", "total_mv"],
-    "weights": [0.30, 0.20, 0.15, 0.15, 0.10, 0.10],
-    "zscore_fields": ["pe", "pb", "total_mv"],
-    "invert_fields": [],
-    "oversold_field": null
-  },
   "factor_short": {
-    "fields": ["rev42", "corr", "growth"],
-    "weights": [0.398, 0.310, 0.292],
-    "labels": ["反转(超跌反弹)", "量价背离(缩量涨)", "成长(净利增速)"],
+    "fields": [
+      "rev42",
+      "corr",
+      "growth"
+    ],
+    "weights": [
+      0.398,
+      0.31,
+      0.292
+    ],
+    "labels": [
+      "反转(超跌反弹)",
+      "量价背离(缩量涨)",
+      "成长(净利增速)"
+    ],
     "zscore_fields": [],
-    "invert_fields": ["rev42", "corr"],
+    "invert_fields": [
+      "rev42",
+      "corr"
+    ],
     "oversold_field": null,
     "top_industries": 4
   },
   "factor_long": {
-    "fields": ["corr", "growth", "cfps"],
-    "weights": [0.333, 0.333, 0.333],
-    "labels": ["量价背离(缩量涨)", "成长(净利增速)", "现金流(每股)"],
+    "fields": [
+      "corr",
+      "growth",
+      "cfps"
+    ],
+    "weights": [
+      0.333,
+      0.333,
+      0.333
+    ],
+    "labels": [
+      "量价背离(缩量涨)",
+      "成长(净利增速)",
+      "现金流(每股)"
+    ],
     "zscore_fields": [],
-    "invert_fields": ["corr"],
+    "invert_fields": [
+      "corr"
+    ],
     "oversold_field": null,
     "top_industries": 4
   }

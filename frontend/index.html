@@ -98,31 +98,11 @@
       <div class="kline-chart" id="klineChart"></div>
     </div>
 
-    <!-- 今日因子选股榜单（首页核心：短线+长线分层） -->
-    <div class="mood-panel" style="margin-bottom:16px;">
-      <div class="mood-header">
-        <span class="mood-title">短线选股池 <span style="font-size:0.7rem;color:var(--color-text-muted);font-weight:400;">反转 + 量价背离 + 成长 · 持有20日(月度) · 15只</span></span>
-        <span class="mood-date" id="factorShortDate">加载中...</span>
-      </div>
-      <div class="mood-body" style="flex-direction:column;padding:4px 12px 12px;">
-        <div id="factorShortList" style="display:flex;flex-direction:column;gap:8px;">加载中...</div>
-      </div>
-    </div>
-    <div class="mood-panel" style="margin-bottom:16px;">
-      <div class="mood-header">
-        <span class="mood-title">长线选股池 <span style="font-size:0.7rem;color:var(--color-text-muted);font-weight:400;">量价背离 + 成长 + 现金流 · 持有60日(季度) · 15只</span></span>
-        <span class="mood-date" id="factorLongDate">加载中...</span>
-      </div>
-      <div class="mood-body" style="flex-direction:column;padding:4px 12px 12px;">
-        <div id="factorLongList" style="display:flex;flex-direction:column;gap:8px;">加载中...</div>
-      </div>
-    </div>
-
-    <!-- 滚动行情条 -->
+    <!-- 滚动行情条（短线选股池） -->
     <div class="marquee-section" id="marqueeSection">
       <div class="marquee-header">
         <span class="mh-dot green"></span>
-        <span class="mh-label">热门股票</span>
+        <span class="mh-label">短线选股</span>
       </div>
       <div class="marquee-wrap">
         <div class="marquee-track" id="marqueeTrack"></div>
@@ -452,9 +432,9 @@
   });
 
   function loadMarqueeAndShortPools() {
-    // 跑马灯：仅热门股（短线优选4池已删除，改为因子选股）
-    API.get('/stock-pool/hot_leader').then(function(r) {
-      var hotItems = (r.data.items || []).slice(0, 10);
+    // 跑马灯：短线选股池（因子选股）
+    API.get('/stock-pool/factor_short').then(function(r) {
+      var hotItems = (r.data.items || []).slice(0, 15);
       var rows = hotItems.map(function(s) {
         return { name: s.stock_name || s.stock_code, code: s.stock_code, close: s.close, pct: s.change_pct || 0 };
       });
@@ -462,7 +442,7 @@
         var items = rows.concat(rows);
         var html = items.map(function(r) {
           return '<div class="marquee-item" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(r.code) + '\'" style="cursor:pointer">' +
-            '<span class="mi-tag hot">热门</span>' +
+            '<span class="mi-tag hot">短线</span>' +
             '<span class="mi-name">' + r.name + '</span>' +
             '<span class="mi-code">' + r.code + '</span>' +
             '<span class="mi-price">' + (r.close ? r.close.toFixed(2) : '--') + '</span>' +
@@ -473,61 +453,6 @@
         document.getElementById('marqueeTrack').classList.add('marquee-running');
       }
     }).catch(function() {});
-  }
-
-  function escHtml(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-
-  // ── 今日因子选股榜单（短线+长线分层）──
-  function renderFactorPool(listEl, items) {
-    if (!items.length) {
-      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--color-text-muted);font-size:0.82rem;">今日暂无选股信号</div>';
-      return;
-    }
-    var html = items.map(function(s, i) {
-      var pct = s.change_pct || 0;
-      var pctCls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
-      var indTag = s.industry ? '<span class="fp-ind">' + escHtml(s.industry) + '</span>' : '';
-      var riskTag = (s.risks && s.risks.length) ? '<span class="fp-risk" title="风险信号：' + escHtml((s.risk_names || s.risks).join('、')) + '">⚠️</span>' : '';
-      var reason = (s.inclusion_reason || '').replace(/^(短线|长线)选股\([^)]*\)\s*/, '');
-      var reasonChips = reason.split(' · ').map(function(part) {
-        var m = part.match(/^(.*?)(\d+)%$/);
-        if (m) return '<span class="fp-chip">' + escHtml(m[1]) + '<b>' + m[2] + '%</b></span>';
-        return '<span class="fp-chip">' + escHtml(part) + '</span>';
-      }).join('');
-      return '<div class="fp-item" onclick="window.location.href=\'diagnosis.html?code=' + encodeURIComponent(s.stock_code) + '\'" style="cursor:pointer">' +
-        '<span class="fp-rank">' + (i + 1) + '</span>' +
-        '<div class="fp-main">' +
-          '<div class="fp-name-row"><span class="fp-name">' + escHtml(s.stock_name || s.stock_code) + '</span>' + indTag + riskTag + '<span class="fp-code">' + escHtml(s.stock_code) + '</span></div>' +
-          '<div class="fp-reason">' + reasonChips + '</div>' +
-        '</div>' +
-        '<div class="fp-right">' +
-          '<div class="fp-score">' + (s.score != null ? s.score : '--') + '<span class="fp-score-lbl">分</span></div>' +
-          '<div class="fp-price">' + (s.close != null ? s.close.toFixed(2) : '--') + '</div>' +
-          '<div class="fp-pct ' + pctCls + '">' + fmtSign(pct) + '%</div>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-    listEl.innerHTML = html;
-  }
-
-  function loadFactorPools() {
-    API.get('/stock-pool/factor_short').then(function(r) {
-      var items = r.data.items || [];
-      var date = r.data.trade_date || r.data.date || '';
-      document.getElementById('factorShortDate').textContent = date ? '数据日期 ' + fmtDate8(date) : '';
-      renderFactorPool(document.getElementById('factorShortList'), items);
-    }).catch(function() {
-      document.getElementById('factorShortList').innerHTML = '<div style="text-align:center;padding:16px;color:var(--color-text-muted);font-size:0.82rem;">短线选股加载失败</div>';
-    });
-
-    API.get('/stock-pool/factor_long').then(function(r) {
-      var items = r.data.items || [];
-      var date = r.data.trade_date || r.data.date || '';
-      document.getElementById('factorLongDate').textContent = date ? '数据日期 ' + fmtDate8(date) : '';
-      renderFactorPool(document.getElementById('factorLongList'), items);
-    }).catch(function() {
-      document.getElementById('factorLongList').innerHTML = '<div style="text-align:center;padding:16px;color:var(--color-text-muted);font-size:0.82rem;">长线选股加载失败</div>';
-    });
   }
 
   var indexTimer = null;
@@ -597,7 +522,6 @@
     loadDashboard();
     loadTradeCalendar();
     loadMarqueeAndShortPools();
-    loadFactorPools();
     if (inTradingHours()) {
       loadIndices(); loadMood();
       document.getElementById('refreshHint').textContent = '交易时段 | 60s 刷新';

@@ -20,14 +20,6 @@ router = APIRouter(prefix="/api/v1/stock-pool", tags=["选股池"])
 _settings = get_settings()
 
 POOL_TYPES = {
-    "hot_leader": {"name": "热点龙头池", "desc": "当日热点板块内放量突破的强势股"},
-    "dip_ambush": {"name": "低吸埋伏池", "desc": "回调到关键支撑位、缩量企稳的优质股"},
-    "oversold_rebound": {"name": "超跌反弹池", "desc": "短期超跌、出现反转信号的博弈股"},
-    "steady_swing": {"name": "稳健波段池", "desc": "趋势向上、量价健康的中短线标的"},
-    "short_t3_momentum": {"name": "T+3 追涨", "desc": "强势股短期惯性上冲，持股3交易日"},
-    "short_t3_dip": {"name": "T+3 低吸", "desc": "回调企稳后反弹博弈，持股3交易日"},
-    "short_t7_momentum": {"name": "T+7 追涨", "desc": "趋势确立顺势持股，持股7交易日"},
-    "short_t7_dip": {"name": "T+7 低吸", "desc": "中期回调修复机会，持股7交易日"},
     "factor_short": {"name": "短线选股池", "desc": "反转+量价背离+成长，持有20日(月度调仓)，15只"},
     "factor_long": {"name": "长线选股池", "desc": "量价背离+成长+现金流，持有60日(季度调仓)，15只"},
 }
