@@ -35,7 +35,11 @@ class StockPoolEngine:
 
         if not trade_date:
             async with async_session() as sess:
-                r = await sess.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
+                # 用「完整交易日」(>=50只) 而非裸 MAX：盘中同步进少量数据会让 MAX 跳到不完整的新交易日
+                r = await sess.execute(text(
+                    "SELECT trade_date FROM stock_daily GROUP BY trade_date "
+                    "HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 1"
+                ))
                 trade_date = r.scalar() or (date.today() - timedelta(days=1)).strftime("%Y%m%d")
 
         base_dt = datetime.strptime(trade_date, "%Y%m%d")
@@ -320,10 +324,10 @@ class StockPoolEngine:
             rows.append((code, name, close, pct_chg, vol, rev42, corr, growth))
             industry_map[code] = industry or ""
 
-        items = score_and_rank(rows, fw["factor_short"], "短线选股(反转+量价背离+成长)", limit=60)
+        items = score_and_rank(rows, fw["factor_short"], "短线选股(反转+量价背离+成长)", limit=5000)
         for it in items:
             it["industry"] = industry_map.get(it.get("stock_code"), "")
-        items = self._apply_industry_cap(items, fw["factor_short"].get("max_per_industry", 3))
+        items = self._apply_top_industries(items, fw["factor_short"].get("top_industries", 4))
         return await self._attach_risks(items)
 
     async def _factor_long(self, session, trade_date: str, dates: list, fw: dict) -> list:
@@ -367,23 +371,36 @@ class StockPoolEngine:
             rows.append((code, name, close, pct_chg, vol, corr, growth, cfps))
             industry_map[code] = industry or ""
 
-        items = score_and_rank(rows, fw["factor_long"], "长线选股(量价背离+成长+现金流)", limit=60)
+        items = score_and_rank(rows, fw["factor_long"], "长线选股(量价背离+成长+现金流)", limit=5000)
         for it in items:
             it["industry"] = industry_map.get(it.get("stock_code"), "")
-        items = self._apply_industry_cap(items, fw["factor_long"].get("max_per_industry", 3))
+        items = self._apply_top_industries(items, fw["factor_long"].get("top_industries", 4))
         return await self._attach_risks(items)
 
     @staticmethod
-    def _apply_industry_cap(items: list, max_per_industry: int = 3, limit: int = 15) -> list:
-        """行业分散：每个行业最多 max_per_industry 只，按得分顺延补录，凑满 limit 只。
+    def _apply_top_industries(items: list, top_n: int = 4, limit: int = 15) -> list:
+        """选综合分最高的前 top_n 个行业(按行业最高分排序)，每行业均衡约 limit/top_n 只。
 
-        输入按综合分降序排列的候选(items 已排序)，输出行业分散后的前 limit 只。
+        先确定前 N 行业，再从这些行业按综合分各取约 ceil(limit/N) 只，凑满 limit 只，
+        避免高分行业一家独大(如化工原料占一半)。
         """
+        if not items:
+            return items
+        best: dict = {}
+        for it in items:
+            ind = it.get("industry") or "未分类"
+            s = it.get("score") or 0
+            if s > best.get(ind, -1e9):
+                best[ind] = s
+        top_inds = {ind for ind, _ in sorted(best.items(), key=lambda x: -x[1])[:top_n]}
+        per = -(-limit // top_n)  # 每行业上限 = ceil(limit / top_n)，15/4 → 4
         result: list = []
         count: dict = {}
         for it in items:
             ind = it.get("industry") or "未分类"
-            if count.get(ind, 0) >= max_per_industry:
+            if ind not in top_inds:
+                continue
+            if count.get(ind, 0) >= per:
                 continue
             count[ind] = count.get(ind, 0) + 1
             result.append(it)

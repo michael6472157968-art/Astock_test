@@ -62,7 +62,7 @@
     "zscore_fields": [],
     "invert_fields": ["rev42", "corr"],
     "oversold_field": null,
-    "max_per_industry": 3
+    "top_industries": 4
   },
   "factor_long": {
     "fields": ["corr", "growth", "cfps"],
@@ -71,6 +71,6 @@
     "zscore_fields": [],
     "invert_fields": ["corr"],
     "oversold_field": null,
-    "max_per_industry": 3
+    "top_industries": 4
   }
 }

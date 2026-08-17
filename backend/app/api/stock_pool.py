@@ -57,7 +57,11 @@ async def _resolve_trade_date() -> tuple[str, bool]:
 
     try:
         async with _sess() as s:
-            r = await s.execute(_text("SELECT MAX(trade_date) FROM stock_daily"))
+            # 完整交易日(>=50只)优先，避免盘中 MAX 跳到不完整新交易日
+            r = await s.execute(_text(
+                "SELECT trade_date FROM stock_daily GROUP BY trade_date "
+                "HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 1"
+            ))
             max_td = r.scalar()
             if max_td:
                 trade_date = max_td
