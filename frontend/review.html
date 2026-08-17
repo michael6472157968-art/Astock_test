@@ -101,6 +101,14 @@
     <span style="font-size:0.72rem;color:var(--color-text-muted);margin-left:auto;" id="dateStatus"></span>
   </div>
 
+  <!-- 行业轮动（申万二级，七步第3步板块结构） -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header">🔄 行业轮动 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">申万二级 · 近20日 · 红涨绿跌 · 按20日涨幅排序</span></div>
+    <div class="card-body">
+      <div id="sectorRotationChart" style="width:100%;height:460px;"></div>
+    </div>
+  </div>
+
   <div id="reviewDetail" style="width:100%;"></div>
   <div id="reviewChart" class="review-chart" style="display:none;"></div>
 </main>
@@ -112,7 +120,55 @@ var allStatuses = {};
 var _emptyDates = {};
 var _currentDate = null;
 
+// ── 行业轮动（申万二级）──
+function loadSectorRotation() {
+  API.get('/sector-rotation/rotation?days=20').then(function(r) {
+    var data = r.data || {};
+    if (!data.sectors || !data.sectors.length || !data.heatmap || !data.heatmap.length) return;
+    renderSectorRotationChart(data);
+  }).catch(function() {});
+}
+
+function renderSectorRotationChart(data) {
+  var chartDom = document.getElementById('sectorRotationChart');
+  if (!chartDom) return;
+  var chart = echarts.init(chartDom);
+  var dates = data.dates.map(function(d) { return String(d).slice(4, 6) + '/' + String(d).slice(6, 8); });
+  var sectorNames = data.sectors.map(function(s) { return s.name; });
+  var option = {
+    tooltip: {
+      position: 'top',
+      formatter: function(p) {
+        var s = data.sectors[p.value[1]];
+        return '<b>' + s.name + '</b><br/>' + data.dates[p.value[0]] + '：' + (p.value[2] > 0 ? '+' : '') + p.value[2] + '%<br/>' +
+          '近5日 ' + (s.c5 > 0 ? '+' : '') + s.c5 + '% · 近20日 ' + (s.cN > 0 ? '+' : '') + s.cN + '% [' + s.phase + ']';
+      }
+    },
+    grid: { left: 100, right: 20, top: 10, bottom: 60 },
+    xAxis: { type: 'category', data: dates, splitArea: { show: true } },
+    yAxis: { type: 'category', data: sectorNames, splitArea: { show: true } },
+    visualMap: {
+      min: -5, max: 5,
+      calculable: true,
+      orient: 'horizontal',
+      left: 'center',
+      bottom: 0,
+      text: ['涨', '跌'],
+      inRange: { color: ['#0f9d58', '#f5f5f5', '#e53935'] }
+    },
+    series: [{
+      type: 'heatmap',
+      data: data.heatmap,
+      label: { show: false },
+      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } }
+    }]
+  };
+  chart.setOption(option);
+  window.addEventListener('resize', function() { chart.resize(); });
+}
+
 (function() {
+  loadSectorRotation();
   API.get('/review/dates').then(function(r) {
     allDates = (r.data && r.data.dates) ? r.data.dates : [];
     if (!allDates.length) {

@@ -688,8 +688,7 @@ async def sector_rotation(days: int = 20, user: dict = Depends(require_auth_opti
 
     # 3. 算每个二级行业：N日累计涨幅 + 5日累计涨幅 + 轮动位置
     date_idx = {d: i for i, d in enumerate(dates)}
-    sectors = []
-    heatmap = []
+    raw = []
     for code, name in sorted(l2_map.items()):
         series = daily.get(code, [])
         if len(series) < 5:
@@ -710,13 +709,17 @@ async def sector_rotation(days: int = 20, user: dict = Depends(require_auth_opti
             phase = "启动"
         else:
             phase = "震荡"
-        idx = len(sectors)
-        sectors.append({"code": code, "name": name, "c5": cum5, "cN": cum_n, "phase": phase})
-        for td, pct in series:
-            if td in date_idx:
-                heatmap.append([date_idx[td], idx, round(pct, 2)])
+        raw.append({"code": code, "name": name, "c5": cum5, "cN": cum_n, "phase": phase, "series": series})
 
-    sectors.sort(key=lambda x: -x["cN"])
+    # 按20日涨幅排序后，再生成 heatmap 索引（保证与 sectors 顺序一致）
+    raw.sort(key=lambda x: -x["cN"])
+    sectors = [{"code": r["code"], "name": r["name"], "c5": r["c5"], "cN": r["cN"], "phase": r["phase"]} for r in raw]
+    heatmap = []
+    for i, r in enumerate(raw):
+        for td, pct in r["series"]:
+            if td in date_idx:
+                heatmap.append([date_idx[td], i, round(pct, 2)])
+
     data = {"date": trade_date, "days": days, "dates": dates, "sectors": sectors, "heatmap": heatmap}
     await cache_set(cache_key, data, ttl=86400)
     return APIResponse(data=data, timestamp=int(time.time()))
