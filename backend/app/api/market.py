@@ -640,6 +640,88 @@ async def sector_ranking(user: dict = Depends(require_auth_optional)):
                        ext_info={"note": "请先在管理后台执行数据同步和板块分析计算"})
 
 
+@sector_router.get("/rotation")
+async def sector_rotation(days: int = 20, user: dict = Depends(require_auth_optional)):
+    """申万二级行业轮动分析：近N日涨幅排名 + 轮动位置(主升/见顶/启动/震荡)。"""
+    trade_date, _ = await _get_trade_context()
+    cache_key = f"sector:rotation:{trade_date}:{days}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return APIResponse(data=cached, timestamp=int(time.time()))
+
+    from app.core.database import async_session
+    from sqlalchemy import text
+    from app.services.tushare_client import call_tushare
+
+    # 1. 申万二级行业列表（静态，长缓存）
+    l2_key = "sw_l2_sectors"
+    l2_map = await cache_get(l2_key)
+    if not l2_map:
+        try:
+            cls = await call_tushare("index_classify", src="SW2021", level="L2")
+            if cls is not None and not cls.empty:
+                l2_map = {r["index_code"]: r["industry_name"] for r in cls.to_dict("records")}
+                await cache_set(l2_key, l2_map, ttl=86400 * 30)
+        except Exception:
+            l2_map = {}
+    if not l2_map:
+        return APIResponse(data={"date": trade_date, "days": days, "dates": [], "sectors": [], "heatmap": []},
+                           timestamp=int(time.time()))
+
+    # 2. 查 sector_daily 近 days 日数据
+    async with async_session() as sess:
+        r = await sess.execute(text(
+            "SELECT DISTINCT trade_date FROM sector_daily ORDER BY trade_date DESC LIMIT :n"
+        ), {"n": days})
+        dates = sorted([row[0] for row in r.fetchall()])
+        if len(dates) < 5:
+            return APIResponse(data={"date": trade_date, "days": days, "dates": dates, "sectors": [], "heatmap": []},
+                               timestamp=int(time.time()))
+
+        r2 = await sess.execute(text(
+            "SELECT code, trade_date, pct_chg FROM sector_daily "
+            "WHERE trade_date >= :start AND trade_date <= :end ORDER BY code, trade_date"
+        ), {"start": dates[0], "end": dates[-1]})
+        daily: dict = {}
+        for code, td, pct in r2:
+            daily.setdefault(code, []).append((td, pct))
+
+    # 3. 算每个二级行业：N日累计涨幅 + 5日累计涨幅 + 轮动位置
+    date_idx = {d: i for i, d in enumerate(dates)}
+    sectors = []
+    heatmap = []
+    for code, name in sorted(l2_map.items()):
+        series = daily.get(code, [])
+        if len(series) < 5:
+            continue
+        pcts = [p for _, p in series]
+        cum_n = cum5 = 1.0
+        for p in pcts:
+            cum_n *= (1 + p / 100)
+        for p in pcts[-5:]:
+            cum5 *= (1 + p / 100)
+        cum_n = round((cum_n - 1) * 100, 2)
+        cum5 = round((cum5 - 1) * 100, 2)
+        if cum_n > 10 and cum5 > 0:
+            phase = "主升"
+        elif cum_n > 10 and cum5 < 0:
+            phase = "见顶"
+        elif cum5 > 3 and cum_n < 10:
+            phase = "启动"
+        else:
+            phase = "震荡"
+        idx = len(sectors)
+        sectors.append({"code": code, "name": name, "c5": cum5, "cN": cum_n, "phase": phase})
+        for td, pct in series:
+            if td in date_idx:
+                heatmap.append([date_idx[td], idx, round(pct, 2)])
+
+    sectors.sort(key=lambda x: -x["cN"])
+    data = {"date": trade_date, "days": days, "dates": dates, "sectors": sectors, "heatmap": heatmap}
+    await cache_set(cache_key, data, ttl=86400)
+    return APIResponse(data=data, timestamp=int(time.time()))
+
+
 REVIEW_TABLE_DDL = """
 CREATE TABLE IF NOT EXISTS review_reports (
     data_date TEXT PRIMARY KEY,
