@@ -109,6 +109,14 @@
     </div>
   </div>
 
+  <!-- 7步纯规则复盘 -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header">📋 7步规则复盘 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">纯规则 · 不用AI · 预判次日</span></div>
+    <div class="card-body">
+      <div id="ruleReviewPanel"><p class="state-loading">加载中...</p></div>
+    </div>
+  </div>
+
   <div id="reviewDetail" style="width:100%;"></div>
   <div id="reviewChart" class="review-chart" style="display:none;"></div>
 </main>
@@ -119,6 +127,53 @@ var allReviews = {};
 var allStatuses = {};
 var _emptyDates = {};
 var _currentDate = null;
+
+// ── 7步纯规则复盘 ──
+function loadRuleReview() {
+  API.get('/review/rule').then(function(r) {
+    var data = r.data || {};
+    var content = data.content || {};
+    if (!content.emotion) return;
+    renderRuleReview(content);
+  }).catch(function() {});
+}
+
+function renderRuleReview(c) {
+  var plan = c.plan || {};
+  var verdictCls = plan.verdict === '可参与' ? 'up' : plan.verdict === '规避' ? 'down' : 'flat';
+  var html = '<div style="margin-bottom:10px;font-size:0.92rem;">次日方向：<b class="' + verdictCls + '" style="font-size:1.05rem;">' + escHtml(plan.verdict || '--') + '</b>' +
+    '<span style="color:var(--color-text-muted);font-size:0.76rem;margin-left:8px;">' + escHtml((plan.signals || []).join(' · ')) + '</span></div>';
+
+  var steps = [];
+  var e = c.emotion || {};
+  steps.push('① 情绪：涨停' + e.up + ' 跌停' + e.down + ' 炸板' + e.zha + '，炸板率' + e.zha_rate + '% → 容错率<b>' + e.rongcuo + '</b>' + (e.avg_premium != null ? '，昨日涨停溢价' + (e.avg_premium > 0 ? '+' : '') + e.avg_premium + '%' : ''));
+
+  var l = c.ladder || {};
+  var ladderStr = Object.keys(l.ladder || {}).sort(function(a, b) { return a - b; }).map(function(k) { return k + '板×' + l.ladder[k]; }).join(' ');
+  steps.push('② 连板：' + ladderStr + '，' + l.board_desc + '，' + (l.gap || '') + (l.j1 != null ? '，1进2=' + l.j1 + '%' : '') + (l.j2 != null ? '，2进3=' + l.j2 + '%' : ''));
+
+  var s = c.sectors || {};
+  var strongStr = (s.strong_sectors || []).slice(0, 5).map(function(x) { return x[0] + '(' + x[1] + ')'; }).join('、');
+  var rotStr = (s.rotation_top || []).slice(0, 3).map(function(x) { return x[1]; }).join('、');
+  steps.push('③ 板块：强势板块 ' + (strongStr || '无') + (rotStr ? '；轮动领涨 ' + rotStr : ''));
+
+  var f = c.fund || {};
+  var instStr = (f.inst_buy || []).slice(0, 3).map(function(x) { return x[0] + '(' + x[1] + '万)'; }).join('、');
+  steps.push('④ 资金：成交额前20上涨' + f.top20_up_ratio + '%' + (instStr ? '，机构净买 ' + instStr : ''));
+
+  var loss = c.loss || {};
+  var bfStr = (loss.big_face || []).slice(0, 3).map(function(x) { return x[0]; }).join('、');
+  steps.push('⑤ 亏钱：' + (loss.loss_desc || '') + (bfStr ? '，大面股 ' + bfStr : ''));
+
+  var focus = c.focus || [];
+  var focusStr = focus.slice(0, 5).map(function(x) { return x.name + '[' + x.board + '板]'; }).join('、');
+  steps.push('⑥ 重点票：' + (focusStr || '无'));
+
+  html += steps.map(function(s) {
+    return '<div style="font-size:0.8rem;line-height:1.7;padding:5px 0;border-bottom:1px dashed var(--color-border);">' + s + '</div>';
+  }).join('');
+  document.getElementById('ruleReviewPanel').innerHTML = html;
+}
 
 // ── 行业轮动（申万二级）──
 function loadSectorRotation() {
@@ -169,6 +224,7 @@ function renderSectorRotationChart(data) {
 
 (function() {
   loadSectorRotation();
+  loadRuleReview();
   API.get('/review/dates').then(function(r) {
     allDates = (r.data && r.data.dates) ? r.data.dates : [];
     if (!allDates.length) {

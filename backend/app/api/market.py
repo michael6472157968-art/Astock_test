@@ -797,6 +797,14 @@ async def _set_latest_flag(data_date: str):
         await sess.commit()
 
 
+@review_router.get("/rule")
+async def review_rule(date: str = "", user: dict = Depends(require_auth_optional)):
+    """7步纯规则复盘（不用AI）。"""
+    from app.services.review_rule import compute_review
+    result = await compute_review(date or "")
+    return APIResponse(data=result, timestamp=int(time.time()))
+
+
 @review_router.get("/latest")
 async def latest_review(user: dict = Depends(require_auth_optional)):
     trade_date, is_td = await _get_trade_context()
