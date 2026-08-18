@@ -303,6 +303,40 @@ def step7_plan(steps: dict) -> dict:
     return {"signals": signals, "verdict": verdict}
 
 
+# ── 选股池次日收益 ──
+
+async def pool_performance() -> dict:
+    """选股池次日收益：昨天选的股票，今天(最新完整交易日)的平均涨幅。"""
+    latest = await _latest_date()
+    prev = await _prev_date(latest)
+    if not latest or not prev:
+        return {"date": latest, "prev_date": prev, "pools": []}
+
+    async with async_session() as sess:
+        pools = []
+        for ptype, name in [("factor_short", "短线选股"), ("factor_long", "长线选股")]:
+            r = await sess.execute(text("""
+                SELECT AVG(d.pct_chg),
+                       SUM(CASE WHEN d.pct_chg > 0 THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN d.pct_chg < 0 THEN 1 ELSE 0 END),
+                       COUNT(*)
+                FROM stock_pool_results p
+                JOIN stock_daily d ON d.ts_code = p.ts_code AND d.trade_date = :latest
+                WHERE p.calc_date = :prev AND p.pool_type = :pt
+            """), {"latest": latest, "prev": prev, "pt": ptype})
+            row = r.fetchone()
+            avg_pct = round(float(row[0]), 2) if row and row[0] is not None else None
+            up = int(row[1] or 0) if row else 0
+            down = int(row[2] or 0) if row else 0
+            total = int(row[3] or 0) if row else 0
+            pools.append({
+                "type": ptype, "name": name,
+                "avg_pct": avg_pct, "up_count": up, "down_count": down, "total": total,
+            })
+
+    return {"date": latest, "prev_date": prev, "pools": pools}
+
+
 # ── 汇总 ──
 
 async def compute_review(td: str = "") -> dict:

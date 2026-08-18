@@ -69,7 +69,11 @@ async def _get_trade_context() -> tuple[str, bool]:
 
     try:
         async with async_session() as sess:
-            r = await sess.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
+            # 完整交易日(>=50只)优先，避免盘中 MAX 跳到残缺新交易日
+            r = await sess.execute(text(
+                "SELECT trade_date FROM stock_daily GROUP BY trade_date "
+                "HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 1"
+            ))
             max_td = r.scalar()
             if max_td:
                 trade_date = max_td
@@ -802,6 +806,14 @@ async def review_rule(date: str = "", user: dict = Depends(require_auth_optional
     """7步纯规则复盘（不用AI）。"""
     from app.services.review_rule import compute_review
     result = await compute_review(date or "")
+    return APIResponse(data=result, timestamp=int(time.time()))
+
+
+@review_router.get("/pool-performance")
+async def review_pool_performance(user: dict = Depends(require_auth_optional)):
+    """选股池次日收益：昨天选的股票今天平均涨幅。"""
+    from app.services.review_rule import pool_performance
+    result = await pool_performance()
     return APIResponse(data=result, timestamp=int(time.time()))
 
 

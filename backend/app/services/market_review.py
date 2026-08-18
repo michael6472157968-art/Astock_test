@@ -621,7 +621,11 @@ class MarketReviewEngine:
 
     async def _latest_date(self) -> str:
         async with async_session() as s:
-            r = await s.execute(text("SELECT MAX(trade_date) FROM stock_daily"))
+            # 用完整交易日(>=50只)，避免盘中同步少量数据后 MAX 跳到残缺新交易日
+            r = await s.execute(text(
+                "SELECT trade_date FROM stock_daily GROUP BY trade_date "
+                "HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 1"
+            ))
             return r.scalar()
 
     async def _prev_trade_date(self, td: str) -> str | None:
