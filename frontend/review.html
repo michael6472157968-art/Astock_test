@@ -103,7 +103,7 @@
 
   <!-- 行业轮动（申万二级，七步第3步板块结构） -->
   <div class="card" style="margin-bottom:16px;">
-    <div class="card-header">🔄 行业轮动 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">申万二级 · 近20日 · 红涨绿跌 · 按20日涨幅排序</span></div>
+    <div class="card-header">🔄 行业轮动 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">申万二级 · 近20日涨幅排名 · 红主升 / 灰见顶 / 橙启动 / 蓝震荡</span></div>
     <div class="card-body">
       <div id="sectorRotationChart" style="width:100%;height:460px;"></div>
     </div>
@@ -140,39 +140,118 @@ function loadRuleReview() {
 
 function renderRuleReview(c) {
   var plan = c.plan || {};
-  var verdictCls = plan.verdict === '可参与' ? 'up' : plan.verdict === '规避' ? 'down' : 'flat';
-  var html = '<div style="margin-bottom:10px;font-size:0.92rem;">次日方向：<b class="' + verdictCls + '" style="font-size:1.05rem;">' + escHtml(plan.verdict || '--') + '</b>' +
-    '<span style="color:var(--color-text-muted);font-size:0.76rem;margin-left:8px;">' + escHtml((plan.signals || []).join(' · ')) + '</span></div>';
+  var verdictColor = plan.verdict === '可参与' ? '#ef4444' : plan.verdict === '规避' ? '#26a69a' : '#888';
 
-  var steps = [];
+  // 顶部：次日方向大字
+  var html = '<div style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:8px;background:var(--color-bg-secondary);margin-bottom:14px;">' +
+    '<div style="font-size:1.5rem;font-weight:800;color:' + verdictColor + ';">' + escHtml(plan.verdict || '--') + '</div>' +
+    '<div style="flex:1;color:var(--color-text-muted);font-size:0.8rem;line-height:1.6;">' + escHtml((plan.signals || []).join(' · ')) + '</div>' +
+    '</div>';
+
+  // ① 情绪：数字 + 容错率进度条
   var e = c.emotion || {};
-  steps.push('① 情绪：涨停' + e.up + ' 跌停' + e.down + ' 炸板' + e.zha + '，炸板率' + e.zha_rate + '% → 容错率<b>' + e.rongcuo + '</b>' + (e.avg_premium != null ? '，昨日涨停溢价' + (e.avg_premium > 0 ? '+' : '') + e.avg_premium + '%' : ''));
+  var rongcuoPct = e.zha_rate < 15 ? 82 : e.zha_rate < 30 ? 52 : 22;
+  html += '<div style="margin-bottom:16px;">' +
+    '<div style="font-weight:600;margin-bottom:8px;">① 整体情绪</div>' +
+    '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px;">' +
+      '<div><b class="up" style="font-size:1.1rem;">' + e.up + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">涨停</span></div>' +
+      '<div><b class="down" style="font-size:1.1rem;">' + e.down + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">跌停</span></div>' +
+      '<div><b style="font-size:1.1rem;">' + e.zha + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">炸板</span></div>' +
+      '<div><b style="font-size:1.1rem;">' + e.zha_rate + '%</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">炸板率</span></div>' +
+      (e.avg_premium != null ? '<div><b class="' + (e.avg_premium > 0 ? 'up' : 'down') + '" style="font-size:1.1rem;">' + (e.avg_premium > 0 ? '+' : '') + e.avg_premium + '%</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">昨日溢价</span></div>' : '') +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;"><span style="color:#888;font-size:0.75rem;min-width:52px;">容错率</span>' +
+      '<div style="flex:1;height:8px;background:var(--color-bg-secondary);border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + rongcuoPct + '%;background:linear-gradient(90deg,#f59e0b,#ef4444);border-radius:4px;"></div></div>' +
+      '<b>' + e.rongcuo + '</b></div>' +
+    '</div>';
 
+  // ② 连板梯队：柱状图
   var l = c.ladder || {};
-  var ladderStr = Object.keys(l.ladder || {}).sort(function(a, b) { return a - b; }).map(function(k) { return k + '板×' + l.ladder[k]; }).join(' ');
-  steps.push('② 连板：' + ladderStr + '，' + l.board_desc + '，' + (l.gap || '') + (l.j1 != null ? '，1进2=' + l.j1 + '%' : '') + (l.j2 != null ? '，2进3=' + l.j2 + '%' : ''));
+  html += '<div style="margin-bottom:16px;">' +
+    '<div style="font-weight:600;margin-bottom:8px;">② 连板梯队</div>' +
+    '<div id="ladderChart" style="width:100%;height:150px;"></div>' +
+    '<div style="color:#888;font-size:0.78rem;margin-top:4px;">' + escHtml(l.board_desc || '') + '，' + escHtml(l.gap || '') + (l.j1 != null ? '，1进2=' + l.j1 + '%' : '') + (l.j2 != null ? '，2进3=' + l.j2 + '%' : '') + '</div>' +
+    '</div>';
 
+  // ③ 板块：强势板块条形图
   var s = c.sectors || {};
-  var strongStr = (s.strong_sectors || []).slice(0, 5).map(function(x) { return x[0] + '(' + x[1] + ')'; }).join('、');
-  var rotStr = (s.rotation_top || []).slice(0, 3).map(function(x) { return x[1]; }).join('、');
-  steps.push('③ 板块：强势板块 ' + (strongStr || '无') + (rotStr ? '；轮动领涨 ' + rotStr : ''));
+  var strong = (s.strong_sectors || []).slice(0, 6);
+  var maxCnt = strong.length ? strong[0][1] : 1;
+  html += '<div style="margin-bottom:16px;">' +
+    '<div style="font-weight:600;margin-bottom:8px;">③ 板块结构 <span style="font-weight:400;font-size:0.75rem;color:#888;">（涨停股数）</span></div>';
+  strong.forEach(function(x) {
+    var w = Math.round(x[1] / maxCnt * 100);
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">' +
+      '<span style="font-size:0.78rem;min-width:72px;">' + escHtml(x[0]) + '</span>' +
+      '<div style="flex:1;height:10px;background:var(--color-bg-secondary);border-radius:5px;overflow:hidden;"><div style="height:100%;width:' + w + '%;background:linear-gradient(90deg,#f59e0b,#ef4444);border-radius:5px;"></div></div>' +
+      '<b style="font-size:0.85rem;min-width:36px;text-align:right;">' + x[1] + '只</b></div>';
+  });
+  if (!strong.length) html += '<span style="color:#888;font-size:0.8rem;">无涨停≥3只的强势板块</span>';
+  html += '</div>';
 
+  // ④⑤⑥ 文字
   var f = c.fund || {};
-  var instStr = (f.inst_buy || []).slice(0, 3).map(function(x) { return x[0] + '(' + x[1] + '万)'; }).join('、');
-  steps.push('④ 资金：成交额前20上涨' + f.top20_up_ratio + '%' + (instStr ? '，机构净买 ' + instStr : ''));
-
+  var instStr = (f.inst_buy || []).slice(0, 3).map(function(x) { return x[0]; }).join('、');
   var loss = c.loss || {};
   var bfStr = (loss.big_face || []).slice(0, 3).map(function(x) { return x[0]; }).join('、');
-  steps.push('⑤ 亏钱：' + (loss.loss_desc || '') + (bfStr ? '，大面股 ' + bfStr : ''));
-
   var focus = c.focus || [];
-  var focusStr = focus.slice(0, 5).map(function(x) { return x.name + '[' + x.board + '板]'; }).join('、');
-  steps.push('⑥ 重点票：' + (focusStr || '无'));
+  var focusStr = focus.slice(0, 6).map(function(x) { return x.name + '[' + x.board + '板]'; }).join('、');
 
-  html += steps.map(function(s) {
-    return '<div style="font-size:0.8rem;line-height:1.7;padding:5px 0;border-bottom:1px dashed var(--color-border);">' + s + '</div>';
-  }).join('');
+  html += '<div style="margin-bottom:6px;"><span style="font-weight:600;">④ 资金：</span><span style="font-size:0.8rem;">成交额前20上涨' + f.top20_up_ratio + '%' + (instStr ? '，机构净买 ' + instStr : '') + '</span></div>';
+  html += '<div style="margin-bottom:6px;"><span style="font-weight:600;">⑤ 亏钱：</span><span style="font-size:0.8rem;">' + escHtml(loss.loss_desc || '') + (bfStr ? '，大面股 ' + bfStr : '') + '</span></div>';
+  html += '<div><span style="font-weight:600;">⑥ 重点票：</span><span style="font-size:0.8rem;">' + (focusStr || '无') + '</span></div>';
+
   document.getElementById('ruleReviewPanel').innerHTML = html;
+
+  // 渲染连板梯队柱状图
+  if (l.ladder && Object.keys(l.ladder).length) {
+    setTimeout(function() {
+      var chartDom = document.getElementById('ladderChart');
+      if (!chartDom) return;
+      var chart = echarts.init(chartDom);
+      var keys = Object.keys(l.ladder).sort(function(a, b) { return a - b; });
+      var vals = keys.map(function(k) { return l.ladder[k]; });
+      chart.setOption({
+        grid: { top: 12, right: 16, bottom: 22, left: 34 },
+        xAxis: { type: 'category', data: keys.map(function(k) { return k + '板'; }), axisLabel: { fontSize: 11, color: '#ccc' } },
+        yAxis: { type: 'value', axisLabel: { fontSize: 10, color: '#888' }, splitLine: { lineStyle: { color: '#222' } } },
+        series: [{ type: 'bar', data: vals, barMaxWidth: 36, itemStyle: { color: function(p) { return p.dataIndex >= 2 ? '#ef4444' : '#f59e0b'; }, borderRadius: [4, 4, 0, 0] }, label: { show: true, position: 'top', fontSize: 11, color: '#ccc' } }]
+      });
+    }, 50);
+  }
+}
+
+// ── 因子选股池表现（昨日选出 → 今日涨幅）──
+function loadFactorPoolPerformance() {
+  API.get('/review/pool-performance').then(function(r) {
+    var data = r.data || {};
+    var pools = data.pools || [];
+    var panel = document.getElementById('poolPerfPanel');
+    if (!panel || !pools.length) return;
+    var range = '';
+    if (data.prev_date && data.date) {
+      range = data.prev_date.slice(0, 4) + '-' + data.prev_date.slice(4, 6) + '-' + data.prev_date.slice(6, 8) + ' 选出 → ' +
+        data.date.slice(0, 4) + '-' + data.date.slice(4, 6) + '-' + data.date.slice(6, 8);
+    }
+    var h = '<div class="card"><div class="card-header">📈 因子选股池表现 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">' + escHtml(range) + ' 平均涨幅</span></div><div class="card-body">';
+    pools.forEach(function(p) {
+      var cls = p.avg_pct > 0 ? 'up' : p.avg_pct < 0 ? 'down' : 'flat';
+      var barW = Math.min(Math.abs(p.avg_pct || 0) * 10, 100);
+      var barColor = (p.avg_pct >= 0) ? 'linear-gradient(90deg,#f59e0b,#ef4444)' : 'linear-gradient(90deg,#26a69a,#0f9d58)';
+      h += '<div style="margin-bottom:12px;">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">' +
+          '<span style="font-weight:600;min-width:64px;">' + escHtml(p.name) + '</span>' +
+          '<b class="' + cls + '" style="font-size:1.15rem;min-width:76px;">' + (p.avg_pct != null ? (p.avg_pct > 0 ? '+' : '') + p.avg_pct + '%' : '--') + '</b>' +
+          '<span style="color:var(--color-text-muted);font-size:0.75rem;">' + p.up_count + '涨 ' + p.down_count + '跌 / ' + p.total + '只</span>' +
+        '</div>' +
+        '<div style="height:8px;background:var(--color-bg-secondary);border-radius:4px;overflow:hidden;">' +
+          '<div style="height:100%;width:' + barW + '%;background:' + barColor + ';border-radius:4px;"></div>' +
+        '</div>' +
+      '</div>';
+    });
+    h += '</div></div>';
+    panel.innerHTML = h;
+  }).catch(function() {});
 }
 
 // ── 行业轮动（申万二级）──
@@ -188,34 +267,25 @@ function renderSectorRotationChart(data) {
   var chartDom = document.getElementById('sectorRotationChart');
   if (!chartDom) return;
   var chart = echarts.init(chartDom);
-  var dates = data.dates.map(function(d) { return String(d).slice(4, 6) + '/' + String(d).slice(6, 8); });
-  var sectorNames = data.sectors.map(function(s) { return s.name; });
+  var top = data.sectors.slice(0, 25);  // 前25个（按20日涨幅降序）
+  var phaseColors = { '主升': '#e53935', '见顶': '#9e9e9e', '启动': '#f59e0b', '震荡': '#5c8ae6' };
+  var names = top.map(function(s) { return s.name + ' · ' + s.phase; });
+  var cN = top.map(function(s) { return s.cN; });
   var option = {
     tooltip: {
-      position: 'top',
-      formatter: function(p) {
-        var s = data.sectors[p.value[1]];
-        return '<b>' + s.name + '</b><br/>' + data.dates[p.value[0]] + '：' + (p.value[2] > 0 ? '+' : '') + p.value[2] + '%<br/>' +
-          '近5日 ' + (s.c5 > 0 ? '+' : '') + s.c5 + '% · 近20日 ' + (s.cN > 0 ? '+' : '') + s.cN + '% [' + s.phase + ']';
+      trigger: 'axis', axisPointer: { type: 'shadow' },
+      formatter: function(params) {
+        var s = top[params[0].dataIndex];
+        return '<b>' + s.name + '</b><br/>近20日 ' + (s.cN > 0 ? '+' : '') + s.cN + '%<br/>近5日 ' + (s.c5 > 0 ? '+' : '') + s.c5 + '%<br/>轮动位置：<b>' + s.phase + '</b>';
       }
     },
-    grid: { left: 100, right: 20, top: 10, bottom: 60 },
-    xAxis: { type: 'category', data: dates, splitArea: { show: true } },
-    yAxis: { type: 'category', data: sectorNames, splitArea: { show: true } },
-    visualMap: {
-      min: -5, max: 5,
-      calculable: true,
-      orient: 'horizontal',
-      left: 'center',
-      bottom: 0,
-      text: ['涨', '跌'],
-      inRange: { color: ['#0f9d58', '#f5f5f5', '#e53935'] }
-    },
+    grid: { left: 140, right: 50, top: 10, bottom: 30 },
+    xAxis: { type: 'value', axisLabel: { formatter: '{value}%', fontSize: 10, color: '#888' }, splitLine: { lineStyle: { color: '#222' } } },
+    yAxis: { type: 'category', data: names, inverse: true, axisLabel: { fontSize: 11, color: '#ccc' } },
     series: [{
-      type: 'heatmap',
-      data: data.heatmap,
-      label: { show: false },
-      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } }
+      type: 'bar', data: cN, barMaxWidth: 14,
+      label: { show: true, position: 'right', fontSize: 10, color: '#aaa', formatter: function(p) { return (p.value > 0 ? '+' : '') + p.value + '%'; } },
+      itemStyle: { color: function(p) { return phaseColors[top[p.dataIndex].phase] || '#888'; }, borderRadius: [0, 3, 3, 0] }
     }]
   };
   chart.setOption(option);
@@ -368,7 +438,7 @@ function renderReview(td, data) {
   var dtLabel = td.substring(0,4) + '-' + td.substring(4,6) + '-' + td.substring(6,8);
 
   // Header
-  var headerHtml = '<div class="review-header-row"><div style="font-weight:600;font-size:0.95rem;">📊 ' + dtLabel + ' AI 量化复盘</div>';
+  var headerHtml = '<div class="review-header-row"><div style="font-weight:600;font-size:0.95rem;">📊 ' + dtLabel + ' 量化复盘</div>';
   headerHtml += '<div class="review-toolbar">';
   if (data.generated_at) {
     headerHtml += '<span style="font-size:0.72rem;color:var(--color-text-muted);">生成于 ' + data.generated_at.substring(0,10) + '</span>';
@@ -378,15 +448,13 @@ function renderReview(td, data) {
   headerHtml += '</div></div>';
 
   var html = '<div class="review-blocks">' + headerHtml;
-  html += buildAISummary(c.ai_summary);
   html += buildMarketTemperature(c.temperature);
   html += buildSmartMoney(c.smart_money);
-  html += buildInstitutional(c.institutional);
-  html += buildAnomalySignals(c.anomaly);
-  html += buildStrategyPools(c.strategy_pools);
+  html += '<div id="poolPerfPanel"></div>';
   html += '</div>';
 
   document.getElementById('reviewDetail').innerHTML = html;
+  loadFactorPoolPerformance();
 
   // Draw pie chart if temperature data exists
   if (c.temperature && c.temperature.total) {
@@ -484,12 +552,15 @@ function buildSmartMoney(sm) {
       var dates = sm.northbound_5d_trend.map(function(d) { return d.date ? d.date.substring(4,6) + '/' + d.date.substring(6,8) : ''; });
       var values = sm.northbound_5d_trend.map(function(d) { return d.value || 0; });
       chart.setOption({
-        grid: { top: 8, right: 8, bottom: 20, left: 40 },
+        grid: { top: 12, right: 12, bottom: 20, left: 40 },
         xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 10, color: '#888' }, axisLine: { lineStyle: { color: '#333' } } },
         yAxis: { type: 'value', axisLabel: { fontSize: 10, color: '#888' }, splitLine: { lineStyle: { color: '#222' } } },
         series: [{
-          type: 'bar', data: values,
-          itemStyle: { color: function(p) { return p.value >= 0 ? '#ef5350' : '#26a69a'; }, borderRadius: [3, 3, 0, 0] },
+          type: 'line', data: values,
+          smooth: true, symbol: 'circle', symbolSize: 6,
+          lineStyle: { width: 2, color: '#ef5350' },
+          itemStyle: { color: function(p) { return p.value >= 0 ? '#ef5350' : '#26a69a'; } },
+          areaStyle: { opacity: 0.12, color: '#ef5350' },
           label: { show: true, position: 'top', fontSize: 9, color: '#aaa', formatter: function(p) { return (p.value > 0 ? '+' : '') + p.value.toFixed(1); } }
         }]
       });
