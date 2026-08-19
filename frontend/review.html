@@ -267,7 +267,7 @@ function loadFactorPoolPerformance() {
 function loadSectorRotation() {
   API.get('/sector-rotation/rotation?days=20').then(function(r) {
     var data = r.data || {};
-    if (!data.sectors || !data.sectors.length || !data.heatmap || !data.heatmap.length) return;
+    if (!data.sectors || !data.sectors.length || !data.stage_heatmap || !data.stage_heatmap.length) return;
     renderSectorRotationChart(data);
   }).catch(function() {});
 }
