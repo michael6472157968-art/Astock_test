@@ -707,10 +707,12 @@ async def sector_rotation(days: int = 20, user: dict = Depends(require_auth_opti
         cum5 = round((cum5 - 1) * 100, 2)
         if cum_n > 10 and cum5 > 0:
             phase = "主升"
-        elif cum_n > 10 and cum5 < 0:
+        elif cum_n > 10 and cum5 < -3:
             phase = "见顶"
         elif cum5 > 3 and cum_n < 10:
             phase = "启动"
+        elif cum5 < -3 and cum_n < 0:
+            phase = "下行"
         else:
             phase = "震荡"
         raw.append({"code": code, "name": name, "c5": cum5, "cN": cum_n, "phase": phase, "series": series})

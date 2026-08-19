@@ -39,6 +39,49 @@ async def _prev_date(td: str) -> str | None:
         return r.scalar()
 
 
+# ── 第0步 大盘分析 ──
+
+async def step0_market(td: str) -> dict:
+    """大盘分析：三大指数 + 涨跌家数 + 市场温度。"""
+    async with async_session() as sess:
+        # 指数涨跌
+        r = await sess.execute(text("""
+            SELECT ts_code, pct_chg FROM stock_daily
+            WHERE trade_date = :td AND ts_code IN ('000001.SH','399001.SZ','399006.SZ','000688.SH')
+        """), {"td": td})
+        indices = {row[0]: round(float(row[1]), 2) if row[1] is not None else 0 for row in r.fetchall()}
+
+        # 涨跌家数（排除指数）
+        r2 = await sess.execute(text("""
+            SELECT SUM(CASE WHEN pct_chg > 0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN pct_chg < 0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN pct_chg = 0 THEN 1 ELSE 0 END),
+                   COUNT(*)
+            FROM stock_daily WHERE trade_date = :td
+              AND ts_code NOT IN ('000001.SH','399001.SZ','399006.SZ','000688.SH')
+        """), {"td": td})
+        row = r2.fetchone()
+        up = int(row[0] or 0) if row else 0
+        down = int(row[1] or 0) if row else 0
+        flat = int(row[2] or 0) if row else 0
+        total = int(row[3] or 0) if row else 0
+        up_ratio = round(up / total * 100, 1) if total else 0
+
+    if up_ratio >= 70:
+        temp = "热"
+    elif up_ratio >= 50:
+        temp = "暖"
+    elif up_ratio >= 30:
+        temp = "中性"
+    else:
+        temp = "冷"
+
+    return {
+        "indices": indices, "up": up, "down": down, "flat": flat, "total": total,
+        "up_ratio": up_ratio, "temp": temp,
+    }
+
+
 # ── 第1步 整体情绪 ──
 
 async def step1_emotion(td: str) -> dict:
@@ -363,6 +406,34 @@ async def pool_performance() -> dict:
     return {"date": latest, "prev_date": prev, "pools": pools}
 
 
+async def pool_today() -> dict:
+    """选股池今日名单：最新 calc_date 的短线/长线池 15 只。"""
+    import json as _json
+    latest = await _latest_date()
+    async with async_session() as sess:
+        pools = []
+        for ptype, name in [("factor_short", "短线池"), ("factor_long", "长线池")]:
+            r = await sess.execute(text("""
+                SELECT p.ts_code, p.stock_name, s.industry, p.market_data_json
+                FROM stock_pool_results p
+                LEFT JOIN stocks s ON s.ts_code = p.ts_code
+                WHERE p.calc_date = :td AND p.pool_type = :pt
+                ORDER BY p.rank_in_pool ASC
+            """), {"td": latest, "pt": ptype})
+            items = []
+            for row in r.fetchall():
+                try:
+                    md = _json.loads(row[3]) if row[3] else {}
+                except Exception:
+                    md = {}
+                items.append({
+                    "code": row[0], "name": row[1], "industry": row[2] or "",
+                    "score": md.get("score"),
+                })
+            pools.append({"type": ptype, "name": name, "items": items})
+    return {"date": latest, "pools": pools}
+
+
 # ── 汇总 ──
 
 async def compute_review(td: str = "") -> dict:
@@ -371,6 +442,7 @@ async def compute_review(td: str = "") -> dict:
     if not td:
         return {"date": "", "content": {}}
 
+    market = await step0_market(td)
     emotion = await step1_emotion(td)
     ladder = await step2_ladder(td)
     sectors = await step3_sectors(td)
@@ -379,9 +451,13 @@ async def compute_review(td: str = "") -> dict:
     watch = await step6_focus(td)
 
     steps = {
-        "emotion": emotion, "ladder": ladder, "sectors": sectors,
+        "market": market, "emotion": emotion, "ladder": ladder, "sectors": sectors,
         "fund": fund, "loss": loss, "watch": watch,
     }
     steps["plan"] = step7_plan(steps)
+
+    # 选股池：今日名单 + 昨日收益
+    steps["pool_today"] = await pool_today()
+    steps["pool_perf"] = await pool_performance()
 
     return {"date": td, "content": steps}
