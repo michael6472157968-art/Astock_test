@@ -109,14 +109,6 @@
     </div>
   </div>
 
-  <!-- 行业轮动（五阶段 + 周期演变） -->
-  <div class="card" style="margin-bottom:16px;">
-    <div class="card-header">🔄 行业轮动 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">五阶段分布 + 周期演变</span></div>
-    <div class="card-body">
-      <div id="sectorRotationChart" style="width:100%;"></div>
-    </div>
-  </div>
-
   <div id="reviewDetail" style="display:none;"></div>
   <div id="reviewChart" class="review-chart" style="display:none;"></div>
 </main>
@@ -263,65 +255,7 @@ function loadFactorPoolPerformance() {
   }).catch(function() {});
 }
 
-// ── 行业轮动（申万二级）──
-function loadSectorRotation() {
-  API.get('/sector-rotation/rotation?days=30').then(function(r) {
-    var data = r.data || {};
-    if (!data.sectors || !data.sectors.length || !data.cum_heatmap || !data.cum_heatmap.length) return;
-    renderSectorRotationChart(data);
-  }).catch(function() {});
-}
-
-function renderSectorRotationChart(data) {
-  var container = document.getElementById('sectorRotationChart');
-  if (!container) return;
-  var height = Math.max(500, data.sectors.length * 6 + 80);
-  container.innerHTML = '<div id="cumHeatmap" style="width:100%;height:' + height + 'px;"></div>';
-
-  var chartDom = document.getElementById('cumHeatmap');
-  if (!chartDom) return;
-  var chart = echarts.init(chartDom);
-  var dates = data.dates.map(function(d) { return String(d).slice(4, 6) + '/' + String(d).slice(6, 8); });
-  var sectorNames = data.sectors.map(function(s) { return s.name + '  ' + (s.cum > 0 ? '+' : '') + s.cum + '%'; });
-
-  var option = {
-    tooltip: {
-      position: 'top',
-      formatter: function(p) {
-        var s = data.sectors[p.value[1]];
-        return '<b>' + s.name + '</b><br/>' + data.dates[p.value[0]] + '：累计 ' + (p.value[2] > 0 ? '+' : '') + p.value[2] + '%<br/>当前累计：' + (s.cum > 0 ? '+' : '') + s.cum + '%';
-      }
-    },
-    grid: { left: 120, right: 30, top: 10, bottom: 66 },
-    xAxis: { type: 'category', data: dates, splitArea: { show: true }, axisLabel: { fontSize: 9, color: '#888' } },
-    yAxis: { type: 'category', data: sectorNames, splitArea: { show: true }, axisLabel: { fontSize: 9, color: '#ccc' } },
-    visualMap: {
-      type: 'piecewise',
-      pieces: [
-        { min: 10, max: 100, label: '大涨', color: '#c62828' },
-        { min: 3, max: 10, label: '涨', color: '#e53935' },
-        { min: 0.5, max: 3, label: '微涨', color: '#ef5350' },
-        { min: -0.5, max: 0.5, label: '平', color: '#616161' },
-        { min: -3, max: -0.5, label: '微跌', color: '#66bb6a' },
-        { min: -10, max: -3, label: '跌', color: '#43a047' },
-        { min: -100, max: -10, label: '大跌', color: '#2e7d32' },
-      ],
-      orient: 'horizontal', left: 'center', bottom: 0,
-      textStyle: { fontSize: 10, color: '#888' }
-    },
-    series: [{
-      type: 'heatmap',
-      data: data.cum_heatmap,
-      label: { show: false },
-      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } }
-    }]
-  };
-  chart.setOption(option);
-  window.addEventListener('resize', function() { chart.resize(); });
-}
-
 (function() {
-  loadSectorRotation();
   loadRuleReview();
   API.get('/review/dates').then(function(r) {
     allDates = (r.data && r.data.dates) ? r.data.dates : [];
