@@ -26,9 +26,10 @@ def start_scheduler() -> None:
 
     _scheduler.add_job(
         _sync_daily_wrapper,
-        # 18:30 而非 16:05：Tushare 个股日线(daily/daily_basic)通常 17:30+ 才更新，
-        # 16:05 触发会拉到空数据，导致最新交易日个股永远滞后
-        CronTrigger(hour=18, minute=30, timezone=TZ),
+        # 19:30 而非 18:30：Tushare 个股日线(daily/daily_basic)官方 17:30+ 更新，但全市场
+        # 数据常要 19:00 后才吐完（0818/0819 实测 18:30 触发只拉到 4 个指数）。
+        # 推迟到 19:30 留足缓冲，配合 sync_daily_data 的 10 天回看补齐，确保当天复盘不滞后。
+        CronTrigger(hour=19, minute=30, timezone=TZ),
         id="sync_daily",
         name="日线数据同步",
         replace_existing=True,
@@ -76,7 +77,7 @@ def _sync_daily_wrapper():
 async def _sync_daily_all():
     """所有收盘后同步+计算合并到一个event loop中执行，避免跨loop连接泄漏。"""
     from app.services.data_sync import (sync_broker_recommend, sync_cyq_perf, sync_daily_basic, sync_daily_data,
-                                         sync_express, sync_hsgt_top10, sync_index_daily, sync_margin,
+                                         sync_express, sync_hsgt_top10, sync_index_daily, sync_limit_list, sync_margin,
                                          sync_moneyflow, sync_moneyflow_hsgt, sync_share_float, sync_stock_basic,
                                          sync_stk_holdertrade, sync_stk_holdernumber, sync_sw_daily, sync_top_inst,
                                          sync_top_list, sync_top10_floatholders)
@@ -99,6 +100,7 @@ async def _sync_daily_all():
         ("cyq_perf", sync_cyq_perf),
         ("top_list", sync_top_list),
         ("top_inst", sync_top_inst),
+        ("limit_list", sync_limit_list),
         ("sw_daily", sync_sw_daily),
     ]:
         try:
