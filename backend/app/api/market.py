@@ -687,68 +687,48 @@ async def sector_rotation(days: int = 20, user: dict = Depends(require_auth_opti
                            timestamp=int(time.time()))
 
     # 2. 拉近 (days+20) 日数据（多20日用于算滚动阶段）
-    lookback = days + 20
     async with async_session() as sess:
         r = await sess.execute(text(
             "SELECT DISTINCT trade_date FROM sector_daily ORDER BY trade_date DESC LIMIT :n"
-        ), {"n": lookback})
-        all_dates = sorted([row[0] for row in r.fetchall()])
-        if len(all_dates) < 25:
-            return APIResponse(data={"date": trade_date, "days": days, "dates": [], "sectors": [], "stage_heatmap": []},
+        ), {"n": days})
+        display_dates = sorted([row[0] for row in r.fetchall()])
+        if len(display_dates) < 10:
+            return APIResponse(data={"date": trade_date, "days": days, "dates": [], "sectors": [], "cum_heatmap": []},
                                timestamp=int(time.time()))
-        display_dates = all_dates[-days:]
         date_idx = {d: i for i, d in enumerate(display_dates)}
 
         r2 = await sess.execute(text(
             "SELECT code, trade_date, pct_chg FROM sector_daily "
             "WHERE trade_date >= :start AND trade_date <= :end ORDER BY code, trade_date"
-        ), {"start": all_dates[0], "end": all_dates[-1]})
+        ), {"start": display_dates[0], "end": display_dates[-1]})
         daily: dict = {}
         for code, td, pct in r2:
             daily.setdefault(code, []).append((td, pct))
 
-    # 3. 算每个行业的滚动阶段序列（每天用往前20日/5日涨幅判断阶段）
-    STAGE_CODE = {"启动": 0, "主升": 1, "见顶": 2, "下行": 3, "震荡": 4}
+    # 3. 算每个行业的累计涨幅序列（从起点 display_dates[0] 累乘到每天）
     raw = []
     for code, name in sorted(l2_map.items()):
         series = daily.get(code, [])
-        if len(series) < 25:
+        if not series:
             continue
-        tds = [t for t, _ in series]
-        pcts = [p for _, p in series]
-        td_set = set(tds)
-        # 前缀累计积
-        cum_prod = [1.0]
-        for p in pcts:
-            cum_prod.append(cum_prod[-1] * (1 + p / 100))
-        stages = []
-        cur_c20 = cur_c5 = 0.0
-        cur_stage = "震荡"
-        for d in display_dates:
-            if d not in td_set:
-                stages.append((d, STAGE_CODE["震荡"]))
-                continue
-            idx = tds.index(d)
-            c20 = (cum_prod[idx + 1] / cum_prod[max(0, idx - 19)] - 1) * 100
-            c5 = (cum_prod[idx + 1] / cum_prod[max(0, idx - 4)] - 1) * 100
-            stage = _judge_stage(c20, c5)
-            stages.append((d, STAGE_CODE[stage]))
-            if d == display_dates[-1]:
-                cur_c20, cur_c5, cur_stage = c20, c5, stage
-        raw.append({"code": code, "name": name, "c5": round(cur_c5, 2), "cN": round(cur_c20, 2),
-                    "phase": cur_stage, "stages": stages})
+        cum = 1.0
+        cum_by_td = {}
+        for td, p in series:
+            cum *= (1 + p / 100)
+            cum_by_td[td] = round((cum - 1) * 100, 2)
+        cur_cum = cum_by_td.get(display_dates[-1], 0) if display_dates else 0
+        raw.append({"code": code, "name": name, "cum": cur_cum, "cum_by_td": cum_by_td})
 
-    # 4. 按阶段分组排序：主升、见顶、启动、下行、震荡
-    phase_order = {"主升": 0, "见顶": 1, "启动": 2, "下行": 3, "震荡": 4}
-    raw.sort(key=lambda x: (phase_order.get(x["phase"], 9), -x["cN"]))
-    sectors = [{"code": r["code"], "name": r["name"], "c5": r["c5"], "cN": r["cN"], "phase": r["phase"]} for r in raw]
-    stage_heatmap = []
+    # 4. 按当前累计涨幅排序
+    raw.sort(key=lambda x: -x["cum"])
+    sectors = [{"code": r["code"], "name": r["name"], "cum": r["cum"]} for r in raw]
+    cum_heatmap = []
     for i, r in enumerate(raw):
-        for d, st in r["stages"]:
-            if d in date_idx:
-                stage_heatmap.append([date_idx[d], i, st])
+        for d in display_dates:
+            if d in r["cum_by_td"]:
+                cum_heatmap.append([date_idx[d], i, r["cum_by_td"][d]])
 
-    data = {"date": trade_date, "days": days, "dates": display_dates, "sectors": sectors, "stage_heatmap": stage_heatmap}
+    data = {"date": trade_date, "days": days, "dates": display_dates, "sectors": sectors, "cum_heatmap": cum_heatmap}
     await cache_set(cache_key, data, ttl=86400)
     return APIResponse(data=data, timestamp=int(time.time()))
 
