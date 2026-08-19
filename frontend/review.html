@@ -298,9 +298,13 @@ function renderSectorRotationChart(data) {
     visualMap: {
       type: 'piecewise',
       pieces: [
-        { min: 2, max: 100, label: '涨', color: '#e53935' },
-        { min: -2, max: 2, label: '平', color: '#424242' },
-        { min: -100, max: -2, label: '跌', color: '#0f9d58' },
+        { min: 15, max: 100, label: '大涨', color: '#c62828' },
+        { min: 8, max: 15, label: '涨', color: '#ef5350' },
+        { min: 1, max: 8, label: '微涨', color: '#ef9a9a' },
+        { min: -1, max: 1, label: '平', color: '#424242' },
+        { min: -8, max: -1, label: '微跌', color: '#a5d6a7' },
+        { min: -15, max: -8, label: '跌', color: '#43a047' },
+        { min: -100, max: -15, label: '大跌', color: '#2e7d32' },
       ],
       orient: 'horizontal', left: 'center', bottom: 0,
       textStyle: { fontSize: 10, color: '#888' }
