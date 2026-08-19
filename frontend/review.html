@@ -296,12 +296,14 @@ function renderSectorRotationChart(data) {
     xAxis: { type: 'category', data: dates, splitArea: { show: true }, axisLabel: { fontSize: 9, color: '#888' } },
     yAxis: { type: 'category', data: sectorNames, splitArea: { show: true }, axisLabel: { fontSize: 9, color: '#ccc' } },
     visualMap: {
-      min: -25, max: 25,
-      calculable: true,
+      type: 'piecewise',
+      pieces: [
+        { min: 2, max: 100, label: '涨', color: '#e53935' },
+        { min: -2, max: 2, label: '平', color: '#424242' },
+        { min: -100, max: -2, label: '跌', color: '#0f9d58' },
+      ],
       orient: 'horizontal', left: 'center', bottom: 0,
-      text: ['涨', '跌'],
-      textStyle: { fontSize: 10, color: '#888' },
-      inRange: { color: ['#0f9d58', '#424242', '#e53935'] }
+      textStyle: { fontSize: 10, color: '#888' }
     },
     series: [{
       type: 'heatmap',
