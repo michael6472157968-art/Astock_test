@@ -101,23 +101,23 @@
     <span style="font-size:0.72rem;color:var(--color-text-muted);margin-left:auto;" id="dateStatus"></span>
   </div>
 
-  <!-- 行业轮动（申万二级，七步第3步板块结构） -->
+  <!-- 复盘报告（散户版） -->
   <div class="card" style="margin-bottom:16px;">
-    <div class="card-header">🔄 行业轮动 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">申万二级 · 近20日涨幅排名 · 红主升 / 灰见顶 / 橙启动 / 蓝震荡</span></div>
-    <div class="card-body">
-      <div id="sectorRotationChart" style="width:100%;height:460px;"></div>
-    </div>
-  </div>
-
-  <!-- 7步纯规则复盘 -->
-  <div class="card" style="margin-bottom:16px;">
-    <div class="card-header">📋 7步规则复盘 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">纯规则 · 不用AI · 预判次日</span></div>
+    <div class="card-header">📊 复盘报告 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">大盘 · 打板 · 选股 · 主线 · 风险</span></div>
     <div class="card-body">
       <div id="ruleReviewPanel"><p class="state-loading">加载中...</p></div>
     </div>
   </div>
 
-  <div id="reviewDetail" style="width:100%;"></div>
+  <!-- 行业轮动（五阶段 + 周期演变） -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header">🔄 行业轮动 <span style="font-size:0.72rem;color:var(--color-text-muted);font-weight:400;">五阶段分布 + 周期演变</span></div>
+    <div class="card-body">
+      <div id="sectorRotationChart" style="width:100%;"></div>
+    </div>
+  </div>
+
+  <div id="reviewDetail" style="display:none;"></div>
   <div id="reviewChart" class="review-chart" style="display:none;"></div>
 </main>
 <script src="/js/app.js?v=18"></script>
@@ -140,91 +140,94 @@ function loadRuleReview() {
 
 function renderRuleReview(c) {
   var plan = c.plan || {};
+  var market = c.market || {};
+  var e = c.emotion || {};
+  var l = c.ladder || {};
+  var s = c.sectors || {};
+  var loss = c.loss || {};
+  var poolToday = c.pool_today || {};
+  var poolPerf = c.pool_perf || {};
+
   var verdictColor = plan.verdict === '可参与' ? '#ef4444' : plan.verdict === '规避' ? '#26a69a' : '#888';
   var cycleColor = plan.cycle === '上升期' ? '#ef4444' : plan.cycle === '退潮期' ? '#26a69a' : '#f59e0b';
+  var tempEmoji = market.temp === '热' ? '🔥' : market.temp === '暖' ? '😊' : market.temp === '冷' ? '🥶' : '😐';
 
-  // 顶部：次日方向 + 操作风格
-  var html = '<div style="padding:14px;border-radius:8px;background:var(--color-bg-secondary);margin-bottom:14px;">' +
-    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">' +
+  // 顶部：一句话结论
+  var html = '<div style="padding:14px;border-radius:8px;background:var(--color-bg-secondary);margin-bottom:16px;">' +
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;">' +
       '<div style="font-size:1.5rem;font-weight:800;color:' + verdictColor + ';">' + escHtml(plan.verdict || '--') + '</div>' +
       '<span style="font-size:0.85rem;font-weight:700;color:' + cycleColor + ';">' + escHtml(plan.cycle || '') + '</span>' +
+      '<span style="font-size:0.85rem;">' + tempEmoji + ' 大盘' + escHtml(market.temp || '') + '</span>' +
     '</div>' +
     '<div style="font-size:1.05rem;font-weight:700;color:var(--color-text);margin-bottom:6px;">操作：' + escHtml(plan.style || '--') + '</div>' +
     '<div style="color:var(--color-text-muted);font-size:0.78rem;line-height:1.6;">' + escHtml((plan.actions || []).join(' · ')) + '</div>' +
     (plan.avoid && plan.avoid.length ? '<div style="margin-top:6px;color:#e5484d;font-size:0.78rem;">⚠️ ' + escHtml(plan.avoid.join('；')) + '</div>' : '') +
     '</div>';
 
-  // ① 情绪：数字 + 容错率进度条
-  var e = c.emotion || {};
-  var rongcuoPct = e.zha_rate < 15 ? 82 : e.zha_rate < 30 ? 52 : 22;
-  html += '<div style="margin-bottom:16px;">' +
-    '<div style="font-weight:600;margin-bottom:8px;">① 整体情绪 <span style="font-size:0.8rem;color:' + cycleColor + ';font-weight:700;">' + escHtml(e.cycle || '') + '</span></div>' +
-    '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px;">' +
-      '<div><b class="up" style="font-size:1.1rem;">' + e.up + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">涨停</span></div>' +
-      '<div><b class="down" style="font-size:1.1rem;">' + e.down + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">跌停</span></div>' +
-      '<div><b style="font-size:1.1rem;">' + e.zha + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">炸板</span></div>' +
-      '<div><b style="font-size:1.1rem;">' + e.zha_rate + '%</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">炸板率</span></div>' +
-      (e.avg_premium != null ? '<div><b class="' + (e.avg_premium > 0 ? 'up' : 'down') + '" style="font-size:1.1rem;">' + (e.avg_premium > 0 ? '+' : '') + e.avg_premium + '%</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">昨日溢价</span></div>' : '') +
+  // ① 大盘分析
+  var idxNames = { '000001.SH': '上证', '399001.SZ': '深证', '399006.SZ': '创业板', '000688.SH': '科创50' };
+  var idxHtml = Object.keys(idxNames).map(function(k) {
+    var v = market.indices ? market.indices[k] : null;
+    return '<span style="margin-right:14px;">' + idxNames[k] + ' <b class="' + (v > 0 ? 'up' : v < 0 ? 'down' : 'flat') + '">' + (v != null ? (v > 0 ? '+' : '') + v + '%' : '--') + '</b></span>';
+  }).join('');
+  html += '<div style="margin-bottom:16px;padding:12px;border-radius:8px;border:1px solid var(--color-border);">' +
+    '<div style="font-weight:600;margin-bottom:8px;">① 大盘</div>' +
+    '<div style="margin-bottom:8px;">' + idxHtml + '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;">' +
+      '<span style="color:#888;font-size:0.75rem;min-width:52px;">涨跌家数</span>' +
+      '<div style="flex:1;height:10px;border-radius:5px;overflow:hidden;display:flex;"><div style="width:' + (market.up_ratio || 0) + '%;background:#ef4444;"></div><div style="flex:1;background:#26a69a;"></div></div>' +
+      '<span style="font-size:0.75rem;color:#888;">' + market.up + '涨 ' + market.down + '跌</span>' +
     '</div>' +
-    '<div style="display:flex;align-items:center;gap:8px;"><span style="color:#888;font-size:0.75rem;min-width:52px;">容错率</span>' +
-      '<div style="flex:1;height:8px;background:var(--color-bg-secondary);border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + rongcuoPct + '%;background:linear-gradient(90deg,#f59e0b,#ef4444);border-radius:4px;"></div></div>' +
-      '<b>' + e.rongcuo + '</b></div>' +
     '</div>';
 
-  // ② 连板梯队：柱状图
-  var l = c.ladder || {};
-  html += '<div style="margin-bottom:16px;">' +
-    '<div style="font-weight:600;margin-bottom:8px;">② 连板梯队</div>' +
-    '<div id="ladderChart" style="width:100%;height:150px;"></div>' +
-    '<div style="color:#888;font-size:0.78rem;margin-top:4px;">' + escHtml(l.board_desc || '') + '，' + escHtml(l.gap || '') + (l.j1 != null ? '，1进2=' + l.j1 + '%' : '') + (l.j2 != null ? '，2进3=' + l.j2 + '%' : '') + '</div>' +
+  // ② 打板机会
+  html += '<div style="margin-bottom:16px;padding:12px;border-radius:8px;border:1px solid var(--color-border);">' +
+    '<div style="font-weight:600;margin-bottom:8px;">② 打板机会</div>' +
+    '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px;">' +
+      '<div><b class="up" style="font-size:1.05rem;">' + e.up + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">涨停</span></div>' +
+      '<div><b class="down" style="font-size:1.05rem;">' + e.down + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">跌停</span></div>' +
+      '<div><b style="font-size:1.05rem;">' + e.zha + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">炸板</span></div>' +
+      '<div><b style="font-size:1.05rem;">' + e.zha_rate + '%</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">炸板率</span></div>' +
+      (e.avg_premium != null ? '<div><b class="' + (e.avg_premium > 0 ? 'up' : 'down') + '" style="font-size:1.05rem;">' + (e.avg_premium > 0 ? '+' : '') + e.avg_premium + '%</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">昨日溢价</span></div>' : '') +
+      '<div><b style="font-size:1.05rem;">' + (l.max_board || 0) + '板</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">最高板</span></div>' +
+      (l.j1 != null ? '<div><b style="font-size:1.05rem;">' + l.j1 + '%</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">1进2</span></div>' : '') +
+    '</div>' +
+    '<div style="font-weight:700;color:' + cycleColor + ';font-size:0.92rem;">打板建议：' + escHtml(plan.style || '--') + '</div>' +
     '</div>';
 
-  // ③ 板块：强势板块条形图
-  var s = c.sectors || {};
+  // ③ 选股机会
+  var perfHtml = (poolPerf.pools || []).map(function(p) {
+    return '<span style="margin-right:14px;">' + escHtml(p.name) + ' <b class="' + (p.avg_pct > 0 ? 'up' : p.avg_pct < 0 ? 'down' : 'flat') + '">' + (p.avg_pct != null ? (p.avg_pct > 0 ? '+' : '') + p.avg_pct + '%' : '--') + '</b></span>';
+  }).join('');
+  var poolHtml = (poolToday.pools || []).map(function(p) {
+    var items = (p.items || []).slice(0, 8).map(function(i) { return i.name; }).join('、');
+    return '<div style="margin-bottom:5px;"><b style="font-size:0.82rem;">' + escHtml(p.name) + '</b><span style="font-size:0.78rem;color:var(--color-text);"> ' + escHtml(items) + (p.items && p.items.length > 8 ? '…' : '') + '</span></div>';
+  }).join('');
+  html += '<div style="margin-bottom:16px;padding:12px;border-radius:8px;border:1px solid var(--color-border);">' +
+    '<div style="font-weight:600;margin-bottom:8px;">③ 选股机会（因子选股池）</div>' +
+    (perfHtml ? '<div style="margin-bottom:8px;font-size:0.85rem;">昨日选出表现：' + perfHtml + '</div>' : '') +
+    '<div style="font-size:0.78rem;color:#888;margin-bottom:4px;">今日名单：</div>' + poolHtml +
+    '</div>';
+
+  // ④ 主线方向
   var strong = (s.strong_sectors || []).slice(0, 6);
-  var maxCnt = strong.length ? strong[0][1] : 1;
-  html += '<div style="margin-bottom:16px;">' +
-    '<div style="font-weight:600;margin-bottom:8px;">③ 板块结构 <span style="font-weight:400;font-size:0.75rem;color:#888;">（涨停股数）</span></div>';
-  strong.forEach(function(x) {
-    var w = Math.round(x[1] / maxCnt * 100);
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">' +
-      '<span style="font-size:0.78rem;min-width:72px;">' + escHtml(x[0]) + '</span>' +
-      '<div style="flex:1;height:10px;background:var(--color-bg-secondary);border-radius:5px;overflow:hidden;"><div style="height:100%;width:' + w + '%;background:linear-gradient(90deg,#f59e0b,#ef4444);border-radius:5px;"></div></div>' +
-      '<b style="font-size:0.85rem;min-width:36px;text-align:right;">' + x[1] + '只</b></div>';
-  });
-  if (!strong.length) html += '<span style="color:#888;font-size:0.8rem;">无涨停≥3只的强势板块</span>';
-  html += '</div>';
+  var strongHtml = strong.map(function(x) {
+    return '<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 10px;border-radius:10px;background:var(--color-bg-secondary);border:1px solid var(--color-border);font-size:0.75rem;">' + escHtml(x[0]) + ' <b>' + x[1] + '只</b></span>';
+  }).join('');
+  html += '<div style="margin-bottom:16px;padding:12px;border-radius:8px;border:1px solid var(--color-border);">' +
+    '<div style="font-weight:600;margin-bottom:8px;">④ 主线方向（涨停最多的板块）</div>' + (strongHtml || '<span style="color:#888;font-size:0.8rem;">无强势板块</span>') +
+    '</div>';
 
-  // ④⑤⑥ 文字
-  var f = c.fund || {};
-  var instStr = (f.inst_buy || []).slice(0, 3).map(function(x) { return x[0]; }).join('、');
-  var loss = c.loss || {};
-  var bfStr = (loss.big_face || []).slice(0, 3).map(function(x) { return x[0]; }).join('、');
-  var watch = c.watch || [];
-  var watchStr = watch.slice(0, 6).map(function(x) { return x.name + '[' + x.board + '板]'; }).join('、');
-
-  html += '<div style="margin-bottom:6px;"><span style="font-weight:600;">④ 资金：</span><span style="font-size:0.8rem;">成交额前20上涨' + f.top20_up_ratio + '%' + (instStr ? '，机构净买 ' + instStr : '') + '</span></div>';
-  html += '<div style="margin-bottom:6px;"><span style="font-weight:600;">⑤ 亏钱：</span><span style="font-size:0.8rem;">' + escHtml(loss.loss_desc || '') + (bfStr ? '，大面股 ' + bfStr : '') + '</span></div>';
-  html += '<div><span style="font-weight:600;">⑥ 观察风向标：</span><span style="font-size:0.8rem;">' + (watchStr || '无') + '</span><span style="color:#888;font-size:0.72rem;">（连板股，非买入推荐）</span></div>';
+  // ⑤ 别碰什么
+  var avoidItems = [];
+  if (loss.big_face && loss.big_face.length) avoidItems.push('大面股：' + loss.big_face.slice(0, 3).map(function(x) { return x[0]; }).join('、'));
+  if (plan.avoid && plan.avoid.length) avoidItems = avoidItems.concat(plan.avoid);
+  html += '<div style="padding:12px;border-radius:8px;border:1px solid #e5484d;">' +
+    '<div style="font-weight:600;margin-bottom:6px;color:#e5484d;">⑤ 别碰什么</div>' +
+    (avoidItems.length ? avoidItems.map(function(a) { return '<div style="font-size:0.8rem;color:#e5484d;margin-bottom:3px;">⚠️ ' + escHtml(a) + '</div>'; }).join('') : '<div style="font-size:0.8rem;color:#888;">无明显风险</div>') +
+    '</div>';
 
   document.getElementById('ruleReviewPanel').innerHTML = html;
-
-  // 渲染连板梯队柱状图
-  if (l.ladder && Object.keys(l.ladder).length) {
-    setTimeout(function() {
-      var chartDom = document.getElementById('ladderChart');
-      if (!chartDom) return;
-      var chart = echarts.init(chartDom);
-      var keys = Object.keys(l.ladder).sort(function(a, b) { return a - b; });
-      var vals = keys.map(function(k) { return l.ladder[k]; });
-      chart.setOption({
-        grid: { top: 12, right: 16, bottom: 22, left: 34 },
-        xAxis: { type: 'category', data: keys.map(function(k) { return k + '板'; }), axisLabel: { fontSize: 11, color: '#ccc' } },
-        yAxis: { type: 'value', axisLabel: { fontSize: 10, color: '#888' }, splitLine: { lineStyle: { color: '#222' } } },
-        series: [{ type: 'bar', data: vals, barMaxWidth: 36, itemStyle: { color: function(p) { return p.dataIndex >= 2 ? '#ef4444' : '#f59e0b'; }, borderRadius: [4, 4, 0, 0] }, label: { show: true, position: 'top', fontSize: 11, color: '#ccc' } }]
-      });
-    }, 50);
-  }
 }
 
 // ── 因子选股池表现（昨日选出 → 今日涨幅）──
@@ -270,32 +273,58 @@ function loadSectorRotation() {
 }
 
 function renderSectorRotationChart(data) {
-  var chartDom = document.getElementById('sectorRotationChart');
-  if (!chartDom) return;
-  var chart = echarts.init(chartDom);
-  var top = data.sectors.slice(0, 25);  // 前25个（按20日涨幅降序）
-  var phaseColors = { '主升': '#e53935', '见顶': '#9e9e9e', '启动': '#f59e0b', '震荡': '#5c8ae6' };
-  var names = top.map(function(s) { return s.name + ' · ' + s.phase; });
-  var cN = top.map(function(s) { return s.cN; });
-  var option = {
-    tooltip: {
-      trigger: 'axis', axisPointer: { type: 'shadow' },
-      formatter: function(params) {
-        var s = top[params[0].dataIndex];
-        return '<b>' + s.name + '</b><br/>近20日 ' + (s.cN > 0 ? '+' : '') + s.cN + '%<br/>近5日 ' + (s.c5 > 0 ? '+' : '') + s.c5 + '%<br/>轮动位置：<b>' + s.phase + '</b>';
-      }
-    },
-    grid: { left: 140, right: 50, top: 10, bottom: 30 },
-    xAxis: { type: 'value', axisLabel: { formatter: '{value}%', fontSize: 10, color: '#888' }, splitLine: { lineStyle: { color: '#222' } } },
-    yAxis: { type: 'category', data: names, inverse: true, axisLabel: { fontSize: 11, color: '#ccc' } },
-    series: [{
-      type: 'bar', data: cN, barMaxWidth: 14,
-      label: { show: true, position: 'right', fontSize: 10, color: '#aaa', formatter: function(p) { return (p.value > 0 ? '+' : '') + p.value + '%'; } },
-      itemStyle: { color: function(p) { return phaseColors[top[p.dataIndex].phase] || '#888'; }, borderRadius: [0, 3, 3, 0] }
-    }]
-  };
-  chart.setOption(option);
-  window.addEventListener('resize', function() { chart.resize(); });
+  var container = document.getElementById('sectorRotationChart');
+  if (!container) return;
+
+  var phases = [
+    { key: '主升', emoji: '🔥', color: '#e53935' },
+    { key: '见顶', emoji: '⚪', color: '#9e9e9e' },
+    { key: '启动', emoji: '🟠', color: '#f59e0b' },
+    { key: '下行', emoji: '🟢', color: '#26a69a' },
+    { key: '震荡', emoji: '🔵', color: '#5c8ae6' },
+  ];
+
+  // 图1：五阶段分布
+  var html = '';
+  var pickedIdx = [];
+  phases.forEach(function(ph) {
+    var items = [];
+    for (var i = 0; i < data.sectors.length; i++) {
+      if (data.sectors[i].phase === ph.key) items.push({ s: data.sectors[i], idx: i });
+    }
+    var names = items.slice(0, 12).map(function(x) { return x.s.name; }).join('、');
+    html += '<div style="margin-bottom:12px;display:flex;gap:8px;align-items:flex-start;">' +
+      '<div style="min-width:80px;font-weight:700;color:' + ph.color + ';flex-shrink:0;font-size:0.82rem;">' + ph.emoji + ' ' + ph.key + ' ' + items.length + '个</div>' +
+      '<div style="font-size:0.76rem;color:var(--color-text);line-height:1.6;">' + escHtml(names || '—') + '</div>' +
+      '</div>';
+    pickedIdx = pickedIdx.concat(items.slice(0, 2).map(function(x) { return x.idx; }));
+  });
+
+  // 图2：周期演变（累计涨幅曲线）
+  html += '<div id="rotationCycleChart" style="width:100%;height:260px;margin-top:14px;"></div>';
+  container.innerHTML = html;
+
+  setTimeout(function() {
+    var chartDom = document.getElementById('rotationCycleChart');
+    if (!chartDom) return;
+    var chart = echarts.init(chartDom);
+    var dates = data.dates.map(function(d) { return String(d).slice(4, 6) + '/' + String(d).slice(6, 8); });
+    var series = pickedIdx.map(function(idx) {
+      var s = data.sectors[idx];
+      var daily = data.heatmap.filter(function(h) { return h[1] === idx; }).sort(function(a, b) { return a[0] - b[0]; });
+      var cum = 0;
+      var vals = daily.map(function(h) { cum += h[2]; return Math.round(cum * 100) / 100; });
+      return { name: s.name, type: 'line', data: vals, smooth: true, symbol: 'none' };
+    });
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 10, color: '#888' } },
+      grid: { left: 44, right: 12, top: 10, bottom: 44 },
+      xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 9, color: '#888' } },
+      yAxis: { type: 'value', axisLabel: { fontSize: 9, color: '#888', formatter: '{value}%' }, splitLine: { lineStyle: { color: '#222' } } },
+      series: series
+    });
+  }, 50);
 }
 
 (function() {
