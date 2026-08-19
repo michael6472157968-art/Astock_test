@@ -77,10 +77,18 @@ async def step1_emotion(td: str) -> dict:
     else:
         rongcuo = "低"
 
+    # 情绪周期：上升/震荡/退潮（决定能不能出手、追多高）
+    if zha_rate < 15 and (avg_premium is None or avg_premium > 0):
+        cycle = "上升期"
+    elif zha_rate > 30 or (avg_premium is not None and avg_premium < 0):
+        cycle = "退潮期"
+    else:
+        cycle = "震荡期"
+
     return {
         "up": up, "down": down, "zha": zha, "zha_rate": zha_rate,
         "avg_premium": avg_premium, "prem_pos": prem_pos, "prev_date": prev,
-        "rongcuo": rongcuo,
+        "rongcuo": rongcuo, "cycle": cycle,
     }
 
 
@@ -245,11 +253,15 @@ async def step5_loss(td: str) -> dict:
     }
 
 
-# ── 第6步 重点票（标杆）──
+# ── 第6步 观察风向标（连板股，非买入推荐）──
 
 async def step6_focus(td: str) -> list:
+    """连板股作为观察接力的风向标，不是买入推荐。
+
+    买不买取决于第7步的操作风格判断(情绪周期+晋级率)，这里只列出标的供观察。
+    """
     async with async_session() as sess:
-        # 最高板龙头 + 强势板块龙头
+        # 连板股（≥2板），作为接力情绪风向标
         r = await sess.execute(text("""
             SELECT l.name, l.status, s.industry FROM limit_list_records l
             JOIN stocks s ON s.ts_code = l.ts_code
@@ -261,7 +273,7 @@ async def step6_focus(td: str) -> list:
     return focus
 
 
-# ── 第7步 次日计划（规则综合）──
+# ── 第7步 操作风格 + 明日计划 ──
 
 def step7_plan(steps: dict) -> dict:
     e = steps.get("emotion", {})
@@ -269,38 +281,52 @@ def step7_plan(steps: dict) -> dict:
     s = steps.get("sectors", {})
     loss = steps.get("loss", {})
 
-    signals = []
-    # 参与信号
-    if e.get("rongcuo") == "高":
-        signals.append("容错率高，可积极参与")
-    elif e.get("rongcuo") == "低":
-        signals.append("容错率低，控制仓位")
-    if e.get("avg_premium") is not None and e["avg_premium"] > 0:
-        signals.append(f"昨日涨停溢价{e['avg_premium']:+.2f}%，打板有肉")
-    elif e.get("avg_premium") is not None and e["avg_premium"] < 0:
-        signals.append(f"昨日涨停溢价{e['avg_premium']:+.2f}%，打板亏钱")
-    if l.get("max_board", 0) >= 4:
-        signals.append("题材有高度，可做高位接力")
-    else:
-        signals.append("题材高度不足，聚焦低位首板")
-    if s.get("strong_sectors"):
-        names = "、".join(n for n, _ in s["strong_sectors"][:3])
-        signals.append(f"强势板块：{names}")
-    if loss.get("big_face") and len(loss["big_face"]) >= 3:
-        signals.append("大面股≥3只，亏钱效应重，警惕高位股")
+    cycle = e.get("cycle", "震荡期")
+    j1 = l.get("j1")
 
-    # 综合判断
-    zha_rate = e.get("zha_rate", 50)
-    premium = e.get("avg_premium")
-    max_board = l.get("max_board", 0)
-    if zha_rate < 15 and (premium is None or premium > 0) and max_board >= 3:
+    # 操作风格判断：情绪周期 + 晋级率(1进2) 推导，不是无脑推荐龙头
+    if cycle == "上升期":
+        if j1 is not None and j1 >= 30:
+            style = "接力有肉，可追 2-3 板主线龙头"
+        elif j1 is not None and j1 < 20:
+            style = "接力亏钱，只做首板/1进2，不追高标"
+        else:
+            style = "做主线首板 / 2 板"
+    elif cycle == "震荡期":
+        style = "低位首板，轻仓试错"
+    else:
+        style = "空仓观望，规避所有高标（易天地板）"
+
+    # 规避清单（有依据）
+    avoid = []
+    if loss.get("big_face") and len(loss["big_face"]) >= 3:
+        avoid.append(f"大面股 {len(loss['big_face'])} 只，接力环境差，规避高位连板")
+    if cycle == "退潮期":
+        avoid.append("退潮期，高标天地板风险大")
+
+    # 明日方向
+    if cycle == "上升期":
         verdict = "可参与"
-    elif zha_rate > 30 or (premium is not None and premium < 0):
+    elif cycle == "退潮期":
         verdict = "规避"
     else:
         verdict = "观望"
 
-    return {"signals": signals, "verdict": verdict}
+    # 具体操作建议
+    actions = [f"情绪：{cycle}，容错率{e.get('rongcuo', '')}"]
+    actions.append(f"操作：{style}")
+    if s.get("strong_sectors"):
+        names = "、".join(n for n, _ in s["strong_sectors"][:3])
+        actions.append(f"聚焦板块：{names}")
+    if l.get("max_board", 0) >= 4:
+        actions.append(f"高度：最高{l['max_board']}板，题材有高度")
+    else:
+        actions.append(f"高度：最高{l.get('max_board', 0)}板，题材高度不足")
+
+    return {
+        "cycle": cycle, "style": style,
+        "verdict": verdict, "actions": actions, "avoid": avoid,
+    }
 
 
 # ── 选股池次日收益 ──
@@ -350,11 +376,11 @@ async def compute_review(td: str = "") -> dict:
     sectors = await step3_sectors(td)
     fund = await step4_fund(td)
     loss = await step5_loss(td)
-    focus = await step6_focus(td)
+    watch = await step6_focus(td)
 
     steps = {
         "emotion": emotion, "ladder": ladder, "sectors": sectors,
-        "fund": fund, "loss": loss, "focus": focus,
+        "fund": fund, "loss": loss, "watch": watch,
     }
     steps["plan"] = step7_plan(steps)
 
