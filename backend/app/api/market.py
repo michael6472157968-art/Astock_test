@@ -644,9 +644,23 @@ async def sector_ranking(user: dict = Depends(require_auth_optional)):
                        ext_info={"note": "请先在管理后台执行数据同步和板块分析计算"})
 
 
+def _judge_stage(c20: float, c5: float) -> str:
+    """根据 20日涨幅 + 5日涨幅 判断生命周期阶段。"""
+    if c20 > 10 and c5 > 0:
+        return "主升"
+    elif c20 > 10 and c5 < -3:
+        return "见顶"
+    elif c5 > 3 and c20 < 10:
+        return "启动"
+    elif c5 < -3 and c20 < 0:
+        return "下行"
+    else:
+        return "震荡"
+
+
 @sector_router.get("/rotation")
 async def sector_rotation(days: int = 20, user: dict = Depends(require_auth_optional)):
-    """申万二级行业轮动分析：近N日涨幅排名 + 轮动位置(主升/见顶/启动/震荡)。"""
+    """申万二级行业轮动：生命周期阶段热力图数据(每个行业每天的阶段)。"""
     trade_date, _ = await _get_trade_context()
     cache_key = f"sector:rotation:{trade_date}:{days}"
     cached = await cache_get(cache_key)
@@ -672,61 +686,69 @@ async def sector_rotation(days: int = 20, user: dict = Depends(require_auth_opti
         return APIResponse(data={"date": trade_date, "days": days, "dates": [], "sectors": [], "heatmap": []},
                            timestamp=int(time.time()))
 
-    # 2. 查 sector_daily 近 days 日数据
+    # 2. 拉近 (days+20) 日数据（多20日用于算滚动阶段）
+    lookback = days + 20
     async with async_session() as sess:
         r = await sess.execute(text(
             "SELECT DISTINCT trade_date FROM sector_daily ORDER BY trade_date DESC LIMIT :n"
-        ), {"n": days})
-        dates = sorted([row[0] for row in r.fetchall()])
-        if len(dates) < 5:
-            return APIResponse(data={"date": trade_date, "days": days, "dates": dates, "sectors": [], "heatmap": []},
+        ), {"n": lookback})
+        all_dates = sorted([row[0] for row in r.fetchall()])
+        if len(all_dates) < 25:
+            return APIResponse(data={"date": trade_date, "days": days, "dates": [], "sectors": [], "stage_heatmap": []},
                                timestamp=int(time.time()))
+        display_dates = all_dates[-days:]
+        date_idx = {d: i for i, d in enumerate(display_dates)}
 
         r2 = await sess.execute(text(
             "SELECT code, trade_date, pct_chg FROM sector_daily "
             "WHERE trade_date >= :start AND trade_date <= :end ORDER BY code, trade_date"
-        ), {"start": dates[0], "end": dates[-1]})
+        ), {"start": all_dates[0], "end": all_dates[-1]})
         daily: dict = {}
         for code, td, pct in r2:
             daily.setdefault(code, []).append((td, pct))
 
-    # 3. 算每个二级行业：N日累计涨幅 + 5日累计涨幅 + 轮动位置
-    date_idx = {d: i for i, d in enumerate(dates)}
+    # 3. 算每个行业的滚动阶段序列（每天用往前20日/5日涨幅判断阶段）
+    STAGE_CODE = {"启动": 0, "主升": 1, "见顶": 2, "下行": 3, "震荡": 4}
     raw = []
     for code, name in sorted(l2_map.items()):
         series = daily.get(code, [])
-        if len(series) < 5:
+        if len(series) < 25:
             continue
+        tds = [t for t, _ in series]
         pcts = [p for _, p in series]
-        cum_n = cum5 = 1.0
+        td_set = set(tds)
+        # 前缀累计积
+        cum_prod = [1.0]
         for p in pcts:
-            cum_n *= (1 + p / 100)
-        for p in pcts[-5:]:
-            cum5 *= (1 + p / 100)
-        cum_n = round((cum_n - 1) * 100, 2)
-        cum5 = round((cum5 - 1) * 100, 2)
-        if cum_n > 10 and cum5 > 0:
-            phase = "主升"
-        elif cum_n > 10 and cum5 < -3:
-            phase = "见顶"
-        elif cum5 > 3 and cum_n < 10:
-            phase = "启动"
-        elif cum5 < -3 and cum_n < 0:
-            phase = "下行"
-        else:
-            phase = "震荡"
-        raw.append({"code": code, "name": name, "c5": cum5, "cN": cum_n, "phase": phase, "series": series})
+            cum_prod.append(cum_prod[-1] * (1 + p / 100))
+        stages = []
+        cur_c20 = cur_c5 = 0.0
+        cur_stage = "震荡"
+        for d in display_dates:
+            if d not in td_set:
+                stages.append((d, STAGE_CODE["震荡"]))
+                continue
+            idx = tds.index(d)
+            c20 = (cum_prod[idx + 1] / cum_prod[max(0, idx - 19)] - 1) * 100
+            c5 = (cum_prod[idx + 1] / cum_prod[max(0, idx - 4)] - 1) * 100
+            stage = _judge_stage(c20, c5)
+            stages.append((d, STAGE_CODE[stage]))
+            if d == display_dates[-1]:
+                cur_c20, cur_c5, cur_stage = c20, c5, stage
+        raw.append({"code": code, "name": name, "c5": round(cur_c5, 2), "cN": round(cur_c20, 2),
+                    "phase": cur_stage, "stages": stages})
 
-    # 按20日涨幅排序后，再生成 heatmap 索引（保证与 sectors 顺序一致）
-    raw.sort(key=lambda x: -x["cN"])
+    # 4. 按阶段分组排序：主升、见顶、启动、下行、震荡
+    phase_order = {"主升": 0, "见顶": 1, "启动": 2, "下行": 3, "震荡": 4}
+    raw.sort(key=lambda x: (phase_order.get(x["phase"], 9), -x["cN"]))
     sectors = [{"code": r["code"], "name": r["name"], "c5": r["c5"], "cN": r["cN"], "phase": r["phase"]} for r in raw]
-    heatmap = []
+    stage_heatmap = []
     for i, r in enumerate(raw):
-        for td, pct in r["series"]:
-            if td in date_idx:
-                heatmap.append([date_idx[td], i, round(pct, 2)])
+        for d, st in r["stages"]:
+            if d in date_idx:
+                stage_heatmap.append([date_idx[d], i, st])
 
-    data = {"date": trade_date, "days": days, "dates": dates, "sectors": sectors, "heatmap": heatmap}
+    data = {"date": trade_date, "days": days, "dates": display_dates, "sectors": sectors, "stage_heatmap": stage_heatmap}
     await cache_set(cache_key, data, ttl=86400)
     return APIResponse(data=data, timestamp=int(time.time()))
 

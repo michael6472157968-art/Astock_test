@@ -275,56 +275,49 @@ function loadSectorRotation() {
 function renderSectorRotationChart(data) {
   var container = document.getElementById('sectorRotationChart');
   if (!container) return;
+  var height = Math.max(500, data.sectors.length * 6 + 80);
+  container.innerHTML = '<div id="stageHeatmap" style="width:100%;height:' + height + 'px;"></div>';
 
-  var phases = [
-    { key: '主升', emoji: '🔥', color: '#e53935' },
-    { key: '见顶', emoji: '⚪', color: '#9e9e9e' },
-    { key: '启动', emoji: '🟠', color: '#f59e0b' },
-    { key: '下行', emoji: '🟢', color: '#26a69a' },
-    { key: '震荡', emoji: '🔵', color: '#5c8ae6' },
-  ];
+  var chartDom = document.getElementById('stageHeatmap');
+  if (!chartDom) return;
+  var chart = echarts.init(chartDom);
+  var dates = data.dates.map(function(d) { return String(d).slice(4, 6) + '/' + String(d).slice(6, 8); });
+  var sectorNames = data.sectors.map(function(s) { return s.name; });
+  var stageNames = ['启动', '主升', '见顶', '下行', '震荡'];
 
-  // 图1：五阶段分布
-  var html = '';
-  var pickedIdx = [];
-  phases.forEach(function(ph) {
-    var items = [];
-    for (var i = 0; i < data.sectors.length; i++) {
-      if (data.sectors[i].phase === ph.key) items.push({ s: data.sectors[i], idx: i });
-    }
-    var names = items.slice(0, 12).map(function(x) { return x.s.name; }).join('、');
-    html += '<div style="margin-bottom:12px;display:flex;gap:8px;align-items:flex-start;">' +
-      '<div style="min-width:80px;font-weight:700;color:' + ph.color + ';flex-shrink:0;font-size:0.82rem;">' + ph.emoji + ' ' + ph.key + ' ' + items.length + '个</div>' +
-      '<div style="font-size:0.76rem;color:var(--color-text);line-height:1.6;">' + escHtml(names || '—') + '</div>' +
-      '</div>';
-    pickedIdx = pickedIdx.concat(items.slice(0, 2).map(function(x) { return x.idx; }));
-  });
-
-  // 图2：周期演变（累计涨幅曲线）
-  html += '<div id="rotationCycleChart" style="width:100%;height:260px;margin-top:14px;"></div>';
-  container.innerHTML = html;
-
-  setTimeout(function() {
-    var chartDom = document.getElementById('rotationCycleChart');
-    if (!chartDom) return;
-    var chart = echarts.init(chartDom);
-    var dates = data.dates.map(function(d) { return String(d).slice(4, 6) + '/' + String(d).slice(6, 8); });
-    var series = pickedIdx.map(function(idx) {
-      var s = data.sectors[idx];
-      var daily = data.heatmap.filter(function(h) { return h[1] === idx; }).sort(function(a, b) { return a[0] - b[0]; });
-      var cum = 0;
-      var vals = daily.map(function(h) { cum += h[2]; return Math.round(cum * 100) / 100; });
-      return { name: s.name, type: 'line', data: vals, smooth: true, symbol: 'none' };
-    });
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 10, color: '#888' } },
-      grid: { left: 44, right: 12, top: 10, bottom: 44 },
-      xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 9, color: '#888' } },
-      yAxis: { type: 'value', axisLabel: { fontSize: 9, color: '#888', formatter: '{value}%' }, splitLine: { lineStyle: { color: '#222' } } },
-      series: series
-    });
-  }, 50);
+  var option = {
+    tooltip: {
+      position: 'top',
+      formatter: function(p) {
+        var s = data.sectors[p.value[1]];
+        return '<b>' + s.name + '</b><br/>' + data.dates[p.value[0]] + '：' + stageNames[p.value[2]] +
+          '<br/>当前：' + s.phase + '（近20日 ' + (s.cN > 0 ? '+' : '') + s.cN + '%，近5日 ' + (s.c5 > 0 ? '+' : '') + s.c5 + '%）';
+      }
+    },
+    grid: { left: 92, right: 30, top: 10, bottom: 66 },
+    xAxis: { type: 'category', data: dates, splitArea: { show: true }, axisLabel: { fontSize: 9, color: '#888' } },
+    yAxis: { type: 'category', data: sectorNames, splitArea: { show: true }, axisLabel: { fontSize: 9, color: '#ccc' } },
+    visualMap: {
+      type: 'piecewise',
+      pieces: [
+        { value: 1, label: '主升', color: '#e53935' },
+        { value: 2, label: '见顶', color: '#9e9e9e' },
+        { value: 0, label: '启动', color: '#f59e0b' },
+        { value: 3, label: '下行', color: '#26a69a' },
+        { value: 4, label: '震荡', color: '#5c8ae6' },
+      ],
+      orient: 'horizontal', left: 'center', bottom: 0,
+      textStyle: { fontSize: 10, color: '#888' }
+    },
+    series: [{
+      type: 'heatmap',
+      data: data.stage_heatmap,
+      label: { show: false },
+      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } }
+    }]
+  };
+  chart.setOption(option);
+  window.addEventListener('resize', function() { chart.resize(); });
 }
 
 (function() {
