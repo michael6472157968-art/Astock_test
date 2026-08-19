@@ -141,18 +141,24 @@ function loadRuleReview() {
 function renderRuleReview(c) {
   var plan = c.plan || {};
   var verdictColor = plan.verdict === '可参与' ? '#ef4444' : plan.verdict === '规避' ? '#26a69a' : '#888';
+  var cycleColor = plan.cycle === '上升期' ? '#ef4444' : plan.cycle === '退潮期' ? '#26a69a' : '#f59e0b';
 
-  // 顶部：次日方向大字
-  var html = '<div style="display:flex;align-items:center;gap:14px;padding:14px;border-radius:8px;background:var(--color-bg-secondary);margin-bottom:14px;">' +
-    '<div style="font-size:1.5rem;font-weight:800;color:' + verdictColor + ';">' + escHtml(plan.verdict || '--') + '</div>' +
-    '<div style="flex:1;color:var(--color-text-muted);font-size:0.8rem;line-height:1.6;">' + escHtml((plan.signals || []).join(' · ')) + '</div>' +
+  // 顶部：次日方向 + 操作风格
+  var html = '<div style="padding:14px;border-radius:8px;background:var(--color-bg-secondary);margin-bottom:14px;">' +
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">' +
+      '<div style="font-size:1.5rem;font-weight:800;color:' + verdictColor + ';">' + escHtml(plan.verdict || '--') + '</div>' +
+      '<span style="font-size:0.85rem;font-weight:700;color:' + cycleColor + ';">' + escHtml(plan.cycle || '') + '</span>' +
+    '</div>' +
+    '<div style="font-size:1.05rem;font-weight:700;color:var(--color-text);margin-bottom:6px;">操作：' + escHtml(plan.style || '--') + '</div>' +
+    '<div style="color:var(--color-text-muted);font-size:0.78rem;line-height:1.6;">' + escHtml((plan.actions || []).join(' · ')) + '</div>' +
+    (plan.avoid && plan.avoid.length ? '<div style="margin-top:6px;color:#e5484d;font-size:0.78rem;">⚠️ ' + escHtml(plan.avoid.join('；')) + '</div>' : '') +
     '</div>';
 
   // ① 情绪：数字 + 容错率进度条
   var e = c.emotion || {};
   var rongcuoPct = e.zha_rate < 15 ? 82 : e.zha_rate < 30 ? 52 : 22;
   html += '<div style="margin-bottom:16px;">' +
-    '<div style="font-weight:600;margin-bottom:8px;">① 整体情绪</div>' +
+    '<div style="font-weight:600;margin-bottom:8px;">① 整体情绪 <span style="font-size:0.8rem;color:' + cycleColor + ';font-weight:700;">' + escHtml(e.cycle || '') + '</span></div>' +
     '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px;">' +
       '<div><b class="up" style="font-size:1.1rem;">' + e.up + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">涨停</span></div>' +
       '<div><b class="down" style="font-size:1.1rem;">' + e.down + '</b><span style="color:#888;font-size:0.75rem;margin-left:2px;">跌停</span></div>' +
@@ -194,12 +200,12 @@ function renderRuleReview(c) {
   var instStr = (f.inst_buy || []).slice(0, 3).map(function(x) { return x[0]; }).join('、');
   var loss = c.loss || {};
   var bfStr = (loss.big_face || []).slice(0, 3).map(function(x) { return x[0]; }).join('、');
-  var focus = c.focus || [];
-  var focusStr = focus.slice(0, 6).map(function(x) { return x.name + '[' + x.board + '板]'; }).join('、');
+  var watch = c.watch || [];
+  var watchStr = watch.slice(0, 6).map(function(x) { return x.name + '[' + x.board + '板]'; }).join('、');
 
   html += '<div style="margin-bottom:6px;"><span style="font-weight:600;">④ 资金：</span><span style="font-size:0.8rem;">成交额前20上涨' + f.top20_up_ratio + '%' + (instStr ? '，机构净买 ' + instStr : '') + '</span></div>';
   html += '<div style="margin-bottom:6px;"><span style="font-weight:600;">⑤ 亏钱：</span><span style="font-size:0.8rem;">' + escHtml(loss.loss_desc || '') + (bfStr ? '，大面股 ' + bfStr : '') + '</span></div>';
-  html += '<div><span style="font-weight:600;">⑥ 重点票：</span><span style="font-size:0.8rem;">' + (focusStr || '无') + '</span></div>';
+  html += '<div><span style="font-weight:600;">⑥ 观察风向标：</span><span style="font-size:0.8rem;">' + (watchStr || '无') + '</span><span style="color:#888;font-size:0.72rem;">（连板股，非买入推荐）</span></div>';
 
   document.getElementById('ruleReviewPanel').innerHTML = html;
 
