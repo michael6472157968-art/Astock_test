@@ -21,6 +21,9 @@ RUN mkdir -p /app/data
 # so config files shipped in the image must be stashed elsewhere and restored by entrypoint.
 RUN mkdir -p /app/data_seed
 COPY backend/data/factor_weights.json /app/data_seed/
+COPY backend/data/factor_meta.json /app/data_seed/
+COPY backend/data/risk_signals.json /app/data_seed/
+COPY backend/data/eye_weights.json /app/data_seed/
 
 # Entrypoint generates .env from env vars so pydantic-settings can read it
 COPY entrypoint.sh /entrypoint.sh

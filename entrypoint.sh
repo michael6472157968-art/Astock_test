@@ -26,10 +26,10 @@ EOF
     echo ".env generated and persisted to volume"
 fi
 
-# Seed config files into the mounted volume if they don't exist yet
+# Seed config files into the mounted volume（总是覆盖，保证 git 里的配置更新能同步到线上）
 # (/app/data is a Fly mount — it hides Docker-image files at the same path)
-for cfg in factor_weights.json; do
-    if [ ! -f "/app/data/$cfg" ]; then
+for cfg in factor_weights.json factor_meta.json risk_signals.json eye_weights.json; do
+    if [ -f "/app/data_seed/$cfg" ]; then
         cp "/app/data_seed/$cfg" "/app/data/$cfg"
         echo "Seeded /app/data/$cfg from image"
     fi

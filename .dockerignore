@@ -1,6 +1,9 @@
 backend/.env
 backend/data/
 !backend/data/factor_weights.json
+!backend/data/factor_meta.json
+!backend/data/risk_signals.json
+!backend/data/eye_weights.json
 backend/__pycache__/
 backend/**/__pycache__/
 backend/.pytest_cache/
