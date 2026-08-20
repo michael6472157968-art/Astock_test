@@ -121,8 +121,9 @@ var _emptyDates = {};
 var _currentDate = null;
 
 // ── 7步纯规则复盘 ──
-function loadRuleReview() {
-  API.get('/review/rule').then(function(r) {
+function loadRuleReview(td) {
+  var url = '/review/rule' + (td ? '?date=' + encodeURIComponent(td) : '');
+  API.get(url).then(function(r) {
     var data = r.data || {};
     var content = data.content || {};
     if (!content.emotion) return;
@@ -341,6 +342,7 @@ function updateDateStatus(td) {
 }
 
 function loadReview(td) {
+  loadRuleReview(td);  // 散户版报告跟随日期切换
   document.getElementById('reviewDetail').innerHTML = '<p class="state-loading">加载中...</p>';
   document.getElementById('reviewChart').style.display = 'none';
   _currentDate = td;

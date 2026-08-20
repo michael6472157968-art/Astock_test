@@ -413,9 +413,9 @@ def step7_plan(steps: dict) -> dict:
 
 # ── 选股池次日收益 ──
 
-async def pool_performance() -> dict:
+async def pool_performance(td: str = "") -> dict:
     """选股池次日收益：昨天选的股票，今天(最新完整交易日)的平均涨幅。"""
-    latest = await _latest_date()
+    latest = td or await _latest_date()
     prev = await _prev_date(latest)
     if not latest or not prev:
         return {"date": latest, "prev_date": prev, "pools": []}
@@ -445,10 +445,10 @@ async def pool_performance() -> dict:
     return {"date": latest, "prev_date": prev, "pools": pools}
 
 
-async def pool_today() -> dict:
+async def pool_today(td: str = "") -> dict:
     """选股池今日名单：最新 calc_date 的短线/长线池 15 只。"""
     import json as _json
-    latest = await _latest_date()
+    latest = td or await _latest_date()
     async with async_session() as sess:
         pools = []
         for ptype, name in [("factor_short", "短线池"), ("factor_long", "长线池")]:
@@ -496,7 +496,7 @@ async def compute_review(td: str = "") -> dict:
     steps["plan"] = step7_plan(steps)
 
     # 选股池：今日名单 + 昨日收益
-    steps["pool_today"] = await pool_today()
-    steps["pool_perf"] = await pool_performance()
+    steps["pool_today"] = await pool_today(td)
+    steps["pool_perf"] = await pool_performance(td)
 
     return {"date": td, "content": steps}

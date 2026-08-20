@@ -782,13 +782,22 @@ async def _delete_review_meta(data_date: str):
 
 
 async def _purge_expired_reviews():
-    """Delete review rows older than 7 days that are not latest."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    """删除最近5个交易日之外的复盘报告(保留最新日)。"""
     from app.core.database import async_session
     async with async_session() as sess:
+        # 最近5个完整交易日
+        r = await sess.execute(text(
+            "SELECT trade_date FROM stock_daily GROUP BY trade_date "
+            "HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 5"
+        ))
+        keep_dates = [row[0] for row in r.fetchall()]
+        if not keep_dates:
+            return
+        oldest_keep = keep_dates[-1]
+        # 早于第5个交易日的报告清掉(非latest)
         await sess.execute(
-            text("DELETE FROM review_reports WHERE is_latest = 0 AND generated_at < :c"),
-            {"c": cutoff},
+            text("DELETE FROM review_reports WHERE is_latest = 0 AND data_date < :c"),
+            {"c": oldest_keep},
         )
         await sess.commit()
 
@@ -852,7 +861,7 @@ async def review_dates(user: dict = Depends(require_auth_optional)):
     async with async_session() as sess:
         r = await sess.execute(
             text("SELECT trade_date FROM stock_daily GROUP BY trade_date "
-                 "HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 60")
+                 "HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 5")
         )
         dates = [row[0] for row in r]
     return APIResponse(data={"dates": dates}, timestamp=int(time.time()))
