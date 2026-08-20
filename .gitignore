@@ -32,6 +32,9 @@ backend/.env
 # User data (generated at runtime)
 backend/data/user_data/
 
+# cc-connect 运行时目录（附件/配置，不进提交）
+.cc-connect/
+
 # Large data directories
 backend/data/
 
