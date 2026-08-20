@@ -144,6 +144,18 @@ function renderRuleReview(c) {
   var cycleColor = plan.cycle === '上升期' ? '#ef4444' : plan.cycle === '退潮期' ? '#26a69a' : '#f59e0b';
   var tempEmoji = market.temp === '热' ? '🔥' : market.temp === '暖' ? '😊' : market.temp === '冷' ? '🥶' : '😐';
 
+  // 明日三剧本推演
+  var scHtml = '';
+  var scs = (plan.scenarios || []).slice().sort(function(a, b) { return b['概率'] - a['概率']; });
+  scs.forEach(function(sc) {
+    var actColor = sc['操作'] === '空仓' ? '#26a69a' : sc['操作'] === '追高标' ? '#ef4444' : '#f59e0b';
+    scHtml += '<span style="display:inline-block;margin:3px 8px 3px 0;padding:5px 10px;border-radius:8px;background:var(--color-card);border:1px solid var(--color-border);font-size:0.72rem;">' +
+      '<b>' + escHtml(sc['剧本']) + '</b> <span style="color:var(--color-text-muted)">' + sc['概率'] + '%</span>' +
+      ' · <b style="color:' + actColor + '">' + escHtml(sc['操作']) + '</b>' +
+      '<span style="color:var(--color-text-muted)"> 追高标' + (sc['追高标'] > 0 ? '+' : '') + sc['追高标'] + '% / 做低位' + (sc['做低位'] > 0 ? '+' : '') + sc['做低位'] + '%</span>' +
+      '</span>';
+  });
+
   // 顶部：一句话结论
   var html = '<div style="padding:14px;border-radius:8px;background:var(--color-bg-secondary);margin-bottom:16px;">' +
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;">' +
@@ -153,6 +165,7 @@ function renderRuleReview(c) {
     '</div>' +
     '<div style="font-size:1.05rem;font-weight:700;color:var(--color-text);margin-bottom:6px;">操作：' + escHtml(plan.style || '--') + '</div>' +
     (plan.evidence ? '<div style="font-size:0.72rem;color:var(--color-text-muted);margin-bottom:6px;">📊 历史回测(' + plan.evidence['样本'] + '天)：追高标次日+' + plan.evidence['追高标'] + '% · 做低位+' + plan.evidence['做低位'] + '% · 大面股日均' + plan.evidence['大面股日均'] + '只</div>' : '') +
+    (scHtml ? '<div style="margin-bottom:8px;"><span style="font-weight:600;font-size:0.78rem;">🔮 明日三剧本</span>' + scHtml + '</div>' : '') +
     '<div style="color:var(--color-text-muted);font-size:0.78rem;line-height:1.6;">' + escHtml((plan.actions || []).join(' · ')) + '</div>' +
     (plan.avoid && plan.avoid.length ? '<div style="margin-top:6px;color:#e5484d;font-size:0.78rem;">⚠️ ' + escHtml(plan.avoid.join('；')) + '</div>' : '') +
     '</div>';
