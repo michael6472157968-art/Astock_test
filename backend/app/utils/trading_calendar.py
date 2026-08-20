@@ -157,10 +157,11 @@ async def get_latest_trade_date() -> str:
 
     today_str = date.today().strftime("%Y%m%d")
 
-    # 1. Check stock_daily for the newest trade date with data
+    # 1. 最新完整交易日(>=50只)，避免盘中/未吐完的残缺日(只有4个指数)被当最新
     async with async_session() as sess:
         r = await sess.execute(
-            text("SELECT MAX(trade_date) FROM stock_daily")
+            text("SELECT trade_date FROM stock_daily GROUP BY trade_date "
+                 "HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 1")
         )
         max_td = r.scalar()
         if max_td:

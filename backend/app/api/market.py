@@ -851,7 +851,8 @@ async def review_dates(user: dict = Depends(require_auth_optional)):
 
     async with async_session() as sess:
         r = await sess.execute(
-            text("SELECT DISTINCT trade_date FROM stock_daily ORDER BY trade_date DESC LIMIT 60")
+            text("SELECT trade_date FROM stock_daily GROUP BY trade_date "
+                 "HAVING COUNT(*) >= 50 ORDER BY trade_date DESC LIMIT 60")
         )
         dates = [row[0] for row in r]
     return APIResponse(data={"dates": dates}, timestamp=int(time.time()))
