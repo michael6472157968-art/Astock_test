@@ -152,6 +152,7 @@ function renderRuleReview(c) {
       '<span style="font-size:0.85rem;">' + tempEmoji + ' 大盘' + escHtml(market.temp || '') + '</span>' +
     '</div>' +
     '<div style="font-size:1.05rem;font-weight:700;color:var(--color-text);margin-bottom:6px;">操作：' + escHtml(plan.style || '--') + '</div>' +
+    (plan.evidence ? '<div style="font-size:0.72rem;color:var(--color-text-muted);margin-bottom:6px;">📊 历史回测(' + plan.evidence['样本'] + '天)：追高标次日+' + plan.evidence['追高标'] + '% · 做低位+' + plan.evidence['做低位'] + '% · 大面股日均' + plan.evidence['大面股日均'] + '只</div>' : '') +
     '<div style="color:var(--color-text-muted);font-size:0.78rem;line-height:1.6;">' + escHtml((plan.actions || []).join(' · ')) + '</div>' +
     (plan.avoid && plan.avoid.length ? '<div style="margin-top:6px;color:#e5484d;font-size:0.78rem;">⚠️ ' + escHtml(plan.avoid.join('；')) + '</div>' : '') +
     '</div>';

@@ -318,6 +318,17 @@ async def step6_focus(td: str) -> list:
 
 # ── 第7步 操作风格 + 明日计划 ──
 
+# 历史回测证据(backtest_emotion_cycle.py 输出，基于 20240812~20260819 共 490 交易日)
+# 用途：给「操作风格」标注历史胜率，让结论有数据背书而非拍脑袋。
+# 追高标=当日连板股(≥2板)次日均涨；做低位=首板股次日均涨；大面股=昨涨停今跌>3%的日均只数。
+# 数据更新后重跑 backtest_emotion_cycle.py 刷新本表。
+CYCLE_EVIDENCE = {
+    "上升期": {"样本": 33, "追高标": 2.89, "做低位": 1.44, "大面股日均": 10.2},
+    "震荡期": {"样本": 249, "追高标": 3.18, "做低位": 1.83, "大面股日均": 12.5},
+    "退潮期": {"样本": 195, "追高标": 2.68, "做低位": 1.92, "大面股日均": 25.6},
+}
+
+
 def step7_plan(steps: dict) -> dict:
     e = steps.get("emotion", {})
     l = steps.get("ladder", {})
@@ -327,7 +338,10 @@ def step7_plan(steps: dict) -> dict:
     cycle = e.get("cycle", "震荡期")
     j1 = l.get("j1")
 
-    # 操作风格判断：情绪周期 + 晋级率(1进2) 推导，不是无脑推荐龙头
+    # 操作风格判断：情绪周期 + 晋级率(1进2) 推导，不是无脑推荐龙头。
+    # 回测修正(见 CYCLE_EVIDENCE)：追高标超额随周期递增(退潮+0.77%→震荡+1.35%→上升+1.44%)，
+    # 震荡期追高标绝对收益最高(+3.18%)且次日<0占比最低(12%)，故震荡期可追高标；
+    # 退潮期追高标平均仍正(+2.68%)但大面股日均25.6只(2.5倍)，空仓依据是「方差大易踩雷」而非「平均会亏」。
     if cycle == "上升期":
         if j1 is not None and j1 >= 30:
             style = "接力有肉，可追 2-3 板主线龙头"
@@ -336,9 +350,9 @@ def step7_plan(steps: dict) -> dict:
         else:
             style = "做主线首板 / 2 板"
     elif cycle == "震荡期":
-        style = "低位首板，轻仓试错"
+        style = "可追主线龙头（震荡期追高标容错率最高）"
     else:
-        style = "空仓观望，规避所有高标（易天地板）"
+        style = "空仓观望；或只做首板（大面股多，追高标易踩雷）"
 
     # 规避清单（有依据）
     avoid = []
@@ -369,6 +383,7 @@ def step7_plan(steps: dict) -> dict:
     return {
         "cycle": cycle, "style": style,
         "verdict": verdict, "actions": actions, "avoid": avoid,
+        "evidence": CYCLE_EVIDENCE.get(cycle),
     }
 
 
