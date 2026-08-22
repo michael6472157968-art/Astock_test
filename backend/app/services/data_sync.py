@@ -14,7 +14,7 @@ from app.core.database import async_session
 from app.models.orm.models import LimitListRecord, MarginRecord, Sector, Stock, StockDaily
 from app.services.tushare_client import (get_all_daily, get_broker_recommend, get_cyq_perf, get_daily_basic,
                                           get_express, get_hsgt_top10, get_index_daily, get_limit_list,
-                                          get_margin, get_moneyflow, get_moneyflow_hsgt, get_sector_list, get_share_float,
+                                          get_margin_detail, get_moneyflow, get_moneyflow_hsgt, get_sector_list, get_share_float,
                                           get_stock_basic, get_stk_holdertrade, get_stk_holdernumber, get_sw_daily,
                                           get_top_inst, get_top_list, get_top10_floatholders)
 
@@ -331,9 +331,9 @@ async def sync_margin(trade_date: str = "") -> int:
         from app.utils.trading_calendar import get_latest_trade_date
         trade_date = await get_latest_trade_date()
 
-    rows = await get_margin(trade_date)
+    rows = await get_margin_detail(trade_date)
     if not rows:
-        logger.info(f"No margin data for {trade_date}")
+        logger.info(f"No margin_detail data for {trade_date}")
         return 0
 
     async with async_session() as session:
